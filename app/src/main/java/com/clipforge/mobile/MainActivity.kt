@@ -18,6 +18,7 @@ import android.widget.Toast
 import android.text.format.Formatter
 import java.net.URL
 import java.net.HttpURLConnection
+import java.security.MessageDigest
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -43,6 +44,59 @@ import androidx.media3.effect.Presentation
 import androidx.media3.common.Effect
 import java.io.File
 import kotlinx.coroutines.delay
+
+/** Official multilingual Whisper weights; .en models cannot transcribe Tagalog. */
+enum class OfflineModel(val filename: String, val approxMb: Int, val sha256: String) {
+    TINY("ggml-tiny.bin", 78, "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21")
+}
+fun sha256Of(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    file.inputStream().buffered().use { input ->
+        val buffer = ByteArray(65536)
+        while (true) {
+            val n = input.read(buffer)
+            if (n < 0) break
+            digest.update(buffer, 0, n)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+fun downloadOfflineModel(destination: File, model: OfflineModel, progress: (Int) -> Unit) {
+    destination.parentFile?.mkdirs()
+    val temp = File(destination.parentFile, destination.name + ".partial")
+    val url = URL("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/" + model.filename)
+    val connection = (url.openConnection() as HttpURLConnection).apply {
+        connectTimeout = 20000
+        readTimeout = 45000
+        instanceFollowRedirects = true
+    }
+    try {
+        connection.connect()
+        if (connection.responseCode !in 200..299) error("HTTP ${connection.responseCode}")
+        val expected = connection.contentLengthLong
+        var bytes = 0L
+        connection.inputStream.use { input ->
+            temp.outputStream().buffered().use { output ->
+                val buffer = ByteArray(65536)
+                while (true) {
+                    val count = input.read(buffer)
+                    if (count < 0) break
+                    bytes += count
+                    if (bytes > 300_000_000L) error("Model exceeds download safety limit")
+                    output.write(buffer, 0, count)
+                    if (expected > 0) progress((bytes * 100L / expected).toInt().coerceIn(0, 99))
+                }
+            }
+        }
+        if (sha256Of(temp) != model.sha256) error("Model checksum mismatch")
+        if (destination.exists()) destination.delete()
+        if (!temp.renameTo(destination)) error("Could not finalize model")
+        progress(100)
+    } finally {
+        connection.disconnect()
+        if (temp.exists()) temp.delete()
+    }
+}
 
 data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false, val visualScore: Int? = null, val hook: String = "", val caption: String = "", val effect: String = "None", val captionStartMs: Long = 0L, val captionEndMs: Long = 0L)
 
@@ -199,6 +253,9 @@ class MainActivity : ComponentActivity() {
         var downloading by remember { mutableStateOf(false) }
         var exporting by remember { mutableStateOf(false) }
         var analyzing by remember { mutableStateOf(false) }
+        var modelDownloading by remember { mutableStateOf(false) }
+        var modelProgress by remember { mutableIntStateOf(0) }
+        var modelReady by remember { mutableStateOf(File(filesDir, "models/ggml-tiny.bin").exists()) }
         val player = remember { ExoPlayer.Builder(this).build() }
         DisposableEffect(player) { onDispose { player.release() } }
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -241,7 +298,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #21 timed MP4 subtitle export")
+                Text("Mobile editor • Build #22 downloadable multilingual model")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -260,6 +317,36 @@ class MainActivity : ComponentActivity() {
                     )
                 }
                 Text(if (cloudConsent) "Cloud permission granted, but cloud processing is not available yet." else "Offline-only analysis mode active.", style = MaterialTheme.typography.bodySmall)
+                HorizontalDivider()
+                Text("Offline transcription models", style = MaterialTheme.typography.titleMedium)
+                Text("English + Filipino/Tagalog: multilingual Whisper tiny (~78 MB). One-time verified download; no video is uploaded. The speech inference engine is not integrated yet.", style = MaterialTheme.typography.bodySmall)
+                Text(if (modelReady) "Multilingual model downloaded" else if (modelDownloading) "Downloading model: $modelProgress%" else "Model not installed")
+                Button(enabled = !modelDownloading, onClick = {
+                    if (modelReady) {
+                        status = "Model already installed. Offline speech recognition engine is still pending."
+                    } else {
+                        modelDownloading = true
+                        modelProgress = 0
+                        status = "Downloading multilingual model…"
+                        Thread {
+                            try {
+                                downloadOfflineModel(File(filesDir, "models/ggml-tiny.bin"), OfflineModel.TINY) { value ->
+                                    runOnUiThread { modelProgress = value }
+                                }
+                                runOnUiThread {
+                                    modelReady = true
+                                    modelDownloading = false
+                                    status = "Multilingual model verified and saved locally."
+                                }
+                            } catch (e: Exception) {
+                                runOnUiThread {
+                                    modelDownloading = false
+                                    status = "Model download failed: ${e.message}"
+                                }
+                            }
+                        }.start()
+                    }
+                }) { Text(if (modelReady) "Model installed" else if (modelDownloading) "Downloading…" else "Download English + Tagalog model") }
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; approved = false }, label = { Text("Manual Editor") })
