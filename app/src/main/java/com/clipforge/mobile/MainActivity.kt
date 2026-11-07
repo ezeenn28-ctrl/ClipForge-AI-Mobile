@@ -184,8 +184,8 @@ class MainActivity : ComponentActivity() {
                 Slider(value = start, onValueChange = { approved = false; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(startMs = (duration * it.coerceAtMost(end - 0.01f)).toLong(), approved = false) }; start = it.coerceAtMost(end - 0.01f) }, valueRange = 0f..0.99f, enabled = duration > 0)
                 Text("Trim end: ${(end * duration / 1000).toInt()}s")
                 Slider(value = end, onValueChange = { approved = false; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(endMs = (duration * it.coerceAtLeast(start + 0.01f)).toLong(), approved = false) }; end = it.coerceAtLeast(start + 0.01f) }, valueRange = 0.01f..1f, enabled = duration > 0)
-                Row { Checkbox(checked = vertical, onCheckedChange = { vertical = it; approved = false }); Text("9:16 output canvas") }
-                Row { Checkbox(checked = mute, onCheckedChange = { mute = it; approved = false }); Text("Mute original audio") }
+                Row { Checkbox(checked = vertical, onCheckedChange = { vertical = it; approved = false; drafts = drafts.map { draft -> draft.copy(approved = false) } }); Text("9:16 output canvas") }
+                Row { Checkbox(checked = mute, onCheckedChange = { mute = it; approved = false; drafts = drafts.map { draft -> draft.copy(approved = false) } }); Text("Mute original audio") }
                 HorizontalDivider()
                 Text("Review and approve", style = MaterialTheme.typography.titleMedium)
                 Text("Preview the selected segment and verify framing, audio and duration before exporting.", style = MaterialTheme.typography.bodySmall)
