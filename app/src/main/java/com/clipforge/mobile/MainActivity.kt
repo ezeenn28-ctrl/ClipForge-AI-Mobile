@@ -249,6 +249,7 @@ class MainActivity : ComponentActivity() {
         var downloading by remember { mutableStateOf(false) }
         var exporting by remember { mutableStateOf(false) }
         var analyzing by remember { mutableStateOf(false) }
+        var audioPreparing by remember { mutableStateOf(false) }
         var modelDownloading by remember { mutableStateOf(false) }
         var modelProgress by remember { mutableIntStateOf(0) }
         var modelReady by remember { mutableStateOf(File(filesDir, "models/ggml-tiny.bin").exists()) }
@@ -294,7 +295,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #22 downloadable multilingual model")
+                Text("Mobile editor • Build #23 local audio preparation")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -343,6 +344,25 @@ class MainActivity : ComponentActivity() {
                         }.start()
                     }
                 }) { Text(if (modelReady) "Model installed" else if (modelDownloading) "Downloading…" else "Download English + Tagalog model") }
+                Button(enabled = video != null && !audioPreparing, onClick = {
+                    val selectedVideo = video ?: return@Button
+                    audioPreparing = true
+                    status = "Extracting audio locally…"
+                    Thread {
+                        try {
+                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
+                            runOnUiThread {
+                                audioPreparing = false
+                                status = "Audio prepared locally: ${wav.length() / 1024} KB. Whisper transcription engine not connected yet."
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread {
+                                audioPreparing = false
+                                status = "Audio extraction failed: ${e.message}"
+                            }
+                        }
+                    }.start()
+                }) { Text(if (audioPreparing) "Preparing audio…" else "Prepare video audio for offline transcription") }
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; approved = false }, label = { Text("Manual Editor") })
