@@ -5,6 +5,9 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.widget.Toast
+import android.text.format.Formatter
+import java.net.URL
+import java.net.HttpURLConnection
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -42,6 +45,8 @@ class MainActivity : ComponentActivity() {
         var vertical by remember { mutableStateOf(true) }
         var mute by remember { mutableStateOf(false) }
         var status by remember { mutableStateOf("Select a video to begin") }
+        var link by remember { mutableStateOf("") }
+        var downloading by remember { mutableStateOf(false) }
         var exporting by remember { mutableStateOf(false) }
         val player = remember { ExoPlayer.Builder(this).build() }
         DisposableEffect(player) { onDispose { player.release() } }
@@ -73,7 +78,53 @@ class MainActivity : ComponentActivity() {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
                 Text("Mobile editor • Build #1")
-                Button(onClick = { picker.launch(arrayOf("video/*")) }) { Text("Import video") }
+                Button(onClick = { picker.launch(arrayOf("video/*")) }) { Text("Import downloaded video / gallery") }
+                OutlinedTextField(value = link, onValueChange = { link = it }, label = { Text("Direct HTTPS MP4 link (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Button(enabled = !downloading && link.startsWith("https://"), onClick = {
+                    downloading = true
+                    status = "Downloading direct video file…"
+                    val address = link
+                    Thread {
+                        try {
+                            val connection = URL(address).openConnection() as HttpURLConnection
+                            connection.connectTimeout = 15000
+                            connection.readTimeout = 30000
+                            connection.instanceFollowRedirects = true
+                            connection.connect()
+                            val type = connection.contentType ?: ""
+                            if (!type.startsWith("video/") && !type.startsWith("application/octet-stream")) error("This link is not a direct video file. Download the video first, then import it.")
+                            if (connection.contentLengthLong > 1_000_000_000L) error("Video exceeds the 1 GB download limit")
+                            val output = File(cacheDir, "source_video.mp4")
+                            connection.inputStream.use { input ->
+                                output.outputStream().use { stream ->
+                                    val buffer = ByteArray(64 * 1024)
+                                    var total = 0L
+                                    while (true) {
+                                        val count = input.read(buffer)
+                                        if (count < 0) break
+                                        total += count
+                                        if (total > 1_000_000_000L) error("Video exceeds the 1 GB download limit")
+                                        stream.write(buffer, 0, count)
+                                    }
+                                }
+                            }
+                            connection.disconnect()
+                            runOnUiThread {
+                                video = Uri.fromFile(output)
+                                start = 0f
+                                end = 1f
+                                duration = 0L
+                                player.setMediaItem(MediaItem.fromUri(Uri.fromFile(output)))
+                                player.prepare()
+                                status = "Downloaded video ready"
+                                downloading = false
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread { downloading = false; status = "Download failed: ${e.message}" }
+                        }
+                    }.start()
+                }) { Text(if (downloading) "Downloading…" else "Import direct link") }
+                Text("Links to webpages (TikTok/YouTube posts) are not direct video files; use authorized downloads.", style = MaterialTheme.typography.bodySmall)
                 AndroidView(factory = { PlayerView(it).apply { this.player = player } }, modifier = Modifier.fillMaxWidth().height(260.dp))
                 Text("Duration: ${duration / 1000}s")
                 Text("Trim start: ${(start * duration / 1000).toInt()}s")
