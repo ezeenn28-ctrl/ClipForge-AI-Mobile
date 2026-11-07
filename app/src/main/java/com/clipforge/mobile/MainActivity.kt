@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
         var end by remember { mutableFloatStateOf(1f) }
         var vertical by remember { mutableStateOf(true) }
         var mute by remember { mutableStateOf(false) }
+        var editingMode by remember { mutableStateOf("Manual Editor") }
         var status by remember { mutableStateOf("Select a video to begin") }
         var link by remember { mutableStateOf("") }
         var downloading by remember { mutableStateOf(false) }
@@ -78,6 +79,20 @@ class MainActivity : ComponentActivity() {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
                 Text("Mobile editor • Build #1")
+                Text("Editing mode", style = MaterialTheme.typography.titleMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor" }, label = { Text("Manual Editor") })
+                    FilterChip(selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft" }, label = { Text("AI Draft") })
+                }
+                if (editingMode == "AI Draft") {
+                    Text("Draft assistant (early prototype): selects an initial 20-second segment. Speech-aware AI ranking is planned for a later build.", style = MaterialTheme.typography.bodySmall)
+                    Button(enabled = duration >= 1000L, onClick = {
+                        start = 0f
+                        end = (20000f / duration.toFloat()).coerceAtMost(1f)
+                        status = "20-second draft selected. Review and adjust before exporting."
+                        player.seekTo(0)
+                    }) { Text("Create 20-second draft") }
+                }
                 Button(onClick = { picker.launch(arrayOf("video/*")) }) { Text("Import downloaded video / gallery") }
                 OutlinedTextField(value = link, onValueChange = { link = it }, label = { Text("Direct HTTPS MP4 link (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
                 Button(enabled = !downloading && link.startsWith("https://"), onClick = {
@@ -127,6 +142,7 @@ class MainActivity : ComponentActivity() {
                 Text("Links to webpages (TikTok/YouTube posts) are not direct video files; use authorized downloads.", style = MaterialTheme.typography.bodySmall)
                 AndroidView(factory = { PlayerView(it).apply { this.player = player } }, modifier = Modifier.fillMaxWidth().height(260.dp))
                 Text("Duration: ${duration / 1000}s")
+                Button(enabled = duration > 0, onClick = { player.seekTo((duration * start).toLong()); player.play() }) { Text("Preview from trim start") }
                 Text("Trim start: ${(start * duration / 1000).toInt()}s")
                 Slider(value = start, onValueChange = { start = it.coerceAtMost(end - 0.01f) }, valueRange = 0f..0.99f, enabled = duration > 0)
                 Text("Trim end: ${(end * duration / 1000).toInt()}s")
