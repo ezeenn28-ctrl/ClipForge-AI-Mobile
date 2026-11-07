@@ -2,6 +2,8 @@ package com.clipforge.mobile
 
 import android.content.Intent
 import android.net.Uri
+import android.media.MediaMetadataRetriever
+import android.graphics.Bitmap
 import android.os.Bundle
 import android.os.Environment
 import android.widget.Toast
@@ -30,7 +32,7 @@ import androidx.media3.common.Effect
 import java.io.File
 import kotlinx.coroutines.delay
 
-data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false)
+data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false, val visualScore: Int? = null)
 
 /** Transparent baseline ranking. These scores describe segment duration and coverage,
  * not measured speech, visual action, or predicted engagement. */
@@ -62,6 +64,39 @@ fun baselineDraftScore(draft: HighlightDraft, totalMs: Long): DraftScore {
     return DraftScore(clarity, context, pacing, 50)
 }
 
+/** Samples reduced-resolution frames locally. Frame differences are an activity
+ * proxy only: they do not recognize objects, speech or audience engagement. */
+fun measureVisualActivity(retriever: MediaMetadataRetriever, startMs: Long, endMs: Long): Int? {
+    var previous: IntArray? = null
+    var differences = 0.0
+    var comparisons = 0
+    val sampleCount = 5
+    for (i in 0 until sampleCount) {
+        val timeMs = startMs + (endMs - startMs) * i / sampleCount
+        val frame = retriever.getFrameAtTime(timeMs * 1000L, MediaMetadataRetriever.OPTION_CLOSEST_SYNC) ?: continue
+        val small = Bitmap.createScaledBitmap(frame, 16, 16, false)
+        val pixels = IntArray(256)
+        small.getPixels(pixels, 0, 16, 0, 0, 16, 16)
+        if (small !== frame) small.recycle()
+        frame.recycle()
+        val old = previous
+        if (old != null) {
+            var diff = 0L
+            for (j in pixels.indices) {
+                val a = pixels[j]
+                val b = old[j]
+                diff += kotlin.math.abs((a shr 16 and 255) - (b shr 16 and 255))
+                diff += kotlin.math.abs((a shr 8 and 255) - (b shr 8 and 255))
+                diff += kotlin.math.abs((a and 255) - (b and 255))
+            }
+            differences += diff.toDouble() / (256.0 * 3.0 * 255.0)
+            comparisons++
+        }
+        previous = pixels
+    }
+    return if (comparisons == 0) null else (differences / comparisons * 250.0).toInt().coerceIn(0, 100)
+}
+
 @OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -87,6 +122,7 @@ class MainActivity : ComponentActivity() {
         var link by remember { mutableStateOf("") }
         var downloading by remember { mutableStateOf(false) }
         var exporting by remember { mutableStateOf(false) }
+        var analyzing by remember { mutableStateOf(false) }
         val player = remember { ExoPlayer.Builder(this).build() }
         DisposableEffect(player) { onDispose { player.release() } }
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -128,7 +164,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #15 quality-first drafts")
+                Text("Mobile editor • Build #16 offline visual analysis")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -165,9 +201,34 @@ class MainActivity : ComponentActivity() {
                     }) { Text("Generate quality-first candidates") }
                 }
                 if (editingMode == "AI Draft" && drafts.isNotEmpty()) {
+                    Button(enabled = !analyzing && video != null && !exporting, onClick = {
+                        val source = video ?: return@Button
+                        analyzing = true
+                        status = "Sampling video frames locally…"
+                        val snapshot = drafts
+                        Thread {
+                            try {
+                                val retriever = MediaMetadataRetriever()
+                                try {
+                                    retriever.setDataSource(this@MainActivity, source)
+                                    val measured = snapshot.map { draft ->
+                                        draft.copy(visualScore = measureVisualActivity(retriever, draft.startMs, draft.endMs))
+                                    }
+                                    runOnUiThread {
+                                        drafts = measured
+                                        analyzing = false
+                                        status = "Offline visual activity measured. No media uploaded."
+                                    }
+                                } finally { retriever.release() }
+                            } catch (e: Exception) {
+                                runOnUiThread { analyzing = false; status = "Visual analysis failed: ${e.message}" }
+                            }
+                        }.start()
+                    }) { Text(if (analyzing) "Analyzing…" else "Analyze visual activity offline") }
+                    Text("Visual activity measures frame changes, not semantic scene quality. Audio and speech analysis are not implemented.", style = MaterialTheme.typography.bodySmall)
                     Text("Draft segments — tap to preview and edit", style = MaterialTheme.typography.titleMedium)
                     Text("Balanced baseline score = clarity + context + pacing + neutral engagement, each weighted 25%. This is a duration/position heuristic, not an AI prediction.", style = MaterialTheme.typography.bodySmall)
-                    drafts.withIndex().sortedByDescending { baselineDraftScore(it.value, duration).balanced }.forEach { (index, draft) ->
+                    drafts.withIndex().sortedByDescending { (baselineDraftScore(it.value, duration).balanced * 3 + (it.value.visualScore ?: 50)) / 4 }.forEach { (index, draft) ->
                         val active = selectedDraft == index
                         OutlinedButton(
                             onClick = {
@@ -180,7 +241,7 @@ class MainActivity : ComponentActivity() {
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Clip ${index + 1} • Baseline ${baselineDraftScore(draft, duration).balanced}/100 • ${draft.startMs / 1000}s–${draft.endMs / 1000}s • ${if (draft.approved) "Approved" else "Review"}${if (active) " (Selected)" else ""}")
+                            Text("Clip ${index + 1} • Score ${(baselineDraftScore(draft, duration).balanced * 3 + (draft.visualScore ?: 50)) / 4}/100 • Visual ${draft.visualScore?.toString() ?: "not measured"} • ${draft.startMs / 1000}s–${draft.endMs / 1000}s • ${if (draft.approved) "Approved" else "Review"}${if (active) " (Selected)" else ""}")
                         }
                     }
                 }
