@@ -28,10 +28,11 @@ import androidx.media3.transformer.*
 import androidx.media3.effect.Presentation
 import androidx.media3.common.Effect
 import java.io.File
+import kotlinx.coroutines.delay
 
-@OptIn(androidx.media3.common.util.UnstableApi::class)
 data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false)
 
+@OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -83,6 +84,15 @@ class MainActivity : ComponentActivity() {
             player.addListener(listener)
             onDispose { player.removeListener(listener) }
         }
+        LaunchedEffect(player, duration, start, end, video) {
+            while (true) {
+                if (duration > 0 && player.isPlaying && player.currentPosition >= (duration * end).toLong()) {
+                    player.pause()
+                    player.seekTo((duration * start).toLong())
+                }
+                delay(150)
+            }
+        }
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
@@ -94,7 +104,7 @@ class MainActivity : ComponentActivity() {
                 }
                 if (editingMode == "AI Draft") {
                     Text("Prototype only: creates up to 15 sequential 20-second draft segments, not AI-detected highlights. Review each segment individually.", style = MaterialTheme.typography.bodySmall)
-                    Button(enabled = duration >= 1000L, onClick = {
+                    Button(enabled = duration >= 1000L && !exporting, onClick = {
                         approved = false
                         val count = ((duration + 19999L) / 20000L).toInt().coerceIn(1, 15)
                         drafts = (0 until count).map { i ->
@@ -190,10 +200,10 @@ class MainActivity : ComponentActivity() {
                 Text("Review and approve", style = MaterialTheme.typography.titleMedium)
                 Text("Preview the selected segment and verify framing, audio and duration before exporting.", style = MaterialTheme.typography.bodySmall)
                 Row {
-                    Checkbox(checked = approved, enabled = video != null && duration > 0 && !exporting, onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
+                    Checkbox(checked = approved, enabled = video != null && duration > 0 && !exporting && (editingMode != "AI Draft" || selectedDraft >= 0), onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
                     Text("I reviewed and approve this clip for export")
                 }
-                Button(enabled = video != null && duration > 0 && approved && !exporting, onClick = {
+                Button(enabled = video != null && duration > 0 && approved && !exporting && (editingMode != "AI Draft" || selectedDraft >= 0), onClick = {
                     val source = video ?: return@Button
                     val outputDir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
                     val output = File(outputDir, "clipforge_${System.currentTimeMillis()}.mp4")
