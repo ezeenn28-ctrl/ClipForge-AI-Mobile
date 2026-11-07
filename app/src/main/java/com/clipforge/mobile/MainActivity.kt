@@ -45,6 +45,7 @@ class MainActivity : ComponentActivity() {
         var vertical by remember { mutableStateOf(true) }
         var mute by remember { mutableStateOf(false) }
         var editingMode by remember { mutableStateOf("Manual Editor") }
+        var approved by remember { mutableStateOf(false) }
         var status by remember { mutableStateOf("Select a video to begin") }
         var link by remember { mutableStateOf("") }
         var downloading by remember { mutableStateOf(false) }
@@ -57,6 +58,7 @@ class MainActivity : ComponentActivity() {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (_: SecurityException) {}
                 video = uri
+                approved = false
                 start = 0f
                 end = 1f
                 duration = 0L
@@ -87,6 +89,7 @@ class MainActivity : ComponentActivity() {
                 if (editingMode == "AI Draft") {
                     Text("Draft assistant (early prototype): selects an initial 20-second segment. Speech-aware AI ranking is planned for a later build.", style = MaterialTheme.typography.bodySmall)
                     Button(enabled = duration >= 1000L, onClick = {
+                        approved = false
                         start = 0f
                         end = (20000f / duration.toFloat()).coerceAtMost(1f)
                         status = "20-second draft selected. Review and adjust before exporting."
@@ -126,6 +129,7 @@ class MainActivity : ComponentActivity() {
                             connection.disconnect()
                             runOnUiThread {
                                 video = Uri.fromFile(output)
+                                approved = false
                                 start = 0f
                                 end = 1f
                                 duration = 0L
@@ -144,12 +148,19 @@ class MainActivity : ComponentActivity() {
                 Text("Duration: ${duration / 1000}s")
                 Button(enabled = duration > 0, onClick = { player.seekTo((duration * start).toLong()); player.play() }) { Text("Preview from trim start") }
                 Text("Trim start: ${(start * duration / 1000).toInt()}s")
-                Slider(value = start, onValueChange = { start = it.coerceAtMost(end - 0.01f) }, valueRange = 0f..0.99f, enabled = duration > 0)
+                Slider(value = start, onValueChange = { approved = false; start = it.coerceAtMost(end - 0.01f) }, valueRange = 0f..0.99f, enabled = duration > 0)
                 Text("Trim end: ${(end * duration / 1000).toInt()}s")
-                Slider(value = end, onValueChange = { end = it.coerceAtLeast(start + 0.01f) }, valueRange = 0.01f..1f, enabled = duration > 0)
-                Row { Checkbox(checked = vertical, onCheckedChange = { vertical = it }); Text("9:16 output canvas") }
-                Row { Checkbox(checked = mute, onCheckedChange = { mute = it }); Text("Mute original audio") }
-                Button(enabled = video != null && duration > 0 && !exporting, onClick = {
+                Slider(value = end, onValueChange = { approved = false; end = it.coerceAtLeast(start + 0.01f) }, valueRange = 0.01f..1f, enabled = duration > 0)
+                Row { Checkbox(checked = vertical, onCheckedChange = { vertical = it; approved = false }); Text("9:16 output canvas") }
+                Row { Checkbox(checked = mute, onCheckedChange = { mute = it; approved = false }); Text("Mute original audio") }
+                HorizontalDivider()
+                Text("Review and approve", style = MaterialTheme.typography.titleMedium)
+                Text("Preview the selected segment and verify framing, audio and duration before exporting.", style = MaterialTheme.typography.bodySmall)
+                Row {
+                    Checkbox(checked = approved, enabled = video != null && duration > 0 && !exporting, onCheckedChange = { approved = it })
+                    Text("I reviewed and approve this clip for export")
+                }
+                Button(enabled = video != null && duration > 0 && approved && !exporting, onClick = {
                     val source = video ?: return@Button
                     val outputDir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
                     val output = File(outputDir, "clipforge_${System.currentTimeMillis()}.mp4")
