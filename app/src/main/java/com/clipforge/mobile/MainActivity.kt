@@ -148,14 +148,14 @@ class MainActivity : ComponentActivity() {
                     status = "Exporting…"
                     val transformer = Transformer.Builder(this@MainActivity)
                         .addListener(object : Transformer.Listener {
-                            override fun onCompleted(composition: Composition, exportResult: ExportResult) {
+                            override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
                                 runOnUiThread {
                                     exporting = false
                                     status = "Saved: ${output.absolutePath}"
                                     Toast.makeText(this@MainActivity, "Export complete", Toast.LENGTH_LONG).show()
                                 }
                             }
-                            override fun onError(composition: Composition, exportResult: ExportResult, exportException: ExportException) {
+                            override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
                                 runOnUiThread { exporting = false; status = "Export failed: ${exportException.message}" }
                             }
                         }).build()
