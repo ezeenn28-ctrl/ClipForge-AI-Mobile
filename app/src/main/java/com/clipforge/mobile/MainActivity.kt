@@ -48,6 +48,8 @@ class MainActivity : ComponentActivity() {
         var vertical by remember { mutableStateOf(true) }
         var mute by remember { mutableStateOf(false) }
         var editingMode by remember { mutableStateOf("Manual Editor") }
+        var cloudConsent by remember { mutableStateOf(false) }
+        var cloudDialog by remember { mutableStateOf(false) }
         var approved by remember { mutableStateOf(false) }
         var drafts by remember { mutableStateOf<List<HighlightDraft>>(emptyList()) }
         var selectedDraft by remember { mutableIntStateOf(-1) }
@@ -96,11 +98,29 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Draft review prototype")
+                Text("Mobile editor • Hybrid privacy prototype")
+                Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
+                Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
+                Row {
+                    Checkbox(checked = cloudConsent, onCheckedChange = { enabled ->
+                        if (enabled) cloudDialog = true else cloudConsent = false
+                    })
+                    Text("Allow optional cloud AI for this session")
+                }
+                if (cloudDialog) {
+                    AlertDialog(
+                        onDismissRequest = { cloudDialog = false },
+                        title = { Text("Optional cloud AI permission") },
+                        text = { Text("Future cloud analysis may transmit selected video/audio to an external processor. This prototype does not upload media or connect to an AI provider. Permission is off by default and is not saved between sessions.") },
+                        confirmButton = { TextButton(onClick = { cloudConsent = true; cloudDialog = false }) { Text("Allow for this session") } },
+                        dismissButton = { TextButton(onClick = { cloudDialog = false }) { Text("Keep offline") } }
+                    )
+                }
+                Text(if (cloudConsent) "Cloud permission granted, but cloud processing is not available yet." else "Offline-only analysis mode active.", style = MaterialTheme.typography.bodySmall)
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; approved = false }, label = { Text("Manual Editor") })
-                    FilterChip(selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft"; approved = false }, label = { Text("AI Draft") })
+                    FilterChip(selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft"; approved = false; selectedDraft = -1 }, label = { Text("AI Draft") })
                 }
                 if (editingMode == "AI Draft") {
                     Text("Prototype only: creates up to 15 sequential 20-second draft segments, not AI-detected highlights. Review each segment individually.", style = MaterialTheme.typography.bodySmall)
