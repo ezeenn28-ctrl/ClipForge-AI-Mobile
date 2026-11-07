@@ -8,9 +8,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
-import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.BitmapOverlay
-import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.OverlayEffect
 import android.os.Bundle
 import android.os.Environment
@@ -183,8 +181,6 @@ fun timedCaptionOverlay(
     return object : BitmapOverlay() {
         override fun getBitmap(presentationTimeUs: Long): Bitmap =
             if (untilUs <= fromUs || presentationTimeUs in fromUs until untilUs) withCaption else withoutCaption
-        override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
-            StaticOverlaySettings.Builder().build()
     }
 }
 
