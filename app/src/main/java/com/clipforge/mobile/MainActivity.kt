@@ -8,7 +8,9 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Typeface
+import androidx.media3.effect.OverlaySettings
 import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.StaticOverlaySettings
 import androidx.media3.effect.OverlayEffect
 import android.os.Bundle
 import android.os.Environment
@@ -109,6 +111,27 @@ fun makeCaptionOverlay(hook: String, caption: String): Bitmap {
         }
     }
     return bitmap
+}
+
+/** Video timestamps are relative to the exported trimmed clip.
+ * Hook stays visible; subtitle appears only during the chosen time interval. */
+fun timedCaptionOverlay(
+    hook: String,
+    caption: String,
+    startMs: Long,
+    endMs: Long,
+    trimStartMs: Long
+): BitmapOverlay {
+    val withCaption = makeCaptionOverlay(hook, caption)
+    val withoutCaption = makeCaptionOverlay(hook, "")
+    val fromUs = (startMs - trimStartMs).coerceAtLeast(0L) * 1000L
+    val untilUs = (endMs - trimStartMs).coerceAtLeast(0L) * 1000L
+    return object : BitmapOverlay() {
+        override fun getBitmap(presentationTimeUs: Long): Bitmap =
+            if (untilUs <= fromUs || presentationTimeUs in fromUs until untilUs) withCaption else withoutCaption
+        override fun getOverlaySettings(presentationTimeUs: Long): OverlaySettings =
+            StaticOverlaySettings.Builder().build()
+    }
 }
 
 /** Samples reduced-resolution frames locally. Frame differences are an activity
@@ -218,7 +241,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #20 timed caption editor")
+                Text("Mobile editor • Build #21 timed MP4 subtitle export")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -412,7 +435,7 @@ class MainActivity : ComponentActivity() {
                             approved = false
                         }, label = { Text("To (s)") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
-                    Text("Timed preview is available; MP4 export still burns captions across the entire selected clip. Accurate timed export and automatic file transcription are not implemented.", style = MaterialTheme.typography.bodySmall)
+                    Text("Timed preview is available; MP4 export now uses the selected caption interval; automatic transcription is not yet implemented.", style = MaterialTheme.typography.bodySmall)
                     Text("Planned effect (not rendered)", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("None", "Zoom", "Fade").forEach { option ->
@@ -444,7 +467,11 @@ class MainActivity : ComponentActivity() {
                     val effects = mutableListOf<Effect>()
                     if (vertical) effects.add(Presentation.createForAspectRatio(9f / 16f, Presentation.LAYOUT_SCALE_TO_FIT))
                     if (editingMode == "AI Draft" && (hookText.isNotBlank() || captionText.isNotBlank())) {
-                        val overlay = BitmapOverlay.createStaticBitmapOverlay(makeCaptionOverlay(hookText, captionText))
+                        val draft = drafts.getOrNull(selectedDraft)
+                        val trimStartMs = (duration * start).toLong()
+                        val overlay = if (draft != null) {
+                            timedCaptionOverlay(hookText, captionText, draft.captionStartMs, draft.captionEndMs, trimStartMs)
+                        } else BitmapOverlay.createStaticBitmapOverlay(makeCaptionOverlay(hookText, captionText))
                         effects.add(OverlayEffect(listOf(overlay)))
                     }
                     val edited = EditedMediaItem.Builder(item).setRemoveAudio(mute).setEffects(Effects(emptyList(), effects)).build()
