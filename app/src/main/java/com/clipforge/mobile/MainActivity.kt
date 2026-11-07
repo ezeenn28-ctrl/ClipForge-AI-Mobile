@@ -26,6 +26,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
@@ -210,7 +214,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #18 caption rendering prototype")
+                Text("Mobile editor • Build #19 caption overlay preview")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -347,7 +351,24 @@ class MainActivity : ComponentActivity() {
                     }.start()
                 }) { Text(if (downloading) "Downloading…" else "Import direct link") }
                 Text("Links to webpages (TikTok/YouTube posts) are not direct video files; use authorized downloads.", style = MaterialTheme.typography.bodySmall)
-                AndroidView(factory = { PlayerView(it).apply { this.player = player } }, modifier = Modifier.fillMaxWidth().height(260.dp))
+                Box(modifier = Modifier.fillMaxWidth().height(360.dp), contentAlignment = Alignment.Center) {
+                    AndroidView(
+                        factory = { PlayerView(it).apply { this.player = player } },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                    if (editingMode == "AI Draft" && selectedDraft in drafts.indices &&
+                        (hookText.isNotBlank() || captionText.isNotBlank())) {
+                        val previewBitmap = remember(hookText, captionText) {
+                            makeCaptionOverlay(hookText, captionText).asImageBitmap()
+                        }
+                        Image(
+                            bitmap = previewBitmap,
+                            contentDescription = "Preview of static captions rendered on export",
+                            modifier = Modifier.fillMaxHeight().aspectRatio(9f / 16f),
+                            contentScale = ContentScale.FillBounds
+                        )
+                    }
+                }
                 Text("Duration: ${duration / 1000}s")
                 Button(enabled = duration > 0, onClick = { player.seekTo((duration * start).toLong()); player.play() }) { Text("Preview from trim start") }
                 Text("Trim start: ${(start * duration / 1000).toInt()}s")
@@ -384,7 +405,7 @@ class MainActivity : ComponentActivity() {
                 }
                 HorizontalDivider()
                 Text("Review and approve", style = MaterialTheme.typography.titleMedium)
-                Text("Preview the selected segment and verify framing, audio and duration. Static hook/caption overlays will be included in export, but planned zoom/fade effects are NOT rendered. Preview does not yet show overlays.", style = MaterialTheme.typography.bodySmall)
+                Text("Preview the selected segment and verify framing, audio and duration. Static hook/caption overlays will be included in export, but planned zoom/fade effects are NOT rendered. Preview now shows the same static text bitmap used for export, but device aspect-ratio and crop differences may affect exact placement.", style = MaterialTheme.typography.bodySmall)
                 Row {
                     Checkbox(checked = approved, enabled = video != null && duration > 0 && !exporting && (editingMode != "AI Draft" || selectedDraft >= 0), onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
                     Text("I reviewed and approve this clip for export")
