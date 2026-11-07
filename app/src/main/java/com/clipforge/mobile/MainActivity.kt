@@ -37,6 +37,19 @@ data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Bool
 data class DraftScore(val clarity: Int, val context: Int, val pacing: Int, val engagement: Int) {
     val balanced: Int get() = (clarity + context + pacing + engagement) / 4
 }
+/** Quality-first candidate coverage: overlapping 20s windows distributed across
+ * the entire source. This does not inspect video/audio content. */
+fun generateQualityCandidates(totalMs: Long): List<HighlightDraft> {
+    if (totalMs <= 0L) return emptyList()
+    val clipMs = minOf(20000L, totalMs)
+    if (totalMs <= clipMs) return listOf(HighlightDraft(0L, totalMs))
+    val lastStart = totalMs - clipMs
+    val count = minOf(15, (lastStart / 10000L + 2L).toInt())
+    return (0 until count).map { index ->
+        val startMs = (lastStart * index / (count - 1)).coerceIn(0L, lastStart)
+        HighlightDraft(startMs, startMs + clipMs)
+    }.distinctBy { it.startMs }
+}
 fun baselineDraftScore(draft: HighlightDraft, totalMs: Long): DraftScore {
     val length = (draft.endMs - draft.startMs).coerceAtLeast(0L)
     val clarity = if (length >= 10000L) 75 else 35
@@ -115,7 +128,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Hybrid privacy prototype")
+                Text("Mobile editor • Build #15 quality-first drafts")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -140,20 +153,16 @@ class MainActivity : ComponentActivity() {
                     FilterChip(selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft"; approved = false; selectedDraft = -1 }, label = { Text("AI Draft") })
                 }
                 if (editingMode == "AI Draft") {
-                    Text("Prototype only: creates up to 15 sequential 20-second draft segments, not AI-detected highlights. Review each segment individually.", style = MaterialTheme.typography.bodySmall)
+                    Text("Quality-first prototype: creates up to 15 overlapping 20-second candidates covering the entire video. No speech, visual or audio AI detection yet. Review each segment individually.", style = MaterialTheme.typography.bodySmall)
                     Button(enabled = duration >= 1000L && !exporting, onClick = {
                         approved = false
-                        val count = ((duration + 19999L) / 20000L).toInt().coerceIn(1, 15)
-                        drafts = (0 until count).map { i ->
-                            val begin = i * 20000L
-                            HighlightDraft(begin, (begin + 20000L).coerceAtMost(duration))
-                        }
+                        drafts = generateQualityCandidates(duration)
                         selectedDraft = 0
                         start = 0f
                         end = drafts.first().endMs.toFloat() / duration.toFloat()
-                        status = "${drafts.size} draft segments created. These are evenly spaced, NOT AI-ranked highlights."
+                        status = "${drafts.size} draft segments created. These are overlapping coverage candidates, NOT AI-ranked highlights."
                         player.seekTo(0)
-                    }) { Text("Generate draft segments") }
+                    }) { Text("Generate quality-first candidates") }
                 }
                 if (editingMode == "AI Draft" && drafts.isNotEmpty()) {
                     Text("Draft segments — tap to preview and edit", style = MaterialTheme.typography.titleMedium)
