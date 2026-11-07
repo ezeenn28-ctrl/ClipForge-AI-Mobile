@@ -32,6 +32,23 @@ import kotlinx.coroutines.delay
 
 data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false)
 
+/** Transparent baseline ranking. These scores describe segment duration and coverage,
+ * not measured speech, visual action, or predicted engagement. */
+data class DraftScore(val clarity: Int, val context: Int, val pacing: Int, val engagement: Int) {
+    val balanced: Int get() = (clarity + context + pacing + engagement) / 4
+}
+fun baselineDraftScore(draft: HighlightDraft, totalMs: Long): DraftScore {
+    val length = (draft.endMs - draft.startMs).coerceAtLeast(0L)
+    val clarity = if (length >= 10000L) 75 else 35
+    val context = if (draft.startMs >= 5000L && draft.endMs < totalMs - 3000L) 65 else 45
+    val pacing = when (length) {
+        in 12000L..30000L -> 80
+        in 5000L..45000L -> 60
+        else -> 30
+    }
+    return DraftScore(clarity, context, pacing, 50)
+}
+
 @OptIn(androidx.media3.common.util.UnstableApi::class)
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -140,7 +157,8 @@ class MainActivity : ComponentActivity() {
                 }
                 if (editingMode == "AI Draft" && drafts.isNotEmpty()) {
                     Text("Draft segments — tap to preview and edit", style = MaterialTheme.typography.titleMedium)
-                    drafts.forEachIndexed { index, draft ->
+                    Text("Balanced baseline score = clarity + context + pacing + neutral engagement, each weighted 25%. This is a duration/position heuristic, not an AI prediction.", style = MaterialTheme.typography.bodySmall)
+                    drafts.withIndex().sortedByDescending { baselineDraftScore(it.value, duration).balanced }.forEach { (index, draft) ->
                         val active = selectedDraft == index
                         OutlinedButton(
                             onClick = {
@@ -153,7 +171,7 @@ class MainActivity : ComponentActivity() {
                             },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Clip ${index + 1}: ${draft.startMs / 1000}s–${draft.endMs / 1000}s  •  ${if (draft.approved) "Approved" else "Needs review"}${if (active) "  (Selected)" else ""}")
+                            Text("Clip ${index + 1} • Baseline ${baselineDraftScore(draft, duration).balanced}/100 • ${draft.startMs / 1000}s–${draft.endMs / 1000}s • ${if (draft.approved) "Approved" else "Review"}${if (active) " (Selected)" else ""}")
                         }
                     }
                 }
