@@ -42,7 +42,7 @@ import androidx.media3.common.Effect
 import java.io.File
 import kotlinx.coroutines.delay
 
-data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false, val visualScore: Int? = null, val hook: String = "", val caption: String = "", val effect: String = "None")
+data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false, val visualScore: Int? = null, val hook: String = "", val caption: String = "", val effect: String = "None", val captionStartMs: Long = 0L, val captionEndMs: Long = 0L)
 
 /** Transparent baseline ranking. These scores describe segment duration and coverage,
  * not measured speech, visual action, or predicted engagement. */
@@ -168,6 +168,9 @@ class MainActivity : ComponentActivity() {
         var hookText by remember { mutableStateOf("") }
         var captionText by remember { mutableStateOf("") }
         var effectChoice by remember { mutableStateOf("None") }
+        var captionFrom by remember { mutableStateOf("0") }
+        var captionTo by remember { mutableStateOf("5") }
+        var previewPosition by remember { mutableLongStateOf(0L) }
         var status by remember { mutableStateOf("Select a video to begin") }
         var link by remember { mutableStateOf("") }
         var downloading by remember { mutableStateOf(false) }
@@ -208,13 +211,14 @@ class MainActivity : ComponentActivity() {
                     player.pause()
                     player.seekTo((duration * start).toLong())
                 }
+                previewPosition = player.currentPosition.coerceAtLeast(0L)
                 delay(150)
             }
         }
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #19 caption overlay preview")
+                Text("Mobile editor • Build #20 timed caption editor")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -292,6 +296,8 @@ class MainActivity : ComponentActivity() {
                                 hookText = draft.hook
                                 captionText = draft.caption
                                 effectChoice = draft.effect
+                                captionFrom = (draft.captionStartMs / 1000L).toString()
+                                captionTo = (draft.captionEndMs / 1000L).toString()
                                 player.seekTo(draft.startMs)
                                 player.play()
                             },
@@ -357,7 +363,7 @@ class MainActivity : ComponentActivity() {
                         modifier = Modifier.fillMaxSize()
                     )
                     if (editingMode == "AI Draft" && selectedDraft in drafts.indices &&
-                        (hookText.isNotBlank() || captionText.isNotBlank())) {
+                        (hookText.isNotBlank() || captionText.isNotBlank() && (previewPosition in (drafts[selectedDraft].captionStartMs..drafts[selectedDraft].captionEndMs) || drafts[selectedDraft].captionEndMs <= drafts[selectedDraft].captionStartMs))) {
                         val previewBitmap = remember(hookText, captionText) {
                             makeCaptionOverlay(hookText, captionText).asImageBitmap()
                         }
@@ -391,6 +397,22 @@ class MainActivity : ComponentActivity() {
                         approved = false
                         drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(caption = value, approved = false) }
                     }, label = { Text("Subtitle / caption draft") }, modifier = Modifier.fillMaxWidth())
+                    Text("Caption timing (seconds within source video)", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(value = captionFrom, onValueChange = { value ->
+                            captionFrom = value.filter { it.isDigit() }.take(7)
+                            val ms = (captionFrom.toLongOrNull() ?: 0L) * 1000L
+                            drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(captionStartMs = ms, approved = false) }
+                            approved = false
+                        }, label = { Text("From (s)") }, modifier = Modifier.weight(1f), singleLine = true)
+                        OutlinedTextField(value = captionTo, onValueChange = { value ->
+                            captionTo = value.filter { it.isDigit() }.take(7)
+                            val ms = (captionTo.toLongOrNull() ?: 0L) * 1000L
+                            drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(captionEndMs = ms, approved = false) }
+                            approved = false
+                        }, label = { Text("To (s)") }, modifier = Modifier.weight(1f), singleLine = true)
+                    }
+                    Text("Timed preview is available; MP4 export still burns captions across the entire selected clip. Accurate timed export and automatic file transcription are not implemented.", style = MaterialTheme.typography.bodySmall)
                     Text("Planned effect (not rendered)", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("None", "Zoom", "Fade").forEach { option ->
