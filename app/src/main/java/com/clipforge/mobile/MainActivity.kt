@@ -32,7 +32,7 @@ import androidx.media3.common.Effect
 import java.io.File
 import kotlinx.coroutines.delay
 
-data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false, val visualScore: Int? = null)
+data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false, val visualScore: Int? = null, val hook: String = "", val caption: String = "", val effect: String = "None")
 
 /** Transparent baseline ranking. These scores describe segment duration and coverage,
  * not measured speech, visual action, or predicted engagement. */
@@ -118,6 +118,9 @@ class MainActivity : ComponentActivity() {
         var approved by remember { mutableStateOf(false) }
         var drafts by remember { mutableStateOf<List<HighlightDraft>>(emptyList()) }
         var selectedDraft by remember { mutableIntStateOf(-1) }
+        var hookText by remember { mutableStateOf("") }
+        var captionText by remember { mutableStateOf("") }
+        var effectChoice by remember { mutableStateOf("None") }
         var status by remember { mutableStateOf("Select a video to begin") }
         var link by remember { mutableStateOf("") }
         var downloading by remember { mutableStateOf(false) }
@@ -164,7 +167,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #16 offline visual analysis")
+                Text("Mobile editor • Build #17 creative draft review")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -194,6 +197,9 @@ class MainActivity : ComponentActivity() {
                         approved = false
                         drafts = generateQualityCandidates(duration)
                         selectedDraft = 0
+                        hookText = ""
+                        captionText = ""
+                        effectChoice = "None"
                         start = 0f
                         end = drafts.first().endMs.toFloat() / duration.toFloat()
                         status = "${drafts.size} draft segments created. These are overlapping coverage candidates, NOT AI-ranked highlights."
@@ -236,6 +242,9 @@ class MainActivity : ComponentActivity() {
                                 start = draft.startMs.toFloat() / duration.toFloat()
                                 end = draft.endMs.toFloat() / duration.toFloat()
                                 approved = draft.approved
+                                hookText = draft.hook
+                                captionText = draft.caption
+                                effectChoice = draft.effect
                                 player.seekTo(draft.startMs)
                                 player.play()
                             },
@@ -304,9 +313,35 @@ class MainActivity : ComponentActivity() {
                 Slider(value = end, onValueChange = { approved = false; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(endMs = (duration * it.coerceAtLeast(start + 0.01f)).toLong(), approved = false) }; end = it.coerceAtLeast(start + 0.01f) }, valueRange = 0.01f..1f, enabled = duration > 0)
                 Row { Checkbox(checked = vertical, onCheckedChange = { vertical = it; approved = false; drafts = drafts.map { draft -> draft.copy(approved = false) } }); Text("9:16 output canvas") }
                 Row { Checkbox(checked = mute, onCheckedChange = { mute = it; approved = false; drafts = drafts.map { draft -> draft.copy(approved = false) } }); Text("Mute original audio") }
+                if (editingMode == "AI Draft" && selectedDraft in drafts.indices) {
+                    HorizontalDivider()
+                    Text("Clip draft creative notes", style = MaterialTheme.typography.titleMedium)
+                    Text("These fields are editable draft metadata only. Text and effects are not burned into the exported MP4 yet.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(value = hookText, onValueChange = { value ->
+                        hookText = value
+                        approved = false
+                        drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(hook = value, approved = false) }
+                    }, label = { Text("Opening hook text") }, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(value = captionText, onValueChange = { value ->
+                        captionText = value
+                        approved = false
+                        drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(caption = value, approved = false) }
+                    }, label = { Text("Subtitle / caption draft") }, modifier = Modifier.fillMaxWidth())
+                    Text("Planned effect (not rendered)", style = MaterialTheme.typography.bodySmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("None", "Zoom", "Fade").forEach { option ->
+                            FilterChip(selected = effectChoice == option, onClick = {
+                                effectChoice = option
+                                approved = false
+                                drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(effect = option, approved = false) }
+                            }, label = { Text(option) })
+                        }
+                    }
+                    Text("Review draft: ${if (hookText.isBlank()) "No hook" else hookText} | ${if (captionText.isBlank()) "No subtitles" else captionText} | Effect: $effectChoice", style = MaterialTheme.typography.bodySmall)
+                }
                 HorizontalDivider()
                 Text("Review and approve", style = MaterialTheme.typography.titleMedium)
-                Text("Preview the selected segment and verify framing, audio and duration before exporting.", style = MaterialTheme.typography.bodySmall)
+                Text("Preview the selected segment and verify framing, audio and duration. Draft text and planned effects are NOT included in the exported MP4.", style = MaterialTheme.typography.bodySmall)
                 Row {
                     Checkbox(checked = approved, enabled = video != null && duration > 0 && !exporting && (editingMode != "AI Draft" || selectedDraft >= 0), onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
                     Text("I reviewed and approve this clip for export")
