@@ -4,6 +4,12 @@ import android.content.Intent
 import android.net.Uri
 import android.media.MediaMetadataRetriever
 import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
+import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.OverlayEffect
 import android.os.Bundle
 import android.os.Environment
 import android.widget.Toast
@@ -62,6 +68,43 @@ fun baselineDraftScore(draft: HighlightDraft, totalMs: Long): DraftScore {
         else -> 30
     }
     return DraftScore(clarity, context, pacing, 50)
+}
+
+/** Static, bold, high-contrast caption card. Keywords prefixed with # are yellow.
+ * This is a persistent overlay, not speech-synchronized transcription. */
+fun makeCaptionOverlay(hook: String, caption: String): Bitmap {
+    val bitmap = Bitmap.createBitmap(720, 1280, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.CENTER
+        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        setShadowLayer(5f, 2f, 3f, Color.BLACK)
+    }
+    val lines = listOf(hook.take(65), caption.take(100)).filter { it.isNotBlank() }
+    lines.forEachIndexed { index, line ->
+        val words = line.split(Regex("\\s+"))
+        val chunks = mutableListOf<String>()
+        var current = ""
+        words.forEach { word ->
+            val next = if (current.isEmpty()) word else "$current $word"
+            if (next.length > 22 && current.isNotEmpty()) { chunks.add(current); current = word }
+            else current = next
+        }
+        if (current.isNotBlank()) chunks.add(current)
+        paint.textSize = if (index == 0) 45f else 39f
+        chunks.take(3).forEachIndexed { row, text ->
+            val y = (if (index == 0) 210 else 970) + row * 55
+            val clean = text.replace("#", "")
+            paint.color = Color.BLACK
+            paint.style = Paint.Style.STROKE
+            paint.strokeWidth = 9f
+            canvas.drawText(clean, 360f, y.toFloat(), paint)
+            paint.style = Paint.Style.FILL
+            paint.color = if ('#' in text) Color.YELLOW else Color.WHITE
+            canvas.drawText(clean, 360f, y.toFloat(), paint)
+        }
+    }
+    return bitmap
 }
 
 /** Samples reduced-resolution frames locally. Frame differences are an activity
@@ -167,7 +210,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #17 creative draft review")
+                Text("Mobile editor • Build #18 caption rendering prototype")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -316,7 +359,7 @@ class MainActivity : ComponentActivity() {
                 if (editingMode == "AI Draft" && selectedDraft in drafts.indices) {
                     HorizontalDivider()
                     Text("Clip draft creative notes", style = MaterialTheme.typography.titleMedium)
-                    Text("These fields are editable draft metadata only. Text and effects are not burned into the exported MP4 yet.", style = MaterialTheme.typography.bodySmall)
+                    Text("Hook and caption text are rendered as static bold overlays on export. Prefix a line with # to highlight it yellow. Word timing and automatic transcription are not yet available.", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(value = hookText, onValueChange = { value ->
                         hookText = value
                         approved = false
@@ -341,7 +384,7 @@ class MainActivity : ComponentActivity() {
                 }
                 HorizontalDivider()
                 Text("Review and approve", style = MaterialTheme.typography.titleMedium)
-                Text("Preview the selected segment and verify framing, audio and duration. Draft text and planned effects are NOT included in the exported MP4.", style = MaterialTheme.typography.bodySmall)
+                Text("Preview the selected segment and verify framing, audio and duration. Static hook/caption overlays will be included in export, but planned zoom/fade effects are NOT rendered. Preview does not yet show overlays.", style = MaterialTheme.typography.bodySmall)
                 Row {
                     Checkbox(checked = approved, enabled = video != null && duration > 0 && !exporting && (editingMode != "AI Draft" || selectedDraft >= 0), onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
                     Text("I reviewed and approve this clip for export")
@@ -355,7 +398,12 @@ class MainActivity : ComponentActivity() {
                         .setEndPositionMs((duration * end).toLong())
                         .build()
                     val item = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
-                    val effects: List<Effect> = if (vertical) listOf(Presentation.createForAspectRatio(9f / 16f, Presentation.LAYOUT_SCALE_TO_FIT)) else emptyList()
+                    val effects = mutableListOf<Effect>()
+                    if (vertical) effects.add(Presentation.createForAspectRatio(9f / 16f, Presentation.LAYOUT_SCALE_TO_FIT))
+                    if (editingMode == "AI Draft" && (hookText.isNotBlank() || captionText.isNotBlank())) {
+                        val overlay = BitmapOverlay.createStaticBitmapOverlay(makeCaptionOverlay(hookText, captionText))
+                        effects.add(OverlayEffect(listOf(overlay)))
+                    }
                     val edited = EditedMediaItem.Builder(item).setRemoveAudio(mute).setEffects(Effects(emptyList(), effects)).build()
                     exporting = true
                     status = "Exporting…"
