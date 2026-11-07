@@ -295,7 +295,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #23 local audio preparation")
+                Text("Mobile editor • Build #24 offline transcription readiness")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -315,7 +315,9 @@ class MainActivity : ComponentActivity() {
                 }
                 Text(if (cloudConsent) "Cloud permission granted, but cloud processing is not available yet." else "Offline-only analysis mode active.", style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
-                Text("Offline transcription models", style = MaterialTheme.typography.titleMedium)
+                Text("Offline transcription • Build #24", style = MaterialTheme.typography.titleMedium)
+                Text("Planned: automatic English/Tagalog detection, including Taglish. Current stage: verify local audio and model prerequisites; native Whisper inference is not installed.", style = MaterialTheme.typography.bodySmall)
+                Text("Transcription prerequisites: ${if (video != null) "video selected" else "select video"} • ${if (modelReady) "model installed" else "download model"}", style = MaterialTheme.typography.bodySmall)
                 Text("English + Filipino/Tagalog: multilingual Whisper tiny (~78 MB). One-time verified download; no video is uploaded. The speech inference engine is not integrated yet.", style = MaterialTheme.typography.bodySmall)
                 Text(if (modelReady) "Multilingual model downloaded" else if (modelDownloading) "Downloading model: $modelProgress%" else "Model not installed")
                 Button(enabled = !modelDownloading, onClick = {
