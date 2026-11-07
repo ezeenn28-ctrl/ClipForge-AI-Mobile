@@ -30,6 +30,8 @@ import androidx.media3.common.Effect
 import java.io.File
 
 @OptIn(androidx.media3.common.util.UnstableApi::class)
+data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,6 +48,8 @@ class MainActivity : ComponentActivity() {
         var mute by remember { mutableStateOf(false) }
         var editingMode by remember { mutableStateOf("Manual Editor") }
         var approved by remember { mutableStateOf(false) }
+        var drafts by remember { mutableStateOf<List<HighlightDraft>>(emptyList()) }
+        var selectedDraft by remember { mutableIntStateOf(-1) }
         var status by remember { mutableStateOf("Select a video to begin") }
         var link by remember { mutableStateOf("") }
         var downloading by remember { mutableStateOf(false) }
@@ -58,6 +62,8 @@ class MainActivity : ComponentActivity() {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (_: SecurityException) {}
                 video = uri
+                drafts = emptyList()
+                selectedDraft = -1
                 approved = false
                 start = 0f
                 end = 1f
@@ -80,21 +86,46 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #1")
+                Text("Mobile editor • Draft review prototype")
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor" }, label = { Text("Manual Editor") })
-                    FilterChip(selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft" }, label = { Text("AI Draft") })
+                    FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; approved = false }, label = { Text("Manual Editor") })
+                    FilterChip(selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft"; approved = false }, label = { Text("AI Draft") })
                 }
                 if (editingMode == "AI Draft") {
-                    Text("Draft assistant (early prototype): selects an initial 20-second segment. Speech-aware AI ranking is planned for a later build.", style = MaterialTheme.typography.bodySmall)
+                    Text("Prototype only: creates up to 15 sequential 20-second draft segments, not AI-detected highlights. Review each segment individually.", style = MaterialTheme.typography.bodySmall)
                     Button(enabled = duration >= 1000L, onClick = {
                         approved = false
+                        val count = ((duration + 19999L) / 20000L).toInt().coerceIn(1, 15)
+                        drafts = (0 until count).map { i ->
+                            val begin = i * 20000L
+                            HighlightDraft(begin, (begin + 20000L).coerceAtMost(duration))
+                        }
+                        selectedDraft = 0
                         start = 0f
-                        end = (20000f / duration.toFloat()).coerceAtMost(1f)
-                        status = "20-second draft selected. Review and adjust before exporting."
+                        end = drafts.first().endMs.toFloat() / duration.toFloat()
+                        status = "${drafts.size} draft segments created. These are evenly spaced, NOT AI-ranked highlights."
                         player.seekTo(0)
-                    }) { Text("Create 20-second draft") }
+                    }) { Text("Generate draft segments") }
+                }
+                if (editingMode == "AI Draft" && drafts.isNotEmpty()) {
+                    Text("Draft segments — tap to preview and edit", style = MaterialTheme.typography.titleMedium)
+                    drafts.forEachIndexed { index, draft ->
+                        val active = selectedDraft == index
+                        OutlinedButton(
+                            onClick = {
+                                selectedDraft = index
+                                start = draft.startMs.toFloat() / duration.toFloat()
+                                end = draft.endMs.toFloat() / duration.toFloat()
+                                approved = draft.approved
+                                player.seekTo(draft.startMs)
+                                player.play()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Clip ${index + 1}: ${draft.startMs / 1000}s–${draft.endMs / 1000}s  •  ${if (draft.approved) "Approved" else "Needs review"}${if (active) "  (Selected)" else ""}")
+                        }
+                    }
                 }
                 Button(onClick = { picker.launch(arrayOf("video/*")) }) { Text("Import downloaded video / gallery") }
                 OutlinedTextField(value = link, onValueChange = { link = it }, label = { Text("Direct HTTPS MP4 link (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -129,6 +160,8 @@ class MainActivity : ComponentActivity() {
                             connection.disconnect()
                             runOnUiThread {
                                 video = Uri.fromFile(output)
+                                drafts = emptyList()
+                                selectedDraft = -1
                                 approved = false
                                 start = 0f
                                 end = 1f
@@ -148,16 +181,16 @@ class MainActivity : ComponentActivity() {
                 Text("Duration: ${duration / 1000}s")
                 Button(enabled = duration > 0, onClick = { player.seekTo((duration * start).toLong()); player.play() }) { Text("Preview from trim start") }
                 Text("Trim start: ${(start * duration / 1000).toInt()}s")
-                Slider(value = start, onValueChange = { approved = false; start = it.coerceAtMost(end - 0.01f) }, valueRange = 0f..0.99f, enabled = duration > 0)
+                Slider(value = start, onValueChange = { approved = false; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(startMs = (duration * it.coerceAtMost(end - 0.01f)).toLong(), approved = false) }; start = it.coerceAtMost(end - 0.01f) }, valueRange = 0f..0.99f, enabled = duration > 0)
                 Text("Trim end: ${(end * duration / 1000).toInt()}s")
-                Slider(value = end, onValueChange = { approved = false; end = it.coerceAtLeast(start + 0.01f) }, valueRange = 0.01f..1f, enabled = duration > 0)
+                Slider(value = end, onValueChange = { approved = false; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(endMs = (duration * it.coerceAtLeast(start + 0.01f)).toLong(), approved = false) }; end = it.coerceAtLeast(start + 0.01f) }, valueRange = 0.01f..1f, enabled = duration > 0)
                 Row { Checkbox(checked = vertical, onCheckedChange = { vertical = it; approved = false }); Text("9:16 output canvas") }
                 Row { Checkbox(checked = mute, onCheckedChange = { mute = it; approved = false }); Text("Mute original audio") }
                 HorizontalDivider()
                 Text("Review and approve", style = MaterialTheme.typography.titleMedium)
                 Text("Preview the selected segment and verify framing, audio and duration before exporting.", style = MaterialTheme.typography.bodySmall)
                 Row {
-                    Checkbox(checked = approved, enabled = video != null && duration > 0 && !exporting, onCheckedChange = { approved = it })
+                    Checkbox(checked = approved, enabled = video != null && duration > 0 && !exporting, onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
                     Text("I reviewed and approve this clip for export")
                 }
                 Button(enabled = video != null && duration > 0 && approved && !exporting, onClick = {
