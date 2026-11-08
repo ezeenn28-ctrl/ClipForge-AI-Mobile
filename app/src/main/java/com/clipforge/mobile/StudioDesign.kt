@@ -2,6 +2,9 @@ package com.clipforge.mobile
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -33,6 +36,7 @@ private val studioColors = darkColorScheme(
     primary = Color(0xFF85E6C4), onPrimary = Color(0xFF09251B),
     primaryContainer = Color(0xFF183A30), onPrimaryContainer = Color(0xFFB8F7DE),
     secondary = Color(0xFFB6BFFF), onSecondary = Color(0xFF202548),
+    secondaryContainer = Color(0xFF223148), onSecondaryContainer = Color(0xFFD5DFFF),
     background = Color(0xFF0B1018), onBackground = Color(0xFFEDF2F8),
     surface = Color(0xFF131C28), onSurface = Color(0xFFEDF2F8),
     surfaceVariant = Color(0xFF1B2838), onSurfaceVariant = Color(0xFFAAB9CB),
@@ -88,6 +92,7 @@ fun StudioNavigation(selected: StudioTab, onSelect: (StudioTab) -> Unit) {
     NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
         StudioTab.entries.forEach { tab ->
             NavigationBarItem(selected = selected == tab, onClick = { onSelect(tab) },
+                colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer),
                 icon = { StudioNavIcon(tab, selected == tab) },
                 label = { Text(tab.label, fontSize = 11.sp, fontWeight = FontWeight.Medium) })
         }
@@ -168,13 +173,16 @@ fun StudioActivity(message: String, active: Boolean, percent: Int = -1) {
 }
 
 @Composable
-fun ClipReviewCard(index: Int, draft: HighlightDraft, active: Boolean, score: Int, enabled: Boolean, onClick: () -> Unit) {
+fun ClipReviewCard(index: Int, draft: HighlightDraft, active: Boolean, score: Int, enabled: Boolean, thumbnail: android.graphics.Bitmap? = null, onClick: () -> Unit) {
     Surface(onClick = onClick, enabled = enabled, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
         color = if (active) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         border = BorderStroke(if (active) 1.5.dp else 1.dp, if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(Modifier.size(44.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.background) {
-                Box(contentAlignment = Alignment.Center) { Text((index + 1).toString().padStart(2, '0'), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) }
+            Surface(Modifier.width(52.dp).height(66.dp), shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.background) {
+                Box(contentAlignment = Alignment.Center) {
+                    if (thumbnail != null) Image(thumbnail.asImageBitmap(), contentDescription = "Clip ${index + 1} source frame", modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                    else Text((index + 1).toString().padStart(2, '0'), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                }
             }
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("${Timecode.format(draft.startMs)} — ${Timecode.format(draft.endMs)}", fontWeight = FontWeight.SemiBold)
@@ -206,6 +214,25 @@ fun StudioWorkspaceLayout(
             if (showPreview) preview()
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
                 Box(Modifier.fillMaxHeight().widthIn(max = 720.dp)) { content() }
+            }
+        }
+    }
+}
+
+@Composable
+fun StudioWorkflowSteps() {
+    listOf(
+        "Choose your source" to "A downloaded video from your phone.",
+        "Shape the moment" to "Highlights, captions and framing.",
+        "Review, then export" to "Your approval always comes first."
+    ).forEachIndexed { index, (title, detail) ->
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(Modifier.size(28.dp), shape = RoundedCornerShape(9.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+                Box(contentAlignment = Alignment.Center) { Text((index + 1).toString(), fontSize = 12.sp, color = MaterialTheme.colorScheme.primary) }
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                Text(detail, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }

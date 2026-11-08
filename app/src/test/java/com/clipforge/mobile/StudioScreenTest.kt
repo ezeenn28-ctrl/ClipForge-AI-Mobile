@@ -37,8 +37,8 @@ class StudioScreenTest {
         compose.onNodeWithText("Create with a clear brief.").assertIsDisplayed()
         screenshot("campaign")
         compose.onNodeWithText("Export").performClick()
-        compose.onNodeWithText("Export approved MP4").performScrollTo().assertIsNotEnabled()
         screenshot("export")
+        compose.onNodeWithText("Export approved MP4").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Studio").performClick()
         compose.onNodeWithText("Choose a video").assertIsDisplayed()
     }
@@ -56,9 +56,23 @@ class StudioScreenTest {
     @Config(qualifiers = "w800dp-h360dp-mdpi")
     fun landscapeKeepsSourceToolsAndNavigationReachable() {
         waitForProjectLoad()
-        compose.onNodeWithText("Import video").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Your workflow").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Choose a video").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Export").assertIsDisplayed()
         screenshot("studio-landscape")
+    }
+
+    @Test fun switchingWorkspacesPreservesUnsavedCampaignText() {
+        waitForProjectLoad()
+        compose.onNodeWithText("Campaign").performClick()
+        compose.waitUntil(timeoutMillis = 15_000) {
+            runCatching { compose.onNodeWithText("Add submission").assertIsEnabled(); true }.getOrDefault(false)
+        }
+        compose.onNodeWithText("Add submission").performScrollTo().performClick()
+        compose.onNodeWithText("Campaign name").performScrollTo().performTextInput("My campaign")
+        compose.onNodeWithText("Export").performClick()
+        compose.onNodeWithText("Campaign").performClick()
+        compose.onNodeWithText("Campaign name").performScrollTo().assertTextContains("My campaign")
     }
 
     private fun waitForProjectLoad() {

@@ -3,8 +3,12 @@ package com.clipforge.mobile
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import java.math.RoundingMode
 import java.io.File
 import java.math.BigDecimal
 import java.util.UUID
@@ -20,21 +24,21 @@ fun CampaignTracker(directory: File, enabled: Boolean) {
     var loadFailed by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
-    var showEntryForm by remember { mutableStateOf(false) }
-    var editingId by remember { mutableStateOf<String?>(null) }
-    var campaign by remember { mutableStateOf("") }
-    var platform by remember { mutableStateOf("TikTok") }
-    var url by remember { mutableStateOf("") }
-    var status by remember { mutableStateOf(SubmissionStatus.PENDING) }
-    var views by remember { mutableStateOf("0") }
-    var cpm by remember { mutableStateOf("1.00") }
-    var minimum by remember { mutableStateOf("3.00") }
-    var maximum by remember { mutableStateOf("150.00") }
-    var paid by remember { mutableStateOf("0.00") }
-    var tierMinimum by remember { mutableStateOf("0") }
-    var tierActual by remember { mutableStateOf("") }
-    var reason by remember { mutableStateOf("") }
-    var page by remember { mutableIntStateOf(0) }
+    var showEntryForm by rememberSaveable { mutableStateOf(false) }
+    var editingId by rememberSaveable { mutableStateOf<String?>(null) }
+    var campaign by rememberSaveable { mutableStateOf("") }
+    var platform by rememberSaveable { mutableStateOf("TikTok") }
+    var url by rememberSaveable { mutableStateOf("") }
+    var status by rememberSaveable { mutableStateOf(SubmissionStatus.PENDING) }
+    var views by rememberSaveable { mutableStateOf("0") }
+    var cpm by rememberSaveable { mutableStateOf("1.00") }
+    var minimum by rememberSaveable { mutableStateOf("3.00") }
+    var maximum by rememberSaveable { mutableStateOf("150.00") }
+    var paid by rememberSaveable { mutableStateOf("0.00") }
+    var tierMinimum by rememberSaveable { mutableStateOf("0") }
+    var tierActual by rememberSaveable { mutableStateOf("") }
+    var reason by rememberSaveable { mutableStateOf("") }
+    var page by rememberSaveable { mutableIntStateOf(0) }
     val scope = rememberCoroutineScope()
     val editable = enabled && !loading && !saving && !loadFailed
 
@@ -54,12 +58,25 @@ fun CampaignTracker(directory: File, enabled: Boolean) {
         return
     }
     Text("Submission and payout tracker", style = MaterialTheme.typography.titleMedium)
-    Text("Manual USD bookkeeping only. Enter platform-reported values. Estimates are not guaranteed payouts; account standing and campaign rules still need checking.", style = MaterialTheme.typography.bodySmall)
-    Text("${entries.count { it.status == SubmissionStatus.APPROVED }} approved • ${entries.count { it.status == SubmissionStatus.PENDING }} pending • ${entries.count { it.status == SubmissionStatus.REJECTED }} rejected")
+    Text("Manual USD tracking. Enter platform-reported results.", style = MaterialTheme.typography.bodySmall)
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        SubmissionMetric(entries.count { it.status == SubmissionStatus.APPROVED }, "Approved")
+        SubmissionMetric(entries.count { it.status == SubmissionStatus.PENDING }, "Pending")
+        SubmissionMetric(entries.count { it.status == SubmissionStatus.REJECTED }, "Rejected")
+    }
     val estimateTotal = entries.fold(BigDecimal.ZERO) { sum, entry -> sum + entry.qualifiedEstimate() }
     val paidTotal = entries.fold(BigDecimal.ZERO) { sum, entry -> sum + entry.paid }
-    Text("Approved estimates meeting entered limits: USD ${estimateTotal.toPlainString()}")
-    Text("Actual paid (entered by you): USD ${paidTotal.toPlainString()}")
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Approved estimate", style = MaterialTheme.typography.bodySmall)
+            Text("USD ${estimateTotal.setScale(2, RoundingMode.HALF_UP).toPlainString()}", fontWeight = FontWeight.SemiBold, fontSize = 20.sp, color = MaterialTheme.colorScheme.primary)
+        }
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Recorded paid", style = MaterialTheme.typography.bodySmall)
+            Text("USD ${paidTotal.setScale(2, RoundingMode.HALF_UP).toPlainString()}", fontWeight = FontWeight.SemiBold, fontSize = 20.sp)
+        }
+    }
+    Text("Estimates exclude unmet limits and are not guaranteed payouts.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
     OutlinedButton(enabled = editable, onClick = {
         showEntryForm = true; editingId = null; campaign = ""; url = ""; status = SubmissionStatus.PENDING
@@ -146,3 +163,11 @@ fun CampaignTracker(directory: File, enabled: Boolean) {
 }
 
 private fun moneyInput(value: String): String = value.filter { it.isDigit() || it == '.' }.take(20)
+
+@Composable
+private fun SubmissionMetric(count: Int, label: String) {
+    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Text(count.toString(), fontSize = 24.sp, fontWeight = FontWeight.SemiBold)
+        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}

@@ -27,6 +27,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.foundation.Image
@@ -278,7 +279,7 @@ class MainActivity : ComponentActivity() {
         var fillFrame by remember { mutableStateOf(false) }
         var vertical by remember { mutableStateOf(true) }
         var mute by remember { mutableStateOf(false) }
-        var editingMode by remember { mutableStateOf("Manual Editor") }
+        var editingMode by remember { mutableStateOf("AI Draft") }
         var approved by remember { mutableStateOf(false) }
         var drafts by remember { mutableStateOf<List<HighlightDraft>>(emptyList()) }
         var selectedDraft by remember { mutableIntStateOf(-1) }
@@ -557,6 +558,18 @@ class MainActivity : ComponentActivity() {
         }
         val screen = androidx.compose.ui.platform.LocalConfiguration.current
         val wideWorkspace = screen.screenWidthDp >= 700
+        val workspaceState = rememberSaveableStateHolder()
+        val highlightsScroll = rememberScrollState()
+        val styleScroll = rememberScrollState()
+        val captionsScroll = rememberScrollState()
+        val campaignScroll = rememberScrollState()
+        val exportScroll = rememberScrollState()
+        val activeWorkspaceScroll = when (selectedTab) {
+            StudioTab.STUDIO -> if (studioEditing) styleScroll else highlightsScroll
+            StudioTab.CAPTIONS -> captionsScroll
+            StudioTab.CAMPAIGN -> campaignScroll
+            StudioTab.EXPORT -> exportScroll
+        }
         val previewHeight = if (screen.screenHeightDp < 760) 170.dp else 230.dp
         val previewPanel: @Composable (Boolean) -> Unit = { expanded ->
             val canvasHeight = if (expanded) (screen.screenHeightDp - 160).coerceAtLeast(170).dp else previewHeight
@@ -564,7 +577,7 @@ class MainActivity : ComponentActivity() {
                 if (video == null) {
                     Box(Modifier.fillMaxWidth()) {
                         StudioEmptyPreview()
-                        FilledTonalButton(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) { Text("Choose a video") }
+                        Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) { Text("Choose a video") }
                     }
                 } else {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -643,15 +656,16 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     StudioWorkspaceLayout(modifier = Modifier.fillMaxSize().padding(innerPadding),
-                        showPreview = selectedTab != StudioTab.CAMPAIGN && !fullScreenPreview,
+                        showPreview = selectedTab != StudioTab.CAMPAIGN && !fullScreenPreview && (video != null || selectedTab == StudioTab.STUDIO),
                         wide = wideWorkspace, preview = { previewPanel(false) }) {
-                        key(selectedTab, studioEditing) {
-                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        workspaceState.SaveableStateProvider(selectedTab.name + if (selectedTab == StudioTab.STUDIO) studioEditing.toString() else "") {
+                            Column(Modifier.fillMaxSize().verticalScroll(activeWorkspaceScroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 StudioIntro(selectedTab)
                                 when (selectedTab) {
                                     StudioTab.STUDIO -> {
-                                        StudioCard("Source footage", if (video == null) "Choose a video to start your project." else "$sourceName · ${Timecode.format(duration)}") {
-                Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }) { Text(if (video == null) "Import video" else "Replace source video") }
+                                        StudioCard(if (video == null) "Your workflow" else "Source footage", if (video == null) "" else "$sourceName · ${Timecode.format(duration)}") {
+                if (video == null) StudioWorkflowSteps()
+                if (video != null) Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }) { Text(if (video == null) "Import video" else "Replace source video") }
                 TextButton(enabled = !busy, onClick = { advancedImport = !advancedImport }) { Text(if (advancedImport) "Hide direct-link import" else "Import from a direct link") }
                 if (advancedImport) {
                 OutlinedTextField(enabled = !busy, value = link, onValueChange = { link = it }, label = { Text("Direct HTTPS MP4 link (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
@@ -704,8 +718,8 @@ class MainActivity : ComponentActivity() {
                                             if (!studioEditing) {
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(enabled = !busy, selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; effectChoice = "None"; approved = false }, label = { Text("Manual Editor") })
-                    FilterChip(enabled = !busy, selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft"; approved = false; selectedDraft = -1 }, label = { Text("AI Draft") })
+                    FilterChip(enabled = !busy, selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; effectChoice = "None"; approved = false }, label = { Text("Direct edit") })
+                    FilterChip(enabled = !busy, selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft"; approved = false; selectedDraft = -1 }, label = { Text("Highlight review") })
                 }
                 if (editingMode == "AI Draft") {
                     Text("Start with up to 15 coverage suggestions, or use speech highlights after transcription. Each clip stays in review until you approve it.", style = MaterialTheme.typography.bodySmall)
@@ -755,11 +769,13 @@ class MainActivity : ComponentActivity() {
                     Text("Coverage scores reflect duration and position. They are not predictions of views or engagement.", style = MaterialTheme.typography.bodySmall)
                     drafts.withIndex().sortedByDescending { (baselineDraftScore(it.value, duration).balanced * 3 + (it.value.visualScore ?: 50)) / 4 }.forEach { (index, draft) ->
                         val active = selectedDraft == index
-                        ClipReviewCard(index = index, draft = draft, active = active,
+                        val sourceFrame = rememberClipThumbnail(this@MainActivity, video, draft.startMs, enabled = !busy)
+                        ClipReviewCard(index = index, draft = draft, active = active, thumbnail = sourceFrame,
                             score = (baselineDraftScore(draft, duration).balanced * 3 + (draft.visualScore ?: 50)) / 4,
                             enabled = !busy,
                             onClick = {
                                 selectedDraft = index
+                                studioEditing = true
                                 start = draft.startMs.toFloat() / duration.toFloat()
                                 end = draft.endMs.toFloat() / duration.toFloat()
                                 val matching = batchResults[index] ?: (sourceTranscriptSegments.ifEmpty { transcriptSegments }).filter { it.startMs >= draft.startMs && it.startMs < draft.endMs }
@@ -868,14 +884,12 @@ class MainActivity : ComponentActivity() {
                                         Text(projectMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                     StudioTab.CAPTIONS -> {
-                                        StudioCard("Private by design", "Your footage stays on this phone. The speech model is downloaded once; transcription runs locally.") { StudioBadge(if (modelReady) "MODEL READY" else "MODEL NEEDED") }
+                                        StudioCard("Private by design", "Your footage stays on this phone. The speech model is downloaded once; transcription runs locally.") { StudioBadge(if (modelReady) "MODEL READY" else "MODEL NEEDED", emphasized = modelReady) }
                                         TextButton(enabled = !batchRunning, onClick = { speechAdvanced = !speechAdvanced }) { Text(if (speechAdvanced) "Hide batch & long video tools" else "Batch & long video tools") }
                                         StudioCard("Speech & subtitles") {
                 if (!modelReady || modelDownloading) {
-                Text("Speech tools", style = MaterialTheme.typography.titleMedium)
                 Text("English, Tagalog and Taglish, processed on your phone. Review recognition before publishing.", style = MaterialTheme.typography.bodySmall)
-                Text("Transcription prerequisites: ${if (video != null) "video selected" else "select video"} • ${if (modelReady) "model installed" else "download model"}", style = MaterialTheme.typography.bodySmall)
-                Text("Multilingual Whisper tiny (~78 MB) runs locally; no video is uploaded for transcription.", style = MaterialTheme.typography.bodySmall)
+                Text("One-time model download · about 78 MB", style = MaterialTheme.typography.bodySmall)
                 Text(if (modelReady) "Multilingual model downloaded" else if (modelDownloading) "Downloading model: $modelProgress%" else "Model not installed")
                 Button(enabled = !busy && !modelDownloading, onClick = {
                     if (modelReady) {
@@ -1248,6 +1262,12 @@ class MainActivity : ComponentActivity() {
 
                                     }
                                     StudioTab.EXPORT -> {
+                                        if (video == null) {
+                                            StudioCard("Start with a moment", "Import footage and shape a clip before reviewing its export.") {
+                                                Button(onClick = { selectedTab = StudioTab.STUDIO }) { Text("Go to Studio") }
+                                                OutlinedButton(enabled = false, onClick = {}) { Text("Export approved MP4") }
+                                            }
+                                        } else {
                                         StudioCard("Delivery details") {
                                             Text("Range · ${Timecode.precise((duration * start).toLong())} — ${Timecode.precise((duration * end).toLong())}")
                                             Text("Frame · ${if (vertical) if (fillFrame) "9:16 crop" else "9:16 fit" else "Source aspect"}   /   Audio · ${if (mute) "Muted" else "Original"}")
@@ -1364,6 +1384,7 @@ class MainActivity : ComponentActivity() {
 
                                         }
                                         Text("Completed clips save to Gallery on Android 10+. Open or share them after export.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        }
                                     }
                                 }
                                 Spacer(Modifier.height(8.dp))
