@@ -252,6 +252,7 @@ class MainActivity : ComponentActivity() {
         var audioPreparing by remember { mutableStateOf(false) }
         var transcribing by remember { mutableStateOf(false) }
         var transcript by remember { mutableStateOf("") }
+        var transcriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var modelDownloading by remember { mutableStateOf(false) }
         var modelProgress by remember { mutableIntStateOf(0) }
         var modelReady by remember { mutableStateOf(File(filesDir, "models/ggml-tiny.bin").exists()) }
@@ -263,6 +264,8 @@ class MainActivity : ComponentActivity() {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (_: SecurityException) {}
                 video = uri
+                transcript = ""
+                transcriptSegments = emptyList()
                 drafts = emptyList()
                 selectedDraft = -1
                 approved = false
@@ -297,7 +300,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #24 offline transcription readiness")
+                Text("Mobile editor • Build #26 selected-highlight transcription")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -318,9 +321,9 @@ class MainActivity : ComponentActivity() {
                 Text(if (cloudConsent) "Cloud permission granted, but cloud processing is not available yet." else "Offline-only analysis mode active.", style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
                 Text("Hybrid transcription • Build #25", style = MaterialTheme.typography.titleMedium)
-                Text("Planned: automatic English/Tagalog detection, including Taglish. Current stage: verify local audio and model prerequisites; native Whisper inference is experimental and processes the first 30 seconds.", style = MaterialTheme.typography.bodySmall)
+                Text("Experimental offline Whisper recognition is available. Test English, Tagalog and Taglish accuracy; selected highlights can now be transcribed.", style = MaterialTheme.typography.bodySmall)
                 Text("Transcription prerequisites: ${if (video != null) "video selected" else "select video"} • ${if (modelReady) "model installed" else "download model"}", style = MaterialTheme.typography.bodySmall)
-                Text("English + Filipino/Tagalog: multilingual Whisper tiny (~78 MB). One-time verified download; no video is uploaded. The speech inference engine is experimental.", style = MaterialTheme.typography.bodySmall)
+                Text("Multilingual Whisper tiny (~78 MB) runs locally; no video is uploaded for transcription.", style = MaterialTheme.typography.bodySmall)
                 Text(if (modelReady) "Multilingual model downloaded" else if (modelDownloading) "Downloading model: $modelProgress%" else "Model not installed")
                 Button(enabled = !modelDownloading, onClick = {
                     if (modelReady) {
@@ -357,7 +360,7 @@ class MainActivity : ComponentActivity() {
                             val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
                             runOnUiThread {
                                 audioPreparing = false
-                                status = "Audio prepared locally: ${wav.length() / 1024} KB. Whisper transcription engine not connected yet."
+                                status = "Audio prepared locally: ${wav.length() / 1024} KB. Ready for offline Whisper transcription."
                             }
                         } catch (e: Exception) {
                             runOnUiThread {
@@ -393,12 +396,50 @@ class MainActivity : ComponentActivity() {
                     Text("Whisper transcript (editable)", style = MaterialTheme.typography.titleMedium)
                     OutlinedTextField(value = transcript, onValueChange = { transcript = it }, label = { Text("Recognized speech") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
                 }
+                Button(enabled = video != null && modelReady && !transcribing && !audioPreparing && selectedDraft in drafts.indices, onClick = {
+                    val selectedVideo = video ?: return@Button
+                    val chosen = drafts.getOrNull(selectedDraft) ?: return@Button
+                    transcribing = true
+                    transcript = ""
+                    transcriptSegments = emptyList()
+                    status = "Transcribing selected highlight offline…"
+                    Thread {
+                        try {
+                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
+                            val segments = WhisperNative.transcribeSegments(File(filesDir, "models/ggml-tiny.bin"), wav, chosen.startMs, chosen.endMs)
+                            runOnUiThread {
+                                transcriptSegments = segments
+                                transcript = segments.joinToString("\\n") { it.text }
+                                transcribing = false
+                                status = "Transcribed selected highlight: ${segments.size} timed segments."
+                            }
+                        } catch (e: Throwable) {
+                            runOnUiThread {
+                                transcribing = false
+                                status = "Highlight transcription failed: ${e.message}"
+                            }
+                        }
+                    }.start()
+                }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe selected highlight offline") }
+                if (transcriptSegments.isNotEmpty()) {
+                    Text("Timestamped transcript (source video time)", style = MaterialTheme.typography.titleMedium)
+                    transcriptSegments.forEach { segment ->
+                        Text("${segment.startMs / 1000.0}s – ${segment.endMs / 1000.0}s: ${segment.text}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Button(onClick = {
+                        captionText = transcript
+                        captionFrom = (transcriptSegments.first().startMs / 1000.0).toString()
+                        captionTo = (transcriptSegments.last().endMs / 1000.0).toString()
+                        approved = false
+                        status = "Transcript copied to caption draft. Review timing and approve before export."
+                    }) { Text("Use transcript as caption draft") }
+                }
                 Text("Hybrid transcription planning", style = MaterialTheme.typography.titleMedium)
                 val highlightPlan = HybridTranscriptionPlan.highlights(drafts)
                 val fullPlan = HybridTranscriptionPlan.fullVideo(duration)
                 Text("Highlight-first: ${highlightPlan.size} × up-to-30-second audio chunks from current drafts.", style = MaterialTheme.typography.bodySmall)
                 Text("Optional full video: ${fullPlan.size} × up-to-30-second chunks.", style = MaterialTheme.typography.bodySmall)
-                Text("These are processing estimates only. Native offline Whisper inference and timestamped subtitles are not yet available.", style = MaterialTheme.typography.bodySmall)
+                Text("Chunk counts are estimates. Timestamped speech segments can be reviewed; multi-segment subtitle rendering and full-video processing are not implemented yet.", style = MaterialTheme.typography.bodySmall)
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; approved = false }, label = { Text("Manual Editor") })
