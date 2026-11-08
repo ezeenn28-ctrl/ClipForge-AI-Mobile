@@ -4,7 +4,7 @@
 #include "whisper.h"
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_clipforge_mobile_WhisperNative_transcribeNative(JNIEnv* env, jobject, jstring modelPath, jfloatArray audio) {
+Java_com_clipforge_mobile_WhisperNative_transcribeSegmentsNative(JNIEnv* env, jobject, jstring modelPath, jfloatArray audio) {
     const char* path = env->GetStringUTFChars(modelPath, nullptr);
     whisper_context_params cp = whisper_context_default_params();
     whisper_context* ctx = whisper_init_from_file_with_params(path, cp);
@@ -26,7 +26,7 @@ Java_com_clipforge_mobile_WhisperNative_transcribeNative(JNIEnv* env, jobject, j
     if (result == 0) {
         int n = whisper_full_n_segments(ctx);
         for (int i = 0; i < n; ++i) {
-            transcript += whisper_full_get_segment_text(ctx, i);
+            transcript += std::to_string(whisper_full_get_segment_t0(ctx, i) * 10);\n            transcript += "\\t";\n            transcript += std::to_string(whisper_full_get_segment_t1(ctx, i) * 10);\n            transcript += "\\t";\n            transcript += whisper_full_get_segment_text(ctx, i);
             transcript += "\n";
         }
     } else transcript = "ERROR: Whisper inference failed";
