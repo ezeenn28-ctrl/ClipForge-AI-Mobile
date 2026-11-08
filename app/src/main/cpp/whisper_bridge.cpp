@@ -18,6 +18,10 @@ Java_com_clipforge_mobile_WhisperNative_transcribeSegmentsNative(JNIEnv* env, jo
     params.print_realtime = false;
     params.print_timestamps = false;
     params.print_special = false;
+    // Short, word-boundary cues avoid hiding the tail of long spoken segments.
+    params.token_timestamps = true;
+    params.max_len = 42;
+    params.split_on_word = true;
     params.translate = false;
     params.language = "auto";
     params.n_threads = 4;

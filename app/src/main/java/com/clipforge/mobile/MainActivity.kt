@@ -286,6 +286,7 @@ class MainActivity : ComponentActivity() {
         var audioPreparing by remember { mutableStateOf(false) }
         var transcribing by remember { mutableStateOf(false) }
         var transcript by remember { mutableStateOf("") }
+        var sourceTranscriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var transcriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var subtitleSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var subtitleDraftIndex by remember { mutableIntStateOf(-1) }
@@ -295,7 +296,7 @@ class MainActivity : ComponentActivity() {
         var batchRunning by remember { mutableStateOf(false) }
         var batchProgress by remember { mutableIntStateOf(0) }
         var batchTotal by remember { mutableIntStateOf(0) }
-        var batchCancel by remember { mutableStateOf(false) }
+        val batchCancel = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
         var batchResults by remember { mutableStateOf<Map<Int, List<WhisperNative.Segment>>>(emptyMap()) }
         var modelDownloading by remember { mutableStateOf(false) }
         var modelProgress by remember { mutableIntStateOf(0) }
@@ -359,8 +360,12 @@ class MainActivity : ComponentActivity() {
                 batchResults = emptyMap()
                 sourceVerified = false
                 rightsVerified = false
+                effectChoice = "None"
+                hookText = ""
+                captionText = ""
                 video = uri
                 transcript = ""
+                sourceTranscriptSegments = emptyList()
                 transcriptSegments = emptyList()
                 subtitleSegments = emptyList()
                 subtitleDraftIndex = -1
@@ -474,12 +479,15 @@ class MainActivity : ComponentActivity() {
                     approved = false
                     transcribing = true
                     transcript = ""
+                    subtitleDraftIndex = -1
+                    subtitleSegments = emptyList()
                     status = "Preparing first 30 seconds for offline Whisper…"
                     Thread {
                         try {
                             ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
                             val result = OfflineTranscriber.range(this@MainActivity, selectedVideo, File(filesDir, "models/ggml-tiny.bin"), 0L, minOf(duration, 30_000L))
                             runOnUiThread {
+                                sourceTranscriptSegments = result
                                 transcriptSegments = result
                                 transcript = result.joinToString(" ") { it.text }
                                 transcribing = false
@@ -515,6 +523,7 @@ class MainActivity : ComponentActivity() {
                             runOnUiThread {
                                 transcriptSegments = segments
                                 subtitleSegments = segments
+                                batchResults = batchResults + (chosenIndex to segments)
                                 subtitleDraftIndex = chosenIndex
                                 approved = false
                                 transcript = segments.joinToString("\n") { it.text }
@@ -553,6 +562,7 @@ class MainActivity : ComponentActivity() {
                             changed[segmentIndex] = segment.copy(text = edited)
                             transcriptSegments = changed
                             subtitleSegments = changed
+                            if (selectedDraft >= 0 && subtitleDraftIndex == selectedDraft) batchResults = batchResults + (selectedDraft to changed)
                             transcript = changed.joinToString("\n") { it.text }
                             approved = false
                         }, label = { Text("Subtitle ${segmentIndex + 1}") }, modifier = Modifier.fillMaxWidth())
@@ -578,7 +588,7 @@ class MainActivity : ComponentActivity() {
                     val snapshot = drafts.toList()
                     approved = false
                     batchRunning = true
-                    batchCancel = false
+                    batchCancel.set(false)
                     batchProgress = 0
                     batchTotal = snapshot.size
                     batchResults = emptyMap()
@@ -589,7 +599,7 @@ class MainActivity : ComponentActivity() {
                             val model = File(filesDir, "models/ggml-tiny.bin")
                             val completed = mutableMapOf<Int, List<WhisperNative.Segment>>()
                             for ((index, draft) in snapshot.withIndex()) {
-                                if (batchCancel) break
+                                if (batchCancel.get()) break
                                 val segments = OfflineTranscriber.range(this@MainActivity, source, model, draft.startMs, minOf(draft.endMs, draft.startMs + 30_000L))
                                 completed[index] = segments
                                 runOnUiThread {
@@ -600,7 +610,7 @@ class MainActivity : ComponentActivity() {
                             }
                             runOnUiThread {
                                 batchRunning = false
-                                status = if (batchCancel) "Batch stopped after ${completed.size} highlights" else "Batch complete: ${completed.size} highlights"
+                                status = if (batchCancel.get()) "Batch stopped after ${completed.size} highlights" else "Batch complete: ${completed.size} highlights"
                             }
                         } catch (e: Throwable) {
                             runOnUiThread {
@@ -613,7 +623,7 @@ class MainActivity : ComponentActivity() {
                 if (batchRunning) {
                     LinearProgressIndicator(progress = { if (batchTotal > 0) batchProgress.toFloat() / batchTotal else 0f }, modifier = Modifier.fillMaxWidth())
                     Text("${batchProgress}/${batchTotal} highlights completed", style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = { batchCancel = true }) { Text("Stop after current highlight") }
+                    OutlinedButton(onClick = { batchCancel.set(true) }) { Text("Stop after current highlight") }
                 }
                 if (batchResults.isNotEmpty()) {
                     Text("${batchResults.size} transcribed highlights ready to review", style = MaterialTheme.typography.bodySmall)
@@ -621,6 +631,11 @@ class MainActivity : ComponentActivity() {
                         OutlinedButton(enabled = !busy, onClick = {
                             selectedDraft = index
                             val chosen = drafts[index]
+                            editingMode = "AI Draft"
+                            hookText = chosen.hook
+                            effectChoice = chosen.effect
+                            captionFrom = (chosen.captionStartMs / 1000L).toString()
+                            captionTo = (chosen.captionEndMs / 1000L).toString()
                             start = chosen.startMs.toFloat() / duration
                             end = chosen.endMs.toFloat() / duration
                             subtitleDraftIndex = index
@@ -641,10 +656,12 @@ class MainActivity : ComponentActivity() {
                     val chunks = HybridTranscriptionPlan.fullVideo(duration)
                     approved = false
                     batchRunning = true
-                    batchCancel = false
+                    batchCancel.set(false)
                     batchProgress = 0
                     batchTotal = chunks.size
                     batchResults = emptyMap()
+                    subtitleDraftIndex = -1
+                    subtitleSegments = emptyList()
                     status = "Preparing full-video audio…"
                     Thread {
                         try {
@@ -659,7 +676,7 @@ class MainActivity : ComponentActivity() {
                             val collected = previous.segments.toMutableList()
                             var done = 0
                             for (chunk in chunks) {
-                                if (batchCancel) break
+                                if (batchCancel.get()) break
                                 if (chunk.endMs <= completedThrough) {
                                     done++
                                     val skipped = done
@@ -677,10 +694,11 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             runOnUiThread {
+                                sourceTranscriptSegments = collected.toList()
                                 transcriptSegments = collected.toList()
                                 transcript = collected.joinToString("\n") { it.text }
                                 batchRunning = false
-                                status = if (batchCancel) "Full-video transcription stopped; partial transcript saved" else "Full-video transcript saved locally"
+                                status = if (batchCancel.get()) "Full-video transcription stopped; partial transcript saved" else "Full-video transcript saved locally"
                             }
                         } catch (e: Throwable) {
                             runOnUiThread {
@@ -690,15 +708,29 @@ class MainActivity : ComponentActivity() {
                         }
                     }.start()
                 }) { Text(if (batchRunning) "Processing offline…" else "Transcribe full video (optional)") }
-                Button(enabled = !busy && transcriptSegments.isNotEmpty() && duration > 0, onClick = {
-                    drafts = TranscriptHighlights.detect(transcriptSegments, duration)
-                    batchResults = emptyMap()
-                    selectedDraft = -1
-                    subtitleDraftIndex = -1
-                    subtitleSegments = emptyList()
-                    editingMode = "AI Draft"
+                Button(enabled = !busy && (sourceTranscriptSegments.isNotEmpty() || transcriptSegments.isNotEmpty()) && duration > 0, onClick = {
+                    val speech = sourceTranscriptSegments.ifEmpty { transcriptSegments }.toList()
+                    val sourceDuration = duration
                     approved = false
-                    status = "${drafts.size} speech-ranked candidates. Review context and subtitles before approving."
+                    analyzing = true
+                    status = "Ranking speech locally…"
+                    Thread {
+                        try {
+                            val detected = TranscriptHighlights.detect(speech, sourceDuration)
+                            runOnUiThread {
+                                drafts = detected
+                                batchResults = emptyMap()
+                                selectedDraft = -1
+                                subtitleDraftIndex = -1
+                                subtitleSegments = emptyList()
+                                editingMode = "AI Draft"
+                                analyzing = false
+                                status = "${detected.size} speech-ranked candidates. Review context and subtitles before approving."
+                            }
+                        } catch (e: Exception) {
+                            runOnUiThread { analyzing = false; status = "Speech ranking failed: ${e.message}" }
+                        }
+                    }.start()
                 }) { Text("Find highlights from transcript offline") }
                 Text("Speech ranking uses density, vocabulary and hook words. It does not predict engagement.", style = MaterialTheme.typography.bodySmall)
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
@@ -760,7 +792,8 @@ class MainActivity : ComponentActivity() {
                                 selectedDraft = index
                                 start = draft.startMs.toFloat() / duration.toFloat()
                                 end = draft.endMs.toFloat() / duration.toFloat()
-                                val matching = transcriptSegments.filter { it.startMs >= draft.startMs && it.startMs < draft.endMs }
+                                val matching = batchResults[index] ?: (sourceTranscriptSegments.ifEmpty { transcriptSegments }).filter { it.startMs >= draft.startMs && it.startMs < draft.endMs }
+                                transcriptSegments = matching
                                 subtitleSegments = matching
                                 subtitleDraftIndex = if (matching.isNotEmpty()) index else -1
                                 approved = false
@@ -789,12 +822,16 @@ class MainActivity : ComponentActivity() {
                             val output = LocalVideoDownload.fetch(address, cacheDir)
                             runOnUiThread {
                                 transcript = ""
+                                sourceTranscriptSegments = emptyList()
                                 transcriptSegments = emptyList()
                                 subtitleSegments = emptyList()
                                 subtitleDraftIndex = -1
                                 batchResults = emptyMap()
                                 sourceVerified = false
                                 rightsVerified = false
+                                effectChoice = "None"
+                                hookText = ""
+                                captionText = ""
                                 video = Uri.fromFile(output)
                                 drafts = emptyList()
                                 selectedDraft = -1

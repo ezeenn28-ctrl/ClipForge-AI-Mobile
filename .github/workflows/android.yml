@@ -36,6 +36,23 @@ jobs:
         run: |
           set -o pipefail
           gradle :app:testDebugUnitTest --no-daemon --console=plain --warning-mode=none 2>&1 | tee android-test.log
+      - name: Summarize unit test results
+        if: always()
+        shell: python
+        run: |
+          import glob, os, xml.etree.ElementTree as ET
+          paths = glob.glob('app/build/test-results/testDebugUnitTest/TEST-*.xml')
+          counts = dict(tests=0, failures=0, errors=0, skipped=0)
+          for path in paths:
+              root = ET.parse(path).getroot()
+              for key in counts:
+                  counts[key] += int(root.get(key, 0))
+          summary = f"Unit tests: {counts['tests']} total, {counts['failures']} failures, {counts['errors']} errors, {counts['skipped']} skipped"
+          print(summary)
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as output:
+              output.write(summary + '\n')
+          if not paths:
+              raise SystemExit('No unit test reports found')
       - name: Upload unit test reports
         if: always()
         uses: actions/upload-artifact@v4
