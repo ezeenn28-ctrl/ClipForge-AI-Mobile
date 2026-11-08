@@ -27,9 +27,9 @@ Java_com_clipforge_mobile_WhisperNative_transcribeSegmentsNative(JNIEnv* env, jo
         int n = whisper_full_n_segments(ctx);
         for (int i = 0; i < n; ++i) {
             transcript += std::to_string(whisper_full_get_segment_t0(ctx, i) * 10);
-            transcript += "\\t";
+            transcript += "\t";
             transcript += std::to_string(whisper_full_get_segment_t1(ctx, i) * 10);
-            transcript += "\\t";
+            transcript += "\t";
             transcript += whisper_full_get_segment_text(ctx, i);
             transcript += "\n";
         }
