@@ -25,6 +25,9 @@ jobs:
             yes | "$SDKMANAGER" --licenses >/dev/null || true
             "$SDKMANAGER" "platforms;android-35" "build-tools;35.0.0" || true
           fi
+      - name: Fetch pinned whisper.cpp native inference source
+        run: |
+          git clone --depth 1 --branch v1.7.6 https://github.com/ggml-org/whisper.cpp.git app/src/main/cpp/whisper.cpp
       - name: Build APK with concise diagnostics
         shell: bash
         run: |
