@@ -130,7 +130,7 @@ fun baselineDraftScore(draft: HighlightDraft, totalMs: Long): DraftScore {
 
 /** Static, bold, high-contrast caption card. Keywords prefixed with # are yellow.
  * This is a persistent overlay, not speech-synchronized transcription. */
-fun makeCaptionOverlay(hook: String, caption: String): Bitmap {
+fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f, subtitleColor: Int = Color.WHITE): Bitmap {
     val bitmap = Bitmap.createBitmap(720, 1280, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -149,7 +149,7 @@ fun makeCaptionOverlay(hook: String, caption: String): Bitmap {
             else current = next
         }
         if (current.isNotBlank()) chunks.add(current)
-        paint.textSize = if (index == 0) 45f else 39f
+        paint.textSize = if (index == 0) 45f else subtitleSize
         chunks.take(3).forEachIndexed { row, text ->
             val y = (if (index == 0) 210 else 970) + row * 55
             val clean = text.replace("#", "")
@@ -158,7 +158,7 @@ fun makeCaptionOverlay(hook: String, caption: String): Bitmap {
             paint.strokeWidth = 9f
             canvas.drawText(clean, 360f, y.toFloat(), paint)
             paint.style = Paint.Style.FILL
-            paint.color = if ('#' in text) Color.YELLOW else Color.WHITE
+            paint.color = if ('#' in text) Color.YELLOW else if (index == 0) Color.WHITE else subtitleColor
             canvas.drawText(clean, 360f, y.toFloat(), paint)
         }
     }
@@ -184,9 +184,9 @@ fun timedCaptionOverlay(
     }
 }
 
-fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long): BitmapOverlay {
+fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long, subtitleSize: Float, subtitleColor: Int): BitmapOverlay {
     val empty = makeCaptionOverlay(hook, "")
-    val frames = segments.map { it to makeCaptionOverlay(hook, it.text) }
+    val frames = segments.map { it to makeCaptionOverlay(hook, it.text, subtitleSize, subtitleColor) }
     return object : BitmapOverlay() {
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val absoluteMs = trimStartMs + presentationTimeUs / 1000L
@@ -268,6 +268,8 @@ class MainActivity : ComponentActivity() {
         var transcriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var subtitleSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var subtitleDraftIndex by remember { mutableIntStateOf(-1) }
+        var subtitleSize by remember { mutableFloatStateOf(39f) }
+        var subtitleYellow by remember { mutableStateOf(false) }
         var batchRunning by remember { mutableStateOf(false) }
         var batchProgress by remember { mutableIntStateOf(0) }
         var batchTotal by remember { mutableIntStateOf(0) }
@@ -450,6 +452,13 @@ class MainActivity : ComponentActivity() {
                 }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe selected highlight offline") }
                 if (transcriptSegments.isNotEmpty()) {
                     Text("Timestamped transcript (source video time)", style = MaterialTheme.typography.titleMedium)
+                    Text("Subtitle size: ${subtitleSize.toInt()}", style = MaterialTheme.typography.bodySmall)
+                    Slider(value = subtitleSize, onValueChange = { subtitleSize = it; approved = false }, valueRange = 28f..55f)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = subtitleYellow, onCheckedChange = { subtitleYellow = it; approved = false })
+                        Text("Yellow subtitles (otherwise white)")
+                    }
+
                     transcriptSegments.forEachIndexed { segmentIndex, segment ->
                         Text("${segment.startMs / 1000.0}s – ${segment.endMs / 1000.0}s", style = MaterialTheme.typography.bodySmall)
                         OutlinedTextField(value = segment.text, onValueChange = { edited ->
@@ -802,7 +811,7 @@ class MainActivity : ComponentActivity() {
                         val draft = drafts.getOrNull(selectedDraft)
                         val trimStartMs = (duration * start).toLong()
                         val overlay = if (draft != null && subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()) {
-                            segmentSubtitleOverlay(hookText, subtitleSegments, trimStartMs)
+                            segmentSubtitleOverlay(hookText, subtitleSegments, trimStartMs, subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE)
                         } else if (draft != null) {
                             timedCaptionOverlay(hookText, captionText, draft.captionStartMs, draft.captionEndMs, trimStartMs)
                         } else BitmapOverlay.createStaticBitmapOverlay(makeCaptionOverlay(hookText, captionText))
