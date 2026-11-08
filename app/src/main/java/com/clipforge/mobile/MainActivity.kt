@@ -201,10 +201,9 @@ fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, 
     val frames = segments.map { it to makeCaptionOverlay(hook, it.text, subtitleSize, subtitleColor) }
     return object : BitmapOverlay() {
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
-            val absoluteMs = trimStartMs + presentationTimeUs / 1000L
-            return frames.firstOrNull { (segment, _) ->
-                absoluteMs >= segment.startMs && absoluteMs < segment.endMs
-            }?.second ?: empty
+            val absoluteMs = SubtitleTimeline.sourcePositionMs(trimStartMs, presentationTimeUs)
+            val index = SubtitleTimeline.activeSegmentIndex(segments, absoluteMs)
+            return frames.getOrNull(index)?.second ?: empty
         }
     }
 }
@@ -744,7 +743,7 @@ class MainActivity : ComponentActivity() {
                     )
                     if (editingMode == "AI Draft" && selectedDraft in drafts.indices) {
                         val activeSegment = if (subtitleDraftIndex == selectedDraft) {
-                            subtitleSegments.firstOrNull { previewPosition >= it.startMs && previewPosition < it.endMs }
+                            subtitleSegments.getOrNull(SubtitleTimeline.activeSegmentIndex(subtitleSegments, previewPosition))
                         } else null
                         val fallbackCaption = if (subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()) "" else {
                             val draft = drafts[selectedDraft]
