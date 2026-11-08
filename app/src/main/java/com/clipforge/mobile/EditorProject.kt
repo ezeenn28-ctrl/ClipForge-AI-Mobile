@@ -1,0 +1,47 @@
+package com.clipforge.mobile
+
+/** Local editing state. Export approval and cloud permission are deliberately absent. */
+data class EditorProject(
+    val source: String,
+    val durationMs: Long,
+    val startMs: Long,
+    val endMs: Long,
+    val mode: String = "Manual Editor",
+    val vertical: Boolean = true,
+    val mute: Boolean = false,
+    val drafts: List<HighlightDraft> = emptyList(),
+    val selectedDraft: Int = -1,
+    val hook: String = "",
+    val caption: String = "",
+    val effect: String = "None",
+    val subtitleSize: Float = 39f,
+    val subtitleYellow: Boolean = false,
+    val subtitleDraftIndex: Int = -1,
+    val currentSegments: List<WhisperNative.Segment> = emptyList(),
+    val sourceSegments: List<WhisperNative.Segment> = emptyList(),
+    val draftSegments: Map<Int, List<WhisperNative.Segment>> = emptyMap()
+) {
+    fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
+
+    fun validate() {
+        require(source.startsWith("content://") || source.startsWith("file://")) { "Project source must be a local video" }
+        require(durationMs > 0 && startMs >= 0 && endMs > startMs && endMs <= durationMs) { "Invalid project trim" }
+        require(mode in listOf("Manual Editor", "AI Draft")) { "Unknown editing mode" }
+        require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown visual effect" }
+        require(subtitleSize.isFinite() && subtitleSize in 28f..55f) { "Invalid subtitle size" }
+        require(drafts.size <= 15) { "Too many drafts" }
+        require(selectedDraft == -1 || selectedDraft in drafts.indices) { "Invalid selected draft" }
+        require(subtitleDraftIndex == -1 || subtitleDraftIndex in drafts.indices) { "Invalid subtitle association" }
+        drafts.forEach {
+            require(it.startMs >= 0 && it.endMs > it.startMs && it.endMs <= durationMs) { "Invalid draft trim" }
+            require(it.effect in listOf("None", "Zoom", "Monochrome")) { "Invalid draft effect" }
+        }
+        require(draftSegments.size <= 15 && draftSegments.keys.all { it in drafts.indices }) { "Invalid draft subtitles" }
+        (listOf(currentSegments, sourceSegments) + draftSegments.values).forEach { segments ->
+            require(segments.size <= 20_000) { "Transcript exceeds project limit" }
+            segments.forEach {
+                require(it.startMs >= 0 && it.endMs > it.startMs && it.endMs <= durationMs) { "Invalid subtitle timing" }
+            }
+        }
+    }
+}

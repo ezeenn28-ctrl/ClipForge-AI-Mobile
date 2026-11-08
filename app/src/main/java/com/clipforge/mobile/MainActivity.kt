@@ -325,7 +325,10 @@ class MainActivity : ComponentActivity() {
         var campaignSource by remember { mutableStateOf(campaignPrefs.getString("source", "0") ?: "0") }
         var sourceVerified by remember { mutableStateOf(false) }
         var rightsVerified by remember { mutableStateOf(false) }
-        val busy = exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
+        var projectLoading by remember { mutableStateOf(true) }
+        var projectMessage by remember { mutableStateOf("Checking saved project…") }
+        var expectedRestoredDuration by remember { mutableLongStateOf(0L) }
+        val busy = projectLoading || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
         val campaignIssues = if (campaignEnabled) CampaignRules(campaignTags,
             campaignMin.toLongOrNull() ?: -1, campaignMax.toLongOrNull() ?: -1,
             campaignSource.toLongOrNull() ?: -1).issues(campaignCaption,
@@ -340,7 +343,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(effectChoice) { player.setVideoEffects(creativeEffects(effectChoice)) }
         DisposableEffect(player) { onDispose { player.release() } }
         DisposableEffect(Unit) {
-            onDispose { activeTransformer?.cancel(); if (exporting) exportFile?.delete() }
+            onDispose { batchCancel.set(true); activeTransformer?.cancel(); if (exporting) exportFile?.delete() }
         }
         LaunchedEffect(exporting) {
             val holder = ProgressHolder()
@@ -378,6 +381,7 @@ class MainActivity : ComponentActivity() {
                 effectChoice = "None"
                 hookText = ""
                 captionText = ""
+                expectedRestoredDuration = 0
                 video = uri
                 transcript = ""
                 sourceTranscriptSegments = emptyList()
@@ -399,11 +403,108 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(player) {
             val listener = object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_READY) duration = player.duration.coerceAtLeast(0)
+                    if (playbackState == Player.STATE_READY) {
+                        val actual = player.duration.coerceAtLeast(0)
+                        if (expectedRestoredDuration > 0 && kotlin.math.abs(expectedRestoredDuration - actual) > 1_000) {
+                            drafts = emptyList()
+                            selectedDraft = -1
+                            subtitleDraftIndex = -1
+                            subtitleSegments = emptyList()
+                            transcriptSegments = emptyList()
+                            sourceTranscriptSegments = emptyList()
+                            batchResults = emptyMap()
+                            approved = false
+                            start = 0f
+                            end = 1f
+                            status = "Source duration changed. Saved drafts and subtitles cleared; review the video again."
+                        }
+                        expectedRestoredDuration = 0
+                        duration = actual
+                    }
+                }
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    approved = false
+                    status = "Unable to read video. Reimport it if it was moved or access permission expired: ${error.message}"
                 }
             }
             player.addListener(listener)
             onDispose { player.removeListener(listener) }
+        }
+        val projectFile = remember { File(filesDir, "projects/last-project.properties") }
+        LaunchedEffect(Unit) {
+            try {
+                val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ProjectStore.read(projectFile) }
+                if (saved != null) {
+                    val source = Uri.parse(saved.source)
+                    // Check access before installing a saved editor state.
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        contentResolver.openAssetFileDescriptor(source, "r")?.use { } ?: error("Saved source is unavailable")
+                    }
+                    video = source
+                    duration = saved.durationMs
+                    expectedRestoredDuration = saved.durationMs
+                    start = saved.startMs.toFloat() / saved.durationMs
+                    end = saved.endMs.toFloat() / saved.durationMs
+                    editingMode = saved.mode
+                    vertical = saved.vertical
+                    mute = saved.mute
+                    drafts = saved.drafts.map { it.copy(approved = false) }
+                    selectedDraft = saved.selectedDraft
+                    hookText = saved.hook
+                    captionText = saved.caption
+                    effectChoice = saved.effect
+                    subtitleSize = saved.subtitleSize
+                    subtitleYellow = saved.subtitleYellow
+                    subtitleDraftIndex = saved.subtitleDraftIndex
+                    transcriptSegments = saved.currentSegments
+                    sourceTranscriptSegments = saved.sourceSegments
+                    subtitleSegments = if (saved.subtitleDraftIndex >= 0) saved.currentSegments else emptyList()
+                    batchResults = saved.draftSegments
+                    transcript = saved.currentSegments.joinToString("\n") { it.text }
+                    val chosen = saved.drafts.getOrNull(saved.selectedDraft)
+                    captionFrom = ((chosen?.captionStartMs ?: 0L) / 1000L).toString()
+                    captionTo = ((chosen?.captionEndMs ?: 0L) / 1000L).toString()
+                    approved = false
+                    sourceVerified = false
+                    rightsVerified = false
+                    player.setVideoEffects(creativeEffects(saved.effect))
+                    player.setMediaItem(MediaItem.fromUri(source))
+                    player.seekTo(saved.startMs)
+                    player.playWhenReady = false
+                    player.prepare()
+                    projectMessage = "Local project restored. Review again before export."
+                    status = "Restored project; export approval and campaign confirmations were cleared"
+                } else projectMessage = "Edits save locally after a short pause."
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                projectMessage = "Saved project could not be restored: ${error.message}. Reimport the original video."
+            } finally { projectLoading = false }
+        }
+        val projectSnapshot = if (video != null && duration > 0) EditorProject(
+            source = video.toString(), durationMs = duration,
+            startMs = (duration * start).toLong(), endMs = (duration * end).toLong(),
+            mode = editingMode, vertical = vertical, mute = mute,
+            drafts = drafts.map { it.copy(approved = false) }, selectedDraft = selectedDraft,
+            hook = hookText, caption = captionText, effect = effectChoice,
+            subtitleSize = subtitleSize, subtitleYellow = subtitleYellow, subtitleDraftIndex = subtitleDraftIndex,
+            currentSegments = transcriptSegments, sourceSegments = sourceTranscriptSegments,
+            draftSegments = batchResults
+        ) else null
+        LaunchedEffect(projectSnapshot, projectLoading) {
+            if (projectSnapshot != null && !projectLoading) {
+                delay(1000)
+                try {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        ProjectStore.write(projectFile, projectSnapshot)
+                    }
+                    projectMessage = "Project saved on this phone. Review approval is never restored."
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    projectMessage = "Project save failed: ${error.message}"
+                }
+            }
         }
         LaunchedEffect(player, duration, start, end, video) {
             while (true) {
@@ -423,7 +524,8 @@ class MainActivity : ComponentActivity() {
             ) {
             Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • consolidated subtitle and transcription development")
+                Text("Private offline video editor")
+                Text(projectMessage, style = MaterialTheme.typography.bodySmall)
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -869,7 +971,7 @@ class MainActivity : ComponentActivity() {
                     val address = link
                     Thread {
                         try {
-                            val output = LocalVideoDownload.fetch(address, cacheDir)
+                            val output = LocalVideoDownload.fetch(address, File(filesDir, "imports"))
                             runOnUiThread {
                                 transcript = ""
                                 sourceTranscriptSegments = emptyList()
@@ -882,6 +984,7 @@ class MainActivity : ComponentActivity() {
                                 effectChoice = "None"
                                 hookText = ""
                                 captionText = ""
+                                expectedRestoredDuration = 0
                                 video = Uri.fromFile(output)
                                 drafts = emptyList()
                                 selectedDraft = -1

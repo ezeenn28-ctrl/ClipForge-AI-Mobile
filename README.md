@@ -11,6 +11,7 @@ Private Android clipping editor using Kotlin, Compose, Media3 and native whisper
 - Timed subtitle preview/export, approved-clip SRT saving, static opening hooks, adjustable subtitle color/size and bounded subtitle bitmap retention.
 - Rendered 1.12× zoom and monochrome effects shared by playback and export.
 - Campaign Mode with locally saved caption/rules, required tags, duration checks and manual source/rights confirmations. Failed checks block campaign export approval.
+- Atomic local autosave and automatic restoration of the last editing project, including trim, drafts, subtitle edits/style and effects. Playback is paused after restore; export approval, cloud permission and campaign confirmations are never restored. Downloaded source files are retained in app-private storage.
 - Explicit clip review approval before export. Routine edits revoke approval. No automatic export or media upload.
 
 ## Build and verification
@@ -19,7 +20,7 @@ GitHub Actions runs JVM unit tests, builds the arm64 debug APK, checks optimized
 The baseline commit ae4f644 passed Actions build #59, including unit tests and APK assembly. Development stage one (0e33ce0) passed Actions build #60, including unit tests and APK assembly. See subsequent Actions runs for verification of later changes.
 
 ## Current limits
-- Foreground processing: keep the app open. Background work, full project restoration and process-death job recovery are not implemented. Full-transcription checkpoints survive restart; reopen the same video and run full transcription to resume.
+- Foreground processing: keep the app open. Background work and automatic job recovery after process death are not implemented. The last editing project restores automatically when its original source is still accessible; active jobs are not restarted. Autosave runs after a one-second editing pause, including when completed batch results arrive. Full-transcription checkpoints survive restart; run full transcription on the restored original video to resume. Moving, replacing or deleting source media can prevent correct restoration; review it again before export.
 - Audio decoding seeks and trims each <=30-second inference window. Long files still require device validation of codec seeking, timestamp alignment, runtime and thermal behavior.
 - Whisper tiny accuracy varies, especially for Taglish, noise and overlapping speech. Review and correct subtitles.
 - Effects are a fixed zoom and monochrome filter; animated transitions, multitrack editing and face tracking remain future work.
