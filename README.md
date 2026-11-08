@@ -5,7 +5,7 @@ Private Android clipping editor using Kotlin, Compose, Media3 and native whisper
 ## Implemented
 - Local video import and direct HTTPS video-file download (1 GB limit).
 - Offline multilingual Whisper tiny model with checksum-verified, user-initiated download; English/Tagalog accuracy requires review.
-- First-30-second, selected-highlight, batch-highlight and chunked full-video transcription.
+- First-30-second, selected-highlight, batch-highlight and chunked full-video transcription. Native CPU inference is optimized even in debug APKs. Each job reuses model weights across its audio windows and releases them afterward, including on failure. Current-window progress, phase and elapsed time are displayed; percentages are inference progress, not estimated remaining time.
 - Atomic full-transcript checkpoints, resume, editable timed subtitles and paged transcript fields. Audio decoding seeks to each requested window and uses bounded temporary WAV chunks.
 - Up to 15 local speech-ranked, non-overlapping 15–30 second highlight suggestions. Ranking uses speech coverage, vocabulary and hook words, not predicted virality. Coverage-window generation and visual-activity sampling remain separate tools.
 - Timed subtitle preview/export, approved-clip SRT saving, static opening hooks, adjustable subtitle color/size and bounded subtitle bitmap retention.
@@ -14,7 +14,7 @@ Private Android clipping editor using Kotlin, Compose, Media3 and native whisper
 - Explicit clip review approval before export. Routine edits revoke approval. No automatic export or media upload.
 
 ## Build and verification
-GitHub Actions runs JVM unit tests, builds the arm64 debug APK and validates its ZIP structure. Unit test reports, logs and APK are uploaded as artifacts. Open the latest successful **Build Android APK** run to download the APK at a consolidated device-testing milestone.
+GitHub Actions runs JVM unit tests, builds the arm64 debug APK, checks optimized Whisper/CPU compiler flags and validates APK ZIP structure. Unit test reports, logs and APK are uploaded as artifacts. Open the latest successful **Build Android APK** run to download the APK at a consolidated device-testing milestone.
 
 The baseline commit ae4f644 passed Actions build #59, including unit tests and APK assembly. Development stage one (0e33ce0) passed Actions build #60, including unit tests and APK assembly. See subsequent Actions runs for verification of later changes.
 

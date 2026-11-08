@@ -1,14 +1,61 @@
 #include <jni.h>
 #include <string>
 #include <vector>
+#include <mutex>
 #include "whisper.h"
 
+namespace {
+std::mutex model_mutex;
+whisper_context* cached_context = nullptr;
+std::string cached_path;
+
+struct ProgressTarget {
+    JavaVM* vm;
+    jobject listener;
+    jmethodID method;
+};
+
+void report_progress(whisper_context*, whisper_state*, int progress, void* data) {
+    auto* target = static_cast<ProgressTarget*>(data);
+    JNIEnv* env = nullptr;
+    bool attached = false;
+    const auto status = target->vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
+    if (status == JNI_EDETACHED) {
+        if (target->vm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
+        attached = true;
+    } else if (status != JNI_OK) return;
+    env->CallVoidMethod(target->listener, target->method, static_cast<jint>(progress));
+    // A UI progress notification must never tear down the native inference loop.
+    if (env->ExceptionCheck()) env->ExceptionClear();
+    if (attached) target->vm->DetachCurrentThread();
+}
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_clipforge_mobile_WhisperNative_releaseModelNative(JNIEnv*, jobject) {
+    std::lock_guard<std::mutex> guard(model_mutex);
+    if (cached_context) whisper_free(cached_context);
+    cached_context = nullptr;
+    cached_path.clear();
+}
+
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_clipforge_mobile_WhisperNative_transcribeSegmentsNative(JNIEnv* env, jobject, jstring modelPath, jfloatArray audio) {
+Java_com_clipforge_mobile_WhisperNative_transcribeSegmentsNative(JNIEnv* env, jobject, jstring modelPath, jfloatArray audio, jobject listener) {
+    std::lock_guard<std::mutex> guard(model_mutex);
     const char* path = env->GetStringUTFChars(modelPath, nullptr);
-    whisper_context_params cp = whisper_context_default_params();
-    whisper_context* ctx = whisper_init_from_file_with_params(path, cp);
+    if (!path) return nullptr;
+    std::string requested_path(path);
     env->ReleaseStringUTFChars(modelPath, path);
+    if (!cached_context || cached_path != requested_path) {
+        if (cached_context) whisper_free(cached_context);
+        cached_context = nullptr;
+        cached_path.clear();
+        whisper_context_params cp = whisper_context_default_params();
+        cp.use_gpu = false;
+        cached_context = whisper_init_from_file_with_params(requested_path.c_str(), cp);
+        if (cached_context) cached_path = requested_path;
+    }
+    whisper_context* ctx = cached_context;
     if (!ctx) return env->NewStringUTF("ERROR: Could not load Whisper model");
     jsize count = env->GetArrayLength(audio);
     std::vector<float> samples(static_cast<size_t>(count));
@@ -25,7 +72,17 @@ Java_com_clipforge_mobile_WhisperNative_transcribeSegmentsNative(JNIEnv* env, jo
     params.translate = false;
     params.language = "auto";
     params.n_threads = 4;
+    JavaVM* vm = nullptr;
+    env->GetJavaVM(&vm);
+    jclass listener_class = env->GetObjectClass(listener);
+    jmethodID method = env->GetMethodID(listener_class, "onProgress", "(I)V");
+    env->DeleteLocalRef(listener_class);
+    if (!method) return nullptr;
+    ProgressTarget target{vm, env->NewGlobalRef(listener), method};
+    params.progress_callback = report_progress;
+    params.progress_callback_user_data = &target;
     int result = whisper_full(ctx, params, samples.data(), count);
+    env->DeleteGlobalRef(target.listener);
     std::string transcript;
     if (result == 0) {
         int n = whisper_full_n_segments(ctx);
@@ -38,6 +95,5 @@ Java_com_clipforge_mobile_WhisperNative_transcribeSegmentsNative(JNIEnv* env, jo
             transcript += "\n";
         }
     } else transcript = "ERROR: Whisper inference failed";
-    whisper_free(ctx);
     return env->NewStringUTF(transcript.c_str());
 }

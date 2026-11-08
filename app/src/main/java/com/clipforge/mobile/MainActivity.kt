@@ -285,6 +285,10 @@ class MainActivity : ComponentActivity() {
         var analyzing by remember { mutableStateOf(false) }
         var audioPreparing by remember { mutableStateOf(false) }
         var transcribing by remember { mutableStateOf(false) }
+        var speechPhase by remember { mutableStateOf("") }
+        var speechPercent by remember { mutableIntStateOf(-1) }
+        var speechElapsedSeconds by remember { mutableLongStateOf(0L) }
+
         var transcript by remember { mutableStateOf("") }
         var sourceTranscriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var transcriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
@@ -296,6 +300,17 @@ class MainActivity : ComponentActivity() {
         var batchRunning by remember { mutableStateOf(false) }
         var batchProgress by remember { mutableIntStateOf(0) }
         var batchTotal by remember { mutableIntStateOf(0) }
+        LaunchedEffect(transcribing, batchRunning) {
+            speechElapsedSeconds = 0
+            val began = android.os.SystemClock.elapsedRealtime()
+            while (transcribing || batchRunning) {
+                speechElapsedSeconds = (android.os.SystemClock.elapsedRealtime() - began) / 1000
+                delay(1000)
+            }
+        }
+        val reportSpeechProgress: (String, Int) -> Unit = { phase, percent ->
+            runOnUiThread { speechPhase = phase; speechPercent = percent }
+        }
         val batchCancel = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
         var batchResults by remember { mutableStateOf<Map<Int, List<WhisperNative.Segment>>>(emptyMap()) }
         var modelDownloading by remember { mutableStateOf(false) }
@@ -482,6 +497,8 @@ class MainActivity : ComponentActivity() {
                 Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing, onClick = {
                     val selectedVideo = video ?: return@Button
                     approved = false
+                    speechPhase = "Starting offline transcription"
+                    speechPercent = -1
                     transcribing = true
                     transcript = ""
                     subtitleDraftIndex = -1
@@ -489,14 +506,16 @@ class MainActivity : ComponentActivity() {
                     status = "Preparing first 30 seconds for offline Whisper…"
                     Thread {
                         try {
+                            WhisperNative.withSession {
                             ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
-                            val result = OfflineTranscriber.range(this@MainActivity, selectedVideo, File(filesDir, "models/ggml-tiny.bin"), 0L, minOf(duration, 30_000L))
+                            val result = OfflineTranscriber.range(this@MainActivity, selectedVideo, File(filesDir, "models/ggml-tiny.bin"), 0L, minOf(duration, 30_000L), progress = reportSpeechProgress)
                             runOnUiThread {
                                 sourceTranscriptSegments = result
                                 transcriptSegments = result
                                 transcript = result.joinToString(" ") { it.text }
                                 transcribing = false
                                 status = "Offline Whisper processed first 30 seconds. Review accuracy below."
+                            }
                             }
                         } catch (e: Throwable) {
                             runOnUiThread {
@@ -515,6 +534,8 @@ class MainActivity : ComponentActivity() {
                     val chosenIndex = selectedDraft
                     val chosen = drafts.getOrNull(chosenIndex) ?: return@Button
                     approved = false
+                    speechPhase = "Starting offline transcription"
+                    speechPercent = -1
                     transcribing = true
                     transcript = ""
                     transcriptSegments = emptyList()
@@ -523,8 +544,9 @@ class MainActivity : ComponentActivity() {
                     status = "Transcribing selected highlight offline…"
                     Thread {
                         try {
+                            WhisperNative.withSession {
                             ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
-                            val segments = OfflineTranscriber.range(this@MainActivity, selectedVideo, File(filesDir, "models/ggml-tiny.bin"), chosen.startMs, chosen.endMs)
+                            val segments = OfflineTranscriber.range(this@MainActivity, selectedVideo, File(filesDir, "models/ggml-tiny.bin"), chosen.startMs, chosen.endMs, progress = reportSpeechProgress)
                             runOnUiThread {
                                 transcriptSegments = segments
                                 subtitleSegments = segments
@@ -534,6 +556,7 @@ class MainActivity : ComponentActivity() {
                                 transcript = segments.joinToString("\n") { it.text }
                                 transcribing = false
                                 status = "Transcribed selected highlight: ${segments.size} timed segments."
+                            }
                             }
                         } catch (e: Throwable) {
                             runOnUiThread {
@@ -580,6 +603,12 @@ class MainActivity : ComponentActivity() {
                         status = "Transcript copied to caption draft. Review timing and approve before export."
                     }) { Text("Use transcript as caption draft") }
                 }
+                if (transcribing) {
+                    Text(speechPhase)
+                    if (speechPercent < 0) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    else LinearProgressIndicator(progress = { speechPercent / 100f }, modifier = Modifier.fillMaxWidth())
+                    Text("Elapsed: ${speechElapsedSeconds / 60}m ${speechElapsedSeconds % 60}s • ${if (speechPercent < 0) "Preparing" else "$speechPercent% of current audio window"}", style = MaterialTheme.typography.bodySmall)
+                }
                 Text("Hybrid transcription planning", style = MaterialTheme.typography.titleMedium)
                 val highlightPlan = HybridTranscriptionPlan.highlights(drafts)
                 val fullPlan = HybridTranscriptionPlan.fullVideo(duration)
@@ -592,6 +621,8 @@ class MainActivity : ComponentActivity() {
                     val source = video ?: return@Button
                     val snapshot = drafts.toList()
                     approved = false
+                    speechPhase = "Starting offline batch"
+                    speechPercent = -1
                     batchRunning = true
                     batchCancel.set(false)
                     batchProgress = 0
@@ -600,15 +631,18 @@ class MainActivity : ComponentActivity() {
                     status = "Preparing audio for highlight batch…"
                     Thread {
                         try {
+                            WhisperNative.withSession {
                             ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
                             val model = File(filesDir, "models/ggml-tiny.bin")
                             val completed = mutableMapOf<Int, List<WhisperNative.Segment>>()
                             for ((index, draft) in snapshot.withIndex()) {
                                 if (batchCancel.get()) break
-                                val segments = OfflineTranscriber.range(this@MainActivity, source, model, draft.startMs, minOf(draft.endMs, draft.startMs + 30_000L))
+                                runOnUiThread { status = "Processing highlight ${index + 1}/${snapshot.size}"; speechPhase = "Decoding highlight ${index + 1}"; speechPercent = -1 }
+                                val segments = OfflineTranscriber.range(this@MainActivity, source, model, draft.startMs, minOf(draft.endMs, draft.startMs + 30_000L), progress = reportSpeechProgress)
                                 completed[index] = segments
+                                val completedSnapshot = completed.toMap()
                                 runOnUiThread {
-                                    batchResults = completed.toMap()
+                                    batchResults = completedSnapshot
                                     batchProgress = index + 1
                                     status = "Transcribed ${batchProgress}/${batchTotal} highlights"
                                 }
@@ -616,6 +650,7 @@ class MainActivity : ComponentActivity() {
                             runOnUiThread {
                                 batchRunning = false
                                 status = if (batchCancel.get()) "Batch stopped after ${completed.size} highlights" else "Batch complete: ${completed.size} highlights"
+                            }
                             }
                         } catch (e: Throwable) {
                             runOnUiThread {
@@ -627,8 +662,13 @@ class MainActivity : ComponentActivity() {
                 }) { Text(if (batchRunning) "Transcribing highlights…" else "Transcribe all highlight candidates") }
                 if (batchRunning) {
                     LinearProgressIndicator(progress = { if (batchTotal > 0) batchProgress.toFloat() / batchTotal else 0f }, modifier = Modifier.fillMaxWidth())
-                    Text("${batchProgress}/${batchTotal} highlights completed", style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = { batchCancel.set(true) }) { Text("Stop after current highlight") }
+                    Text(status)
+                    Text(speechPhase)
+                    if (speechPercent < 0) LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    else LinearProgressIndicator(progress = { speechPercent / 100f }, modifier = Modifier.fillMaxWidth())
+                    Text("Elapsed: ${speechElapsedSeconds / 60}m ${speechElapsedSeconds % 60}s • ${if (speechPercent < 0) "Preparing current window" else "$speechPercent% of current window"}", style = MaterialTheme.typography.bodySmall)
+                    Text("${batchProgress}/${batchTotal} audio windows completed", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = { batchCancel.set(true) }) { Text("Stop after current audio window") }
                 }
                 if (batchResults.isNotEmpty()) {
                     Text("${batchResults.size} transcribed highlights ready to review", style = MaterialTheme.typography.bodySmall)
@@ -660,6 +700,8 @@ class MainActivity : ComponentActivity() {
                     val source = video ?: return@Button
                     val chunks = HybridTranscriptionPlan.fullVideo(duration)
                     approved = false
+                    speechPhase = "Starting offline batch"
+                    speechPercent = -1
                     batchRunning = true
                     batchCancel.set(false)
                     batchProgress = 0
@@ -670,6 +712,7 @@ class MainActivity : ComponentActivity() {
                     status = "Preparing full-video audio…"
                     Thread {
                         try {
+                            WhisperNative.withSession {
                             ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
                             val model = File(filesDir, "models/ggml-tiny.bin")
                             val sourceKey = MessageDigest.getInstance("SHA-256")
@@ -688,7 +731,8 @@ class MainActivity : ComponentActivity() {
                                     runOnUiThread { batchProgress = skipped }
                                     continue
                                 }
-                                val segments = OfflineTranscriber.range(this@MainActivity, source, model, chunk.startMs, chunk.endMs)
+                                runOnUiThread { status = "Processing chunk ${chunk.index + 1}/${chunks.size}"; speechPhase = "Decoding chunk ${chunk.index + 1}"; speechPercent = -1 }
+                                val segments = OfflineTranscriber.range(this@MainActivity, source, model, chunk.startMs, chunk.endMs, progress = reportSpeechProgress)
                                 collected.addAll(segments)
                                 TranscriptStore.write(transcriptFile, TranscriptStore.Snapshot(chunk.endMs, collected))
                                 done++
@@ -704,6 +748,7 @@ class MainActivity : ComponentActivity() {
                                 transcript = collected.joinToString("\n") { it.text }
                                 batchRunning = false
                                 status = if (batchCancel.get()) "Full-video transcription stopped; partial transcript saved" else "Full-video transcript saved locally"
+                            }
                             }
                         } catch (e: Throwable) {
                             runOnUiThread {

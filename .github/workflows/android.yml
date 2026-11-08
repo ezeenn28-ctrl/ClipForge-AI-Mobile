@@ -81,6 +81,26 @@ jobs:
             android-build.log
             android-test.log
           if-no-files-found: ignore
+      - name: Verify optimized native inference flags
+        if: success()
+        shell: python
+        run: |
+          import glob, json, shlex
+          checked = []
+          for path in glob.glob('app/.cxx/**/compile_commands.json', recursive=True):
+              for entry in json.load(open(path)):
+                  source = entry['file'].replace('\\', '/')
+                  if source.endswith('/src/whisper.cpp') or source.endswith('/ggml-cpu/ggml-cpu.cpp') or source.endswith('/ggml-cpu/ggml-cpu.c'):
+                      args = entry.get('arguments') or shlex.split(entry['command'])
+                      levels = [arg for arg in args if arg in ('-O0', '-O1', '-O2', '-O3', '-Os', '-Oz', '-Ofast')]
+                      if not levels or levels[-1] not in ('-O3', '-Ofast'):
+                          raise SystemExit('Inference is not optimized: ' + source + ' ' + str(levels))
+                      checked.append(source)
+          if not any(path.endswith('/src/whisper.cpp') for path in checked):
+              raise SystemExit('No Whisper compile command found')
+          if not any('/ggml-cpu/' in path for path in checked):
+              raise SystemExit('No CPU kernel compile command found')
+          print('Verified optimized Whisper and CPU kernels: ' + str(len(checked)) + ' compile commands')
       - name: Verify generated APK
         if: success()
         shell: bash

@@ -7,10 +7,17 @@ import java.nio.ByteOrder
 
 object WhisperNative {
     init { System.loadLibrary("clipforge_whisper") }
-    external fun transcribeSegmentsNative(modelPath: String, audio: FloatArray): String
+    fun interface ProgressListener { fun onProgress(percent: Int) }
+    external fun transcribeSegmentsNative(modelPath: String, audio: FloatArray, listener: ProgressListener): String
+    private external fun releaseModelNative()
+
+    /** Reuse model weights across a batch, then release even on errors/cancellation. */
+    fun <T> withSession(block: () -> T): T = synchronized(this) {
+        try { block() } finally { releaseModelNative() }
+    }
     data class Segment(val startMs: Long, val endMs: Long, val text: String)
-    fun transcribeSegments(model: File, wav: File, startMs: Long, endMs: Long): List<Segment> {
-        val raw = transcribeWav(model, wav, startMs, endMs)
+    fun transcribeSegments(model: File, wav: File, startMs: Long, endMs: Long, progress: ProgressListener = ProgressListener {}): List<Segment> {
+        val raw = transcribeWav(model, wav, startMs, endMs, progress)
         if (raw.startsWith("ERROR:")) error(raw)
         return raw.lineSequence().mapNotNull { line ->
             val fields = line.split('\t', limit = 3)
@@ -24,7 +31,7 @@ object WhisperNative {
     }
 
     /** Reads up to 30 seconds of 16-bit mono WAV and resamples to Whisper's 16 kHz input. */
-    fun transcribeWav(model: File, wav: File, startMs: Long = 0L, endMs: Long = 30_000L): String {
+    fun transcribeWav(model: File, wav: File, startMs: Long = 0L, endMs: Long = 30_000L, progress: ProgressListener = ProgressListener {}): String {
         require(model.isFile) { "Download Whisper model first" }
         RandomAccessFile(wav, "r").use { file ->
             val header = ByteArray(44)
@@ -51,7 +58,7 @@ object WhisperNative {
                 val fraction = (position - a).toFloat()
                 (input.get(a) * (1f - fraction) + input.get(b) * fraction) / 32768f
             }
-            return transcribeSegmentsNative(model.absolutePath, samples)
+            return transcribeSegmentsNative(model.absolutePath, samples, progress)
         }
     }
 }
