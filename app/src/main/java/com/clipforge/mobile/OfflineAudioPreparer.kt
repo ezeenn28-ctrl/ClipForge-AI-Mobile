@@ -13,7 +13,10 @@ import java.nio.ByteOrder
 /** Extracts decoded audio from an imported video into a local mono 16-bit PCM WAV.
  * This prepares audio for a future native Whisper inference bridge; it does NOT transcribe. */
 object OfflineAudioPreparer {
-    fun extractWav(context: Context, uri: Uri, destination: File): File {
+    fun extractWav(context: Context, uri: Uri, destination: File, startMs: Long = 0, endMs: Long = Long.MAX_VALUE / 1000): File {
+        require(startMs >= 0 && endMs > startMs)
+        val startUs = startMs * 1000
+        val endUs = endMs * 1000
         val extractor = MediaExtractor()
         var codec: MediaCodec? = null
         try {
@@ -22,6 +25,7 @@ object OfflineAudioPreparer {
                 extractor.getTrackFormat(it).getString(MediaFormat.KEY_MIME)?.startsWith("audio/") == true
             } ?: error("Video has no audio track")
             extractor.selectTrack(track)
+            if (startMs > 0) extractor.seekTo(startUs, MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
             val format = extractor.getTrackFormat(track)
             val mime = format.getString(MediaFormat.KEY_MIME) ?: error("Unknown audio format")
             codec = MediaCodec.createDecoderByType(mime)
@@ -45,7 +49,7 @@ object OfflineAudioPreparer {
                     val inputIndex = codec.dequeueInputBuffer(10000)
                     if (inputIndex >= 0) {
                         val buffer = codec.getInputBuffer(inputIndex) ?: error("Missing input buffer")
-                        val size = extractor.readSampleData(buffer, 0)
+                        val size = if (extractor.sampleTime < 0 || extractor.sampleTime >= endUs) -1 else extractor.readSampleData(buffer, 0)
                         if (size < 0) {
                             codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             inputDone = true
@@ -79,16 +83,26 @@ object OfflineAudioPreparer {
                         pendingSampleBytes = merged.copyOfRange(completeBytes, merged.size)
                         val samples = ByteBuffer.wrap(merged, 0, completeBytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
                         val frames = samples.remaining() / channels
-                        val mono = ByteArray(frames * 2)
-                        for (frame in 0 until frames) {
+                        val window = AudioWindow.slice(info.presentationTimeUs, frames, sampleRate, startUs, endUs)
+                        // Sparse writes retain silence where timestamps have gaps, preserving subtitle alignment.
+                        val alreadyWritten = writtenBytes / 2
+                        val skip = (alreadyWritten - window.outputFrame).coerceAtLeast(0).coerceAtMost((window.endFrame - window.firstFrame).toLong()).toInt()
+                        val first = window.firstFrame + skip
+                        val mono = ByteArray((window.endFrame - first) * 2)
+                        for (frame in first until window.endFrame) {
                             var sum = 0
                             for (channel in 0 until channels) sum += samples.get(frame * channels + channel).toInt()
                             val value = sum / channels
-                            mono[frame * 2] = value.toByte()
-                            mono[frame * 2 + 1] = (value ushr 8).toByte()
+                            mono[(frame - first) * 2] = value.toByte()
+                            mono[(frame - first) * 2 + 1] = (value ushr 8).toByte()
                         }
-                        wav.write(mono)
-                        writtenBytes += mono.size
+                        if (mono.isNotEmpty()) {
+                            val offset = maxOf(writtenBytes, window.outputFrame * 2)
+                            require(offset + mono.size <= Int.MAX_VALUE - 36L) { "Audio exceeds WAV size limit" }
+                            wav.seek(44 + offset)
+                            wav.write(mono)
+                            writtenBytes = offset + mono.size
+                        }
                         codec.releaseOutputBuffer(index, false)
                         if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
                     }
@@ -113,9 +127,9 @@ object OfflineAudioPreparer {
             }
             return destination
         } finally {
-            codec?.stop()
-            codec?.release()
-            extractor.release()
+            try { codec?.stop() } finally {
+                try { codec?.release() } finally { extractor.release() }
+            }
         }
     }
 }

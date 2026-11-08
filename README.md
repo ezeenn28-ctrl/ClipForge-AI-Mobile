@@ -6,7 +6,7 @@ Private Android clipping editor using Kotlin, Compose, Media3 and native whisper
 - Local video import and direct HTTPS video-file download (1 GB limit).
 - Offline multilingual Whisper tiny model with checksum-verified, user-initiated download; English/Tagalog accuracy requires review.
 - First-30-second, selected-highlight, batch-highlight and chunked full-video transcription.
-- Atomic full-transcript checkpoints, resume, editable timed subtitles and paged transcript fields.
+- Atomic full-transcript checkpoints, resume, editable timed subtitles and paged transcript fields. Audio decoding seeks to each requested window and uses bounded temporary WAV chunks.
 - Up to 15 local speech-ranked, non-overlapping 15–30 second highlight suggestions. Ranking uses speech coverage, vocabulary and hook words, not predicted virality. Coverage-window generation and visual-activity sampling remain separate tools.
 - Timed subtitle preview/export, static opening hooks, adjustable subtitle color/size and bounded subtitle bitmap retention.
 - Rendered 1.12× zoom and monochrome effects shared by playback and export.
@@ -20,11 +20,12 @@ The baseline commit ae4f644 passed Actions build #59, including unit tests and A
 
 ## Current limits
 - Foreground processing: keep the app open. Background work, full project restoration and process-death job recovery are not implemented. Full-transcription checkpoints survive restart; reopen the same video and run full transcription to resume.
-- Audio is currently decoded to a full temporary WAV before chunk inference. Storage checks run before extraction; very long files still require substantial free storage and time.
+- Audio decoding seeks and trims each <=30-second inference window. Long files still require device validation of codec seeking, timestamp alignment, runtime and thermal behavior.
 - Whisper tiny accuracy varies, especially for Taglish, noise and overlapping speech. Review and correct subtitles.
 - Effects are a fixed zoom and monochrome filter; animated transitions, multitrack editing and face tracking remain future work.
 - Campaign checks do not fetch briefs or verify audience geography, account standing, engagement, duplicate submissions or payout eligibility.
 - Cloud AI has no provider implemented. No paid service is used. A future provider requires explicit permission before upload.
+- Export progress and cancellation are available; failed/cancelled partial files are removed. Downloads use unique temporary files so a failed import cannot overwrite the selected source.
 - Export remains in the app-specific Movies directory. Device codec, aspect-ratio and playback/export behavior need physical-phone validation.
 - No claim of complete production readiness or verified two-hour processing until consolidated device testing.
 

@@ -279,6 +279,9 @@ class MainActivity : ComponentActivity() {
         var link by remember { mutableStateOf("") }
         var downloading by remember { mutableStateOf(false) }
         var exporting by remember { mutableStateOf(false) }
+        var activeTransformer by remember { mutableStateOf<Transformer?>(null) }
+        var exportFile by remember { mutableStateOf<File?>(null) }
+        var exportPercent by remember { mutableIntStateOf(0) }
         var analyzing by remember { mutableStateOf(false) }
         var audioPreparing by remember { mutableStateOf(false) }
         var transcribing by remember { mutableStateOf(false) }
@@ -320,6 +323,33 @@ class MainActivity : ComponentActivity() {
         val player = remember { ExoPlayer.Builder(this).build() }
         LaunchedEffect(effectChoice) { player.setVideoEffects(creativeEffects(effectChoice)) }
         DisposableEffect(player) { onDispose { player.release() } }
+        DisposableEffect(Unit) {
+            onDispose { activeTransformer?.cancel(); if (exporting) exportFile?.delete() }
+        }
+        LaunchedEffect(exporting) {
+            val holder = ProgressHolder()
+            while (exporting) {
+                if (activeTransformer?.getProgress(holder) == Transformer.PROGRESS_STATE_AVAILABLE) {
+                    exportPercent = holder.progress
+                }
+                delay(300)
+            }
+        }
+        DisposableEffect(busy) {
+            if (busy) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            onDispose { window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+        }
+        var pendingSrt by remember { mutableStateOf("") }
+        val subtitleSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-subrip")) { destination ->
+            if (destination != null) {
+                try {
+                    val stream = contentResolver.openOutputStream(destination) ?: error("Unable to open subtitle destination")
+                    stream.bufferedWriter(Charsets.UTF_8).use { it.write(pendingSrt) }
+                    status = "Timed SRT saved"
+                } catch (e: Exception) { status = "Subtitle save failed: ${e.message}" }
+            }
+            pendingSrt = ""
+        }
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
                 try {
@@ -393,7 +423,7 @@ class MainActivity : ComponentActivity() {
                 Text("Transcription prerequisites: ${if (video != null) "video selected" else "select video"} • ${if (modelReady) "model installed" else "download model"}", style = MaterialTheme.typography.bodySmall)
                 Text("Multilingual Whisper tiny (~78 MB) runs locally; no video is uploaded for transcription.", style = MaterialTheme.typography.bodySmall)
                 Text(if (modelReady) "Multilingual model downloaded" else if (modelDownloading) "Downloading model: $modelProgress%" else "Model not installed")
-                Button(enabled = !modelDownloading, onClick = {
+                Button(enabled = !busy && !modelDownloading, onClick = {
                     if (modelReady) {
                         status = "Model already installed. Offline speech recognition engine is still pending."
                     } else {
@@ -425,8 +455,8 @@ class MainActivity : ComponentActivity() {
                     status = "Extracting audio locally…"
                     Thread {
                         try {
-                            ensureAudioWorkspace(cacheDir, duration)
-                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
+                            ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
+                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"), 0, 30_000)
                             runOnUiThread {
                                 audioPreparing = false
                                 status = "Audio prepared locally: ${wav.length() / 1024} KB. Ready for offline Whisper transcription."
@@ -441,14 +471,14 @@ class MainActivity : ComponentActivity() {
                 }) { Text(if (audioPreparing) "Preparing audio…" else "Prepare video audio for offline transcription") }
                 Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing, onClick = {
                     val selectedVideo = video ?: return@Button
+                    approved = false
                     transcribing = true
                     transcript = ""
                     status = "Preparing first 30 seconds for offline Whisper…"
                     Thread {
                         try {
-                            ensureAudioWorkspace(cacheDir, duration)
-                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
-                            val result = WhisperNative.transcribeSegments(File(filesDir, "models/ggml-tiny.bin"), wav, 0L, 30_000L)
+                            ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
+                            val result = OfflineTranscriber.range(this@MainActivity, selectedVideo, File(filesDir, "models/ggml-tiny.bin"), 0L, minOf(duration, 30_000L))
                             runOnUiThread {
                                 transcriptSegments = result
                                 transcript = result.joinToString(" ") { it.text }
@@ -465,12 +495,13 @@ class MainActivity : ComponentActivity() {
                 }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe first 30 seconds offline") }
                 if (transcript.isNotBlank()) {
                     Text("Whisper transcript (editable)", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(enabled = !busy, value = transcript, onValueChange = { transcript = it }, label = { Text("Recognized speech") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+                    OutlinedTextField(enabled = !busy, value = transcript, onValueChange = { transcript = it }, label = { Text("Transcript notes (edit timed cues below)") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
                 }
                 Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing && selectedDraft in drafts.indices, onClick = {
                     val selectedVideo = video ?: return@Button
                     val chosenIndex = selectedDraft
                     val chosen = drafts.getOrNull(chosenIndex) ?: return@Button
+                    approved = false
                     transcribing = true
                     transcript = ""
                     transcriptSegments = emptyList()
@@ -479,9 +510,8 @@ class MainActivity : ComponentActivity() {
                     status = "Transcribing selected highlight offline…"
                     Thread {
                         try {
-                            ensureAudioWorkspace(cacheDir, duration)
-                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
-                            val segments = WhisperNative.transcribeSegments(File(filesDir, "models/ggml-tiny.bin"), wav, chosen.startMs, chosen.endMs)
+                            ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
+                            val segments = OfflineTranscriber.range(this@MainActivity, selectedVideo, File(filesDir, "models/ggml-tiny.bin"), chosen.startMs, chosen.endMs)
                             runOnUiThread {
                                 transcriptSegments = segments
                                 subtitleSegments = segments
@@ -546,6 +576,7 @@ class MainActivity : ComponentActivity() {
                 Button(enabled = !busy && video != null && modelReady && drafts.isNotEmpty() && !batchRunning && !transcribing && !audioPreparing, onClick = {
                     val source = video ?: return@Button
                     val snapshot = drafts.toList()
+                    approved = false
                     batchRunning = true
                     batchCancel = false
                     batchProgress = 0
@@ -554,13 +585,12 @@ class MainActivity : ComponentActivity() {
                     status = "Preparing audio for highlight batch…"
                     Thread {
                         try {
-                            ensureAudioWorkspace(cacheDir, duration)
-                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, source, File(cacheDir, "clipforge_audio.wav"))
+                            ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
                             val model = File(filesDir, "models/ggml-tiny.bin")
                             val completed = mutableMapOf<Int, List<WhisperNative.Segment>>()
                             for ((index, draft) in snapshot.withIndex()) {
                                 if (batchCancel) break
-                                val segments = WhisperNative.transcribeSegments(model, wav, draft.startMs, minOf(draft.endMs, draft.startMs + 30_000L))
+                                val segments = OfflineTranscriber.range(this@MainActivity, source, model, draft.startMs, minOf(draft.endMs, draft.startMs + 30_000L))
                                 completed[index] = segments
                                 runOnUiThread {
                                     batchResults = completed.toMap()
@@ -609,6 +639,7 @@ class MainActivity : ComponentActivity() {
                 Button(enabled = !busy && video != null && modelReady && duration > 0 && !batchRunning && !transcribing && !audioPreparing, onClick = {
                     val source = video ?: return@Button
                     val chunks = HybridTranscriptionPlan.fullVideo(duration)
+                    approved = false
                     batchRunning = true
                     batchCancel = false
                     batchProgress = 0
@@ -617,11 +648,10 @@ class MainActivity : ComponentActivity() {
                     status = "Preparing full-video audio…"
                     Thread {
                         try {
-                            ensureAudioWorkspace(cacheDir, duration)
-                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, source, File(cacheDir, "clipforge_audio.wav"))
+                            ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
                             val model = File(filesDir, "models/ggml-tiny.bin")
                             val sourceKey = MessageDigest.getInstance("SHA-256")
-                                .digest((source.toString() + ":" + duration).toByteArray())
+                                .digest((source.toString() + ":chunk-v2:" + duration).toByteArray())
                                 .take(10).joinToString("") { "%02x".format(it) }
                             val transcriptFile = File(filesDir, "transcript_${sourceKey}.tsv")
                             val previous = TranscriptStore.read(transcriptFile)
@@ -636,7 +666,7 @@ class MainActivity : ComponentActivity() {
                                     runOnUiThread { batchProgress = skipped }
                                     continue
                                 }
-                                val segments = WhisperNative.transcribeSegments(model, wav, chunk.startMs, chunk.endMs)
+                                val segments = OfflineTranscriber.range(this@MainActivity, source, model, chunk.startMs, chunk.endMs)
                                 collected.addAll(segments)
                                 TranscriptStore.write(transcriptFile, TranscriptStore.Snapshot(chunk.endMs, collected))
                                 done++
@@ -756,29 +786,7 @@ class MainActivity : ComponentActivity() {
                     val address = link
                     Thread {
                         try {
-                            val connection = URL(address).openConnection() as HttpURLConnection
-                            connection.connectTimeout = 15000
-                            connection.readTimeout = 30000
-                            connection.instanceFollowRedirects = true
-                            connection.connect()
-                            val type = connection.contentType ?: ""
-                            if (!type.startsWith("video/") && !type.startsWith("application/octet-stream")) error("This link is not a direct video file. Download the video first, then import it.")
-                            if (connection.contentLengthLong > 1_000_000_000L) error("Video exceeds the 1 GB download limit")
-                            val output = File(cacheDir, "source_video.mp4")
-                            connection.inputStream.use { input ->
-                                output.outputStream().use { stream ->
-                                    val buffer = ByteArray(64 * 1024)
-                                    var total = 0L
-                                    while (true) {
-                                        val count = input.read(buffer)
-                                        if (count < 0) break
-                                        total += count
-                                        if (total > 1_000_000_000L) error("Video exceeds the 1 GB download limit")
-                                        stream.write(buffer, 0, count)
-                                    }
-                                }
-                            }
-                            connection.disconnect()
+                            val output = LocalVideoDownload.fetch(address, cacheDir)
                             runOnUiThread {
                                 transcript = ""
                                 transcriptSegments = emptyList()
@@ -932,24 +940,45 @@ class MainActivity : ComponentActivity() {
                         effects.add(OverlayEffect(listOf(overlay)))
                     }
                     val edited = EditedMediaItem.Builder(item).setRemoveAudio(mute).setEffects(Effects(emptyList(), effects)).build()
+                    exportPercent = 0
                     exporting = true
                     status = "Exporting…"
                     val transformer = Transformer.Builder(this@MainActivity)
                         .addListener(object : Transformer.Listener {
                             override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
                                 runOnUiThread {
+                                    activeTransformer = null
                                     exporting = false
                                     status = "Saved: ${output.absolutePath}"
                                     Toast.makeText(this@MainActivity, "Export complete", Toast.LENGTH_LONG).show()
                                 }
                             }
                             override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
-                                runOnUiThread { exporting = false; status = "Export failed: ${exportException.message}" }
+                                runOnUiThread { output.delete(); activeTransformer = null; exporting = false; status = "Export failed: ${exportException.message}" }
                             }
                         }).build()
+                    exportFile = output
+                    activeTransformer = transformer
                     try { transformer.start(edited, output.absolutePath) }
-                    catch (e: Exception) { exporting = false; status = "Export failed: ${e.message}" }
+                    catch (e: Exception) { output.delete(); activeTransformer = null; exporting = false; status = "Export failed: ${e.message}" }
                 }) { Text(if (exporting) "Exporting…" else "Export MP4") }
+                OutlinedButton(enabled = !busy && approved && campaignIssues.isEmpty() && subtitleDraftIndex == selectedDraft && selectedDraft >= 0 && subtitleSegments.isNotEmpty(), onClick = {
+                    pendingSrt = SubtitleSrt.render(subtitleSegments, (duration * start).toLong(), (duration * end).toLong())
+                    subtitleSaver.launch("clipforge_subtitles.srt")
+                }) { Text("Save approved clip subtitles (.srt)") }
+                if (exporting) {
+                    LinearProgressIndicator(progress = { exportPercent / 100f }, modifier = Modifier.fillMaxWidth())
+                    Text("Export progress: $exportPercent%")
+                    OutlinedButton(onClick = {
+                        activeTransformer?.cancel()
+                        exportFile?.delete()
+                        exportFile = null
+                        activeTransformer = null
+                        exporting = false
+                        approved = false
+                        status = "Export cancelled. Review before starting again."
+                    }) { Text("Cancel export") }
+                }
                 Text(status, style = MaterialTheme.typography.bodySmall)
                 Text("Exports are saved in the app-specific Movies directory.", style = MaterialTheme.typography.bodySmall)
             }
