@@ -19,7 +19,8 @@ data class EditorProject(
     val subtitleDraftIndex: Int = -1,
     val currentSegments: List<WhisperNative.Segment> = emptyList(),
     val sourceSegments: List<WhisperNative.Segment> = emptyList(),
-    val draftSegments: Map<Int, List<WhisperNative.Segment>> = emptyMap()
+    val draftSegments: Map<Int, List<WhisperNative.Segment>> = emptyMap(),
+    val fillFrame: Boolean = false
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 

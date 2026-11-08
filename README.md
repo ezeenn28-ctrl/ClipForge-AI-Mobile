@@ -2,6 +2,13 @@
 
 Private Android clipping editor using Kotlin, Compose, Media3 and native whisper.cpp.
 
+## Studio interface
+- Four focused workspaces: Studio, Captions, Campaign and Export, with persistent navigation and visible processing status.
+- Custom dark color system, vector identity, clip review cards and larger preview/playback controls.
+- Exact trim timecodes support short clips near the end of long sources; crop/fit framing is shared between player preview and export and saved with the project.
+- Advanced batch tools and direct-link importing are progressively disclosed rather than filling the first screen.
+- Compose interaction tests render real Android-view screenshots for layout review. These host-rendered previews do not replace physical-device testing.
+
 ## Implemented
 - Local video import and direct HTTPS video-file download (1 GB limit).
 - Offline multilingual Whisper tiny model with checksum-verified, user-initiated download; English/Tagalog accuracy requires review.

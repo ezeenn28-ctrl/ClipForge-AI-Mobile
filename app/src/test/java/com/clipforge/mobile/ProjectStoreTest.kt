@@ -48,6 +48,17 @@ class ProjectStoreTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun restoresCropAndReadsProjectsWithoutNewFramingField() {
+        val directory = Files.createTempDirectory("clipforge-framing").toFile()
+        try {
+            val file = File(directory, "project.properties")
+            ProjectStore.write(file, project().copy(fillFrame = true))
+            assertTrue(ProjectStore.read(file)!!.fillFrame)
+            file.writeText(file.readText().lineSequence().filterNot { it.startsWith("fillFrame=") }.joinToString("\n"))
+            assertFalse(ProjectStore.read(file)!!.fillFrame)
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun rejectsRemoteSourcesAndInvalidSubtitleAssociation() {
         try { project().copy(source = "https://example.com/media.mp4").validate(); fail("Remote source accepted") }
         catch (_: IllegalArgumentException) {}

@@ -20,6 +20,7 @@ object ProjectStore {
             }
         }
         put("format", "clipforge-project-v1")
+        put("fillFrame", safe.fillFrame)
         put("source", safe.source); put("duration", safe.durationMs)
         put("start", safe.startMs); put("end", safe.endMs)
         put("mode", safe.mode); put("vertical", safe.vertical); put("mute", safe.mute)
@@ -77,6 +78,7 @@ object ProjectStore {
         return EditorProject(text("source"), number("duration"), number("start"), number("end"),
             text("mode"), bool("vertical"), bool("mute"), drafts, integer("selected"), text("hook"), text("caption"),
             text("effect"), text("subtitleSize").toFloat(), bool("subtitleYellow"), integer("subtitleDraft"),
-            segments("current"), segments("sourceSpeech"), draftSegments).also { it.validate() }
+            segments("current"), segments("sourceSpeech"), draftSegments,
+            fillFrame = data.getProperty("fillFrame", "false").toBooleanStrict()).also { it.validate() }
     }
 }
