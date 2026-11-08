@@ -18,7 +18,7 @@ android {
     signingConfigs {
         getByName("debug") {
             // Use exactly the identity restored and checked by Actions.
-            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storeFile = file(System.getProperty("user.home") + "/.android/clipforge-development.keystore")
             storePassword = "android"
             keyAlias = "androiddebugkey"
             keyPassword = "android"
