@@ -184,6 +184,19 @@ fun timedCaptionOverlay(
     }
 }
 
+fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long): BitmapOverlay {
+    val empty = makeCaptionOverlay(hook, "")
+    val frames = segments.map { it to makeCaptionOverlay(hook, it.text) }
+    return object : BitmapOverlay() {
+        override fun getBitmap(presentationTimeUs: Long): Bitmap {
+            val absoluteMs = trimStartMs + presentationTimeUs / 1000L
+            return frames.firstOrNull { (segment, _) ->
+                absoluteMs >= segment.startMs && absoluteMs < segment.endMs
+            }?.second ?: empty
+        }
+    }
+}
+
 /** Samples reduced-resolution frames locally. Frame differences are an activity
  * proxy only: they do not recognize objects, speech or audience engagement. */
 fun measureVisualActivity(retriever: MediaMetadataRetriever, startMs: Long, endMs: Long): Int? {
@@ -253,6 +266,8 @@ class MainActivity : ComponentActivity() {
         var transcribing by remember { mutableStateOf(false) }
         var transcript by remember { mutableStateOf("") }
         var transcriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
+        var subtitleSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
+        var subtitleDraftIndex by remember { mutableIntStateOf(-1) }
         var modelDownloading by remember { mutableStateOf(false) }
         var modelProgress by remember { mutableIntStateOf(0) }
         var modelReady by remember { mutableStateOf(File(filesDir, "models/ggml-tiny.bin").exists()) }
@@ -266,6 +281,8 @@ class MainActivity : ComponentActivity() {
                 video = uri
                 transcript = ""
                 transcriptSegments = emptyList()
+                subtitleSegments = emptyList()
+                subtitleDraftIndex = -1
                 drafts = emptyList()
                 selectedDraft = -1
                 approved = false
@@ -402,6 +419,8 @@ class MainActivity : ComponentActivity() {
                     transcribing = true
                     transcript = ""
                     transcriptSegments = emptyList()
+                    subtitleSegments = emptyList()
+                    subtitleDraftIndex = -1
                     status = "Transcribing selected highlight offline…"
                     Thread {
                         try {
@@ -409,6 +428,9 @@ class MainActivity : ComponentActivity() {
                             val segments = WhisperNative.transcribeSegments(File(filesDir, "models/ggml-tiny.bin"), wav, chosen.startMs, chosen.endMs)
                             runOnUiThread {
                                 transcriptSegments = segments
+                                subtitleSegments = segments
+                                subtitleDraftIndex = selectedDraft
+                                approved = false
                                 transcript = segments.joinToString("\\n") { it.text }
                                 transcribing = false
                                 status = "Transcribed selected highlight: ${segments.size} timed segments."
@@ -423,8 +445,16 @@ class MainActivity : ComponentActivity() {
                 }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe selected highlight offline") }
                 if (transcriptSegments.isNotEmpty()) {
                     Text("Timestamped transcript (source video time)", style = MaterialTheme.typography.titleMedium)
-                    transcriptSegments.forEach { segment ->
-                        Text("${segment.startMs / 1000.0}s – ${segment.endMs / 1000.0}s: ${segment.text}", style = MaterialTheme.typography.bodySmall)
+                    transcriptSegments.forEachIndexed { segmentIndex, segment ->
+                        Text("${segment.startMs / 1000.0}s – ${segment.endMs / 1000.0}s", style = MaterialTheme.typography.bodySmall)
+                        OutlinedTextField(value = segment.text, onValueChange = { edited ->
+                            val changed = transcriptSegments.toMutableList()
+                            changed[segmentIndex] = segment.copy(text = edited)
+                            transcriptSegments = changed
+                            subtitleSegments = changed
+                            transcript = changed.joinToString("\\n") { it.text }
+                            approved = false
+                        }, label = { Text("Subtitle ${segmentIndex + 1}") }, modifier = Modifier.fillMaxWidth())
                     }
                     Button(onClick = {
                         captionText = transcript
@@ -646,10 +676,12 @@ class MainActivity : ComponentActivity() {
                     val item = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
                     val effects = mutableListOf<Effect>()
                     if (vertical) effects.add(Presentation.createForAspectRatio(9f / 16f, Presentation.LAYOUT_SCALE_TO_FIT))
-                    if (editingMode == "AI Draft" && (hookText.isNotBlank() || captionText.isNotBlank())) {
+                    if (editingMode == "AI Draft" && (hookText.isNotBlank() || captionText.isNotBlank() || (subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()))) {
                         val draft = drafts.getOrNull(selectedDraft)
                         val trimStartMs = (duration * start).toLong()
-                        val overlay = if (draft != null) {
+                        val overlay = if (draft != null && subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()) {
+                            segmentSubtitleOverlay(hookText, subtitleSegments, trimStartMs)
+                        } else if (draft != null) {
                             timedCaptionOverlay(hookText, captionText, draft.captionStartMs, draft.captionEndMs, trimStartMs)
                         } else BitmapOverlay.createStaticBitmapOverlay(makeCaptionOverlay(hookText, captionText))
                         effects.add(OverlayEffect(listOf(overlay)))
