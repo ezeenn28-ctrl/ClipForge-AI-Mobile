@@ -7,7 +7,21 @@ import java.nio.ByteOrder
 
 object WhisperNative {
     init { System.loadLibrary("clipforge_whisper") }
-    external fun transcribeNative(modelPath: String, audio: FloatArray): String
+    external fun transcribeSegmentsNative(modelPath: String, audio: FloatArray): String
+    data class Segment(val startMs: Long, val endMs: Long, val text: String)
+    fun transcribeSegments(model: File, wav: File, startMs: Long, endMs: Long): List<Segment> {
+        val raw = transcribeWav(model, wav, startMs, endMs)
+        if (raw.startsWith("ERROR:")) error(raw)
+        return raw.lineSequence().mapNotNull { line ->
+            val fields = line.split('\t', limit = 3)
+            if (fields.size != 3) null else {
+                val from = fields[0].toLongOrNull()
+                val to = fields[1].toLongOrNull()
+                if (from == null || to == null) null
+                else Segment(startMs + from, startMs + to, fields[2].trim())
+            }
+        }.filter { it.text.isNotBlank() }.toList()
+    }
 
     /** Reads up to 30 seconds of 16-bit mono WAV and resamples to Whisper's 16 kHz input. */
     fun transcribeWav(model: File, wav: File, startMs: Long = 0L, endMs: Long = 30_000L): String {
@@ -37,7 +51,7 @@ object WhisperNative {
                 val fraction = (position - a).toFloat()
                 (input.get(a) * (1f - fraction) + input.get(b) * fraction) / 32768f
             }
-            return transcribeNative(model.absolutePath, samples)
+            return transcribeSegmentsNative(model.absolutePath, samples)
         }
     }
 }
