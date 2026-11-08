@@ -32,6 +32,7 @@ object OfflineAudioPreparer {
             wav.setLength(0)
             wav.write(ByteArray(44))
             var writtenBytes = 0L
+            var pendingSampleBytes = ByteArray(0)
             val info = MediaCodec.BufferInfo()
             var inputDone = false
             var outputDone = false
@@ -73,7 +74,10 @@ object OfflineAudioPreparer {
                         buffer.get(bytes)
                         require(channels > 0) { "Invalid channel count" }
                         require(encoding == android.media.AudioFormat.ENCODING_PCM_16BIT) { "Unsupported PCM encoding: $encoding" }
-                        val samples = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                        val merged = pendingSampleBytes + bytes
+                        val completeBytes = (merged.size / (channels * 2)) * (channels * 2)
+                        pendingSampleBytes = merged.copyOfRange(completeBytes, merged.size)
+                        val samples = ByteBuffer.wrap(merged, 0, completeBytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
                         val frames = samples.remaining() / channels
                         val mono = ByteArray(frames * 2)
                         for (frame in 0 until frames) {
@@ -90,6 +94,7 @@ object OfflineAudioPreparer {
                     }
                 }
             }
+            require(pendingSampleBytes.isEmpty()) { "Incomplete final audio sample" }
             require(sampleRate > 0 && channels > 0) { "Invalid decoded audio format" }
             require(writtenBytes <= Int.MAX_VALUE - 36L) { "Audio too long for standard WAV format" }
             val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
