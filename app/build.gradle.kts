@@ -15,6 +15,15 @@ android {
         versionName = "0.2.$ciBuildNumber"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
+    signingConfigs {
+        getByName("debug") {
+            // Use exactly the identity restored and checked by Actions.
+            storeFile = file(System.getProperty("user.home") + "/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
     buildTypes { release { isMinifyEnabled = false } }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
