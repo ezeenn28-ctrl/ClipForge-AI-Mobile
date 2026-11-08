@@ -572,6 +572,7 @@ class MainActivity : ComponentActivity() {
                                 transcriptFile.appendText(segments.joinToString("") { segment ->
                                     "${segment.startMs}\\t${segment.endMs}\\t${segment.text.replace("\\n", " ")}\\n"
                                 })
+                                transcriptFile.appendText("${chunk.endMs}\\t${chunk.endMs}\\t#checkpoint\\n")
                                 done++
                                 val progressValue = done
                                 runOnUiThread {
