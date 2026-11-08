@@ -12,6 +12,7 @@ import androidx.media3.effect.BitmapOverlay
 import androidx.media3.effect.OverlayEffect
 import android.os.Bundle
 import android.os.Environment
+import android.os.StatFs
 import android.widget.Toast
 import android.text.format.Formatter
 import java.net.URL
@@ -47,6 +48,17 @@ import kotlinx.coroutines.delay
 enum class OfflineModel(val filename: String, val approxMb: Int, val sha256: String) {
     TINY("ggml-tiny.bin", 78, "be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21")
 }
+/** Check local space before decoding long audio to PCM16 mono WAV. */
+fun ensureAudioWorkspace(cache: File, durationMs: Long) {
+    if (durationMs <= 0L) return
+    val sampleRateBudget = 192_000L
+    val estimatedBytes = (durationMs / 1000L + 1L) * sampleRateBudget * 2L + 64L * 1024L * 1024L
+    val available = StatFs(cache.absolutePath).availableBytes
+    require(available >= estimatedBytes) {
+        "Not enough free storage for long-video audio. Estimated safe requirement: ${estimatedBytes / (1024L * 1024L)} MB; available: ${available / (1024L * 1024L)} MB. Free space or use shorter highlights."
+    }
+}
+
 fun sha256Of(file: File): String {
     val digest = MessageDigest.getInstance("SHA-256")
     file.inputStream().buffered().use { input ->
@@ -381,6 +393,7 @@ class MainActivity : ComponentActivity() {
                     status = "Extracting audio locally…"
                     Thread {
                         try {
+                            ensureAudioWorkspace(cacheDir, duration)
                             val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
                             runOnUiThread {
                                 audioPreparing = false
@@ -394,7 +407,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }.start()
                 }) { Text(if (audioPreparing) "Preparing audio…" else "Prepare video audio for offline transcription") }
-                Button(enabled = video != null && modelReady && !transcribing && !audioPreparing, onClick = {
+                Button(enabled = video != null && modelReady && !transcribing && !batchRunning && !audioPreparing, onClick = {
                     val selectedVideo = video ?: return@Button
                     transcribing = true
                     transcript = ""
@@ -420,7 +433,7 @@ class MainActivity : ComponentActivity() {
                     Text("Whisper transcript (editable)", style = MaterialTheme.typography.titleMedium)
                     OutlinedTextField(value = transcript, onValueChange = { transcript = it }, label = { Text("Recognized speech") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
                 }
-                Button(enabled = video != null && modelReady && !transcribing && !audioPreparing && selectedDraft in drafts.indices, onClick = {
+                Button(enabled = video != null && modelReady && !transcribing && !batchRunning && !audioPreparing && selectedDraft in drafts.indices, onClick = {
                     val selectedVideo = video ?: return@Button
                     val chosen = drafts.getOrNull(selectedDraft) ?: return@Button
                     transcribing = true
@@ -497,6 +510,7 @@ class MainActivity : ComponentActivity() {
                     status = "Preparing audio for highlight batch…"
                     Thread {
                         try {
+                            ensureAudioWorkspace(cacheDir, duration)
                             val wav = OfflineAudioPreparer.extractWav(this@MainActivity, source, File(cacheDir, "clipforge_audio.wav"))
                             val model = File(filesDir, "models/ggml-tiny.bin")
                             val completed = mutableMapOf<Int, List<WhisperNative.Segment>>()
