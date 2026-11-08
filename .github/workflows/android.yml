@@ -36,6 +36,13 @@ jobs:
         run: |
           set -o pipefail
           gradle :app:testDebugUnitTest --no-daemon --console=plain --warning-mode=none 2>&1 | tee android-test.log
+      - name: Upload unit test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipForge-unit-test-reports
+          path: app/build/test-results/testDebugUnitTest/
+          if-no-files-found: warn
       - name: Build APK with concise diagnostics
         shell: bash
         run: |
@@ -46,7 +53,7 @@ jobs:
         run: |
           echo '### Android build errors' >> "$GITHUB_STEP_SUMMARY"
           echo '~~~' >> "$GITHUB_STEP_SUMMARY"
-          grep -E -A 12 '(^e: |^error:|^FAILURE:|^\* What went wrong:|^Execution failed|Could not resolve|Could not find|Unresolved reference|Compilation error|failed to find)' android-build.log | tail -120 | tee -a "$GITHUB_STEP_SUMMARY" || true
+          grep -E -A 12 '(^e: |^error:|^FAILURE:|^\* What went wrong:|^Execution failed|Could not resolve|Could not find|Unresolved reference|Compilation error|failed to find)' android-test.log android-build.log | tail -120 | tee -a "$GITHUB_STEP_SUMMARY" || true
           echo '~~~' >> "$GITHUB_STEP_SUMMARY"
       - name: Upload build log
         if: always()

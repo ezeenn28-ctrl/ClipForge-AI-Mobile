@@ -1,31 +1,32 @@
 # ClipForge AI Mobile
 
-Android-first video clipping editor written in Kotlin, Jetpack Compose and AndroidX Media3.
+Private Android clipping editor using Kotlin, Compose, Media3 and native whisper.cpp.
 
-## Current Build #1 implementation
-- Select downloaded videos with the Android document picker.
-- Import direct HTTPS video-file URLs (not social media webpage URLs).
-- Preview video using Media3 ExoPlayer.
-- Set trim start and end positions.
-- Choose a 9:16 output canvas (fit mode; does not automatically crop or track faces).
-- Keep or mute the source audio.
-- Export MP4 using Media3 Transformer to the app-specific Movies folder.
+## Implemented
+- Local video import and direct HTTPS video-file download (1 GB limit).
+- Offline multilingual Whisper tiny model with checksum-verified, user-initiated download; English/Tagalog accuracy requires review.
+- First-30-second, selected-highlight, batch-highlight and chunked full-video transcription.
+- Atomic full-transcript checkpoints, resume, editable timed subtitles and paged transcript fields.
+- Up to 15 local speech-ranked, non-overlapping 15–30 second highlight suggestions. Ranking uses speech coverage, vocabulary and hook words, not predicted virality. Coverage-window generation and visual-activity sampling remain separate tools.
+- Timed subtitle preview/export, static opening hooks, adjustable subtitle color/size and bounded subtitle bitmap retention.
+- Rendered 1.12× zoom and monochrome effects shared by playback and export.
+- Campaign Mode with locally saved caption/rules, required tags, duration checks and manual source/rights confirmations. Failed checks block campaign export approval.
+- Explicit clip review approval before export. Routine edits revoke approval. No automatic export or media upload.
 
-**Not yet implemented:** automatic highlights, automatic or manual captions, text overlays, timeline split/merge, transition presets, 1080p output guarantee, background download/export jobs, project persistence and campaign checks.
+## Build and verification
+GitHub Actions runs JVM unit tests, builds the arm64 debug APK and validates its ZIP structure. Unit test reports, logs and APK are uploaded as artifacts. Open the latest successful **Build Android APK** run to download the APK at a consolidated device-testing milestone.
 
-## Android-only APK build
-1. Go to GitHub Actions > **Build Android APK**.
-2. Open the latest run, or choose **Run workflow**.
-3. When the build succeeds, open its **Artifacts** section and download **ClipForge-AI-Mobile-debug**.
-4. Extract the ZIP and install `app-debug.apk` on your Android device.
+The baseline commit ae4f644 passed Actions build #59, including unit tests and APK assembly. See subsequent Actions runs for verification of new changes.
 
-## Known limitations
-- Direct links must return actual video data, not HTML pages or DRM-protected streams.
-- HTTPS video downloads are limited to 1 GB; downloads currently run in the foreground session.
-- Export location is app-specific and may not automatically appear in Gallery.
-- Vertical canvas uses fit mode and may include letterboxing.
-- Export size, codec compatibility and speed depend on the phone.
-- The APK build and device behavior have **not yet been independently verified**.
+## Current limits
+- Foreground processing: keep the app open. Background work, full project restoration and process-death job recovery are not implemented. Full-transcription checkpoints survive restart; reopen the same video and run full transcription to resume.
+- Audio is currently decoded to a full temporary WAV before chunk inference. Storage checks run before extraction; very long files still require substantial free storage and time.
+- Whisper tiny accuracy varies, especially for Taglish, noise and overlapping speech. Review and correct subtitles.
+- Effects are a fixed zoom and monochrome filter; animated transitions, multitrack editing and face tracking remain future work.
+- Campaign checks do not fetch briefs or verify audience geography, account standing, engagement, duplicate submissions or payout eligibility.
+- Cloud AI has no provider implemented. No paid service is used. A future provider requires explicit permission before upload.
+- Export remains in the app-specific Movies directory. Device codec, aspect-ratio and playback/export behavior need physical-phone validation.
+- No claim of complete production readiness or verified two-hour processing until consolidated device testing.
 
-## Tech stack
-Kotlin 2.0.21, Android Gradle Plugin 8.7.3, Gradle 8.9, Compose, Media3 1.5.1, Java 17.
+## Stack
+Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6; Android 8+; arm64-v8a.

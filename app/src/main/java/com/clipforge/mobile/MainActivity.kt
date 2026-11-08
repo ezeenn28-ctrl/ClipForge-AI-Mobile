@@ -198,12 +198,19 @@ fun timedCaptionOverlay(
 
 fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long, subtitleSize: Float, subtitleColor: Int): BitmapOverlay {
     val empty = makeCaptionOverlay(hook, "")
-    val frames = segments.map { it to makeCaptionOverlay(hook, it.text, subtitleSize, subtitleColor) }
+    // Retain only the current subtitle bitmap, independent of transcript length.
+    var cachedIndex = -1
+    var cachedBitmap: Bitmap? = null
     return object : BitmapOverlay() {
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val absoluteMs = SubtitleTimeline.sourcePositionMs(trimStartMs, presentationTimeUs)
             val index = SubtitleTimeline.activeSegmentIndex(segments, absoluteMs)
-            return frames.getOrNull(index)?.second ?: empty
+            if (index < 0) return empty
+            if (cachedIndex != index) {
+                cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor)
+                cachedIndex = index
+            }
+            return cachedBitmap ?: empty
         }
     }
 }
@@ -279,6 +286,7 @@ class MainActivity : ComponentActivity() {
         var transcriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var subtitleSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var subtitleDraftIndex by remember { mutableIntStateOf(-1) }
+        var subtitlePage by remember { mutableIntStateOf(0) }
         var subtitleSize by remember { mutableFloatStateOf(39f) }
         var subtitleYellow by remember { mutableStateOf(false) }
         var batchRunning by remember { mutableStateOf(false) }
@@ -289,13 +297,38 @@ class MainActivity : ComponentActivity() {
         var modelDownloading by remember { mutableStateOf(false) }
         var modelProgress by remember { mutableIntStateOf(0) }
         var modelReady by remember { mutableStateOf(File(filesDir, "models/ggml-tiny.bin").exists()) }
+        val campaignPrefs = remember { getSharedPreferences("campaign", MODE_PRIVATE) }
+        var campaignEnabled by remember { mutableStateOf(campaignPrefs.getBoolean("enabled", false)) }
+        var campaignTags by remember { mutableStateOf(campaignPrefs.getString("tags", "") ?: "") }
+        var campaignCaption by remember { mutableStateOf(campaignPrefs.getString("caption", "") ?: "") }
+        var campaignMin by remember { mutableStateOf(campaignPrefs.getString("min", "15") ?: "15") }
+        var campaignMax by remember { mutableStateOf(campaignPrefs.getString("max", "30") ?: "30") }
+        var campaignSource by remember { mutableStateOf(campaignPrefs.getString("source", "0") ?: "0") }
+        var sourceVerified by remember { mutableStateOf(false) }
+        var rightsVerified by remember { mutableStateOf(false) }
+        val busy = exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
+        val campaignIssues = if (campaignEnabled) CampaignRules(campaignTags,
+            campaignMin.toLongOrNull() ?: -1, campaignMax.toLongOrNull() ?: -1,
+            campaignSource.toLongOrNull() ?: -1).issues(campaignCaption,
+            (duration * end).toLong() - (duration * start).toLong(), sourceVerified, rightsVerified) else emptyList()
+        LaunchedEffect(campaignEnabled, campaignTags, campaignCaption, campaignMin, campaignMax, campaignSource) {
+            campaignPrefs.edit().putBoolean("enabled", campaignEnabled).putString("tags", campaignTags)
+                .putString("caption", campaignCaption).putString("min", campaignMin)
+                .putString("max", campaignMax).putString("source", campaignSource).apply()
+            approved = false
+        }
         val player = remember { ExoPlayer.Builder(this).build() }
+        LaunchedEffect(effectChoice) { player.setVideoEffects(creativeEffects(effectChoice)) }
         DisposableEffect(player) { onDispose { player.release() } }
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (_: SecurityException) {}
+                if (busy) return@rememberLauncherForActivityResult
+                batchResults = emptyMap()
+                sourceVerified = false
+                rightsVerified = false
                 video = uri
                 transcript = ""
                 transcriptSegments = emptyList()
@@ -386,7 +419,7 @@ class MainActivity : ComponentActivity() {
                         }.start()
                     }
                 }) { Text(if (modelReady) "Model installed" else if (modelDownloading) "Downloading…" else "Download English + Tagalog model") }
-                Button(enabled = video != null && !audioPreparing, onClick = {
+                Button(enabled = !busy && video != null && !audioPreparing, onClick = {
                     val selectedVideo = video ?: return@Button
                     audioPreparing = true
                     status = "Extracting audio locally…"
@@ -406,17 +439,19 @@ class MainActivity : ComponentActivity() {
                         }
                     }.start()
                 }) { Text(if (audioPreparing) "Preparing audio…" else "Prepare video audio for offline transcription") }
-                Button(enabled = video != null && modelReady && !transcribing && !batchRunning && !audioPreparing, onClick = {
+                Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing, onClick = {
                     val selectedVideo = video ?: return@Button
                     transcribing = true
                     transcript = ""
                     status = "Preparing first 30 seconds for offline Whisper…"
                     Thread {
                         try {
+                            ensureAudioWorkspace(cacheDir, duration)
                             val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
-                            val result = WhisperNative.transcribeSegments(File(filesDir, "models/ggml-tiny.bin"), wav, 0L, 30_000L).joinToString(" ") { it.text }
+                            val result = WhisperNative.transcribeSegments(File(filesDir, "models/ggml-tiny.bin"), wav, 0L, 30_000L)
                             runOnUiThread {
-                                transcript = result
+                                transcriptSegments = result
+                                transcript = result.joinToString(" ") { it.text }
                                 transcribing = false
                                 status = "Offline Whisper processed first 30 seconds. Review accuracy below."
                             }
@@ -430,11 +465,12 @@ class MainActivity : ComponentActivity() {
                 }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe first 30 seconds offline") }
                 if (transcript.isNotBlank()) {
                     Text("Whisper transcript (editable)", style = MaterialTheme.typography.titleMedium)
-                    OutlinedTextField(value = transcript, onValueChange = { transcript = it }, label = { Text("Recognized speech") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+                    OutlinedTextField(enabled = !busy, value = transcript, onValueChange = { transcript = it }, label = { Text("Recognized speech") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
                 }
-                Button(enabled = video != null && modelReady && !transcribing && !batchRunning && !audioPreparing && selectedDraft in drafts.indices, onClick = {
+                Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing && selectedDraft in drafts.indices, onClick = {
                     val selectedVideo = video ?: return@Button
-                    val chosen = drafts.getOrNull(selectedDraft) ?: return@Button
+                    val chosenIndex = selectedDraft
+                    val chosen = drafts.getOrNull(chosenIndex) ?: return@Button
                     transcribing = true
                     transcript = ""
                     transcriptSegments = emptyList()
@@ -443,14 +479,15 @@ class MainActivity : ComponentActivity() {
                     status = "Transcribing selected highlight offline…"
                     Thread {
                         try {
+                            ensureAudioWorkspace(cacheDir, duration)
                             val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
                             val segments = WhisperNative.transcribeSegments(File(filesDir, "models/ggml-tiny.bin"), wav, chosen.startMs, chosen.endMs)
                             runOnUiThread {
                                 transcriptSegments = segments
                                 subtitleSegments = segments
-                                subtitleDraftIndex = selectedDraft
+                                subtitleDraftIndex = chosenIndex
                                 approved = false
-                                transcript = segments.joinToString("\\n") { it.text }
+                                transcript = segments.joinToString("\n") { it.text }
                                 transcribing = false
                                 status = "Transcribed selected highlight: ${segments.size} timed segments."
                             }
@@ -465,24 +502,32 @@ class MainActivity : ComponentActivity() {
                 if (transcriptSegments.isNotEmpty()) {
                     Text("Timestamped transcript (source video time)", style = MaterialTheme.typography.titleMedium)
                     Text("Subtitle size: ${subtitleSize.toInt()}", style = MaterialTheme.typography.bodySmall)
-                    Slider(value = subtitleSize, onValueChange = { subtitleSize = it; approved = false }, valueRange = 28f..55f)
+                    Slider(enabled = !busy, value = subtitleSize, onValueChange = { subtitleSize = it; approved = false; drafts = drafts.map { d -> d.copy(approved = false) } }, valueRange = 28f..55f)
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(checked = subtitleYellow, onCheckedChange = { subtitleYellow = it; approved = false })
+                        Checkbox(enabled = !busy, checked = subtitleYellow, onCheckedChange = { subtitleYellow = it; approved = false; drafts = drafts.map { d -> d.copy(approved = false) } })
                         Text("Yellow subtitles (otherwise white)")
                     }
 
-                    transcriptSegments.forEachIndexed { segmentIndex, segment ->
+                    val pageCount = (transcriptSegments.size + 24) / 25
+                    val currentPage = subtitlePage.coerceIn(0, pageCount - 1)
+                    Row {
+                        OutlinedButton(enabled = !busy && currentPage > 0, onClick = { subtitlePage = currentPage - 1 }) { Text("Previous") }
+                        Text("Page ${currentPage + 1}/$pageCount")
+                        OutlinedButton(enabled = !busy && currentPage + 1 < pageCount, onClick = { subtitlePage = currentPage + 1 }) { Text("Next") }
+                    }
+                    transcriptSegments.drop(currentPage * 25).take(25).forEachIndexed { pageIndex, segment ->
+                        val segmentIndex = currentPage * 25 + pageIndex
                         Text("${segment.startMs / 1000.0}s – ${segment.endMs / 1000.0}s", style = MaterialTheme.typography.bodySmall)
-                        OutlinedTextField(value = segment.text, onValueChange = { edited ->
+                        OutlinedTextField(enabled = !busy, value = segment.text, onValueChange = { edited ->
                             val changed = transcriptSegments.toMutableList()
                             changed[segmentIndex] = segment.copy(text = edited)
                             transcriptSegments = changed
                             subtitleSegments = changed
-                            transcript = changed.joinToString("\\n") { it.text }
+                            transcript = changed.joinToString("\n") { it.text }
                             approved = false
                         }, label = { Text("Subtitle ${segmentIndex + 1}") }, modifier = Modifier.fillMaxWidth())
                     }
-                    Button(onClick = {
+                    Button(enabled = !busy, onClick = {
                         captionText = transcript
                         captionFrom = (transcriptSegments.first().startMs / 1000.0).toString()
                         captionTo = (transcriptSegments.last().endMs / 1000.0).toString()
@@ -498,7 +543,7 @@ class MainActivity : ComponentActivity() {
                 Text("Chunk counts are estimates. Timed subtitle rendering and chunked transcription are experimental until device-tested.", style = MaterialTheme.typography.bodySmall)
                 Text("Batch highlight transcription", style = MaterialTheme.typography.titleMedium)
                 Text("Process each candidate offline, up to 15. This can take substantial time and battery.", style = MaterialTheme.typography.bodySmall)
-                Button(enabled = video != null && modelReady && drafts.isNotEmpty() && !batchRunning && !transcribing && !audioPreparing, onClick = {
+                Button(enabled = !busy && video != null && modelReady && drafts.isNotEmpty() && !batchRunning && !transcribing && !audioPreparing, onClick = {
                     val source = video ?: return@Button
                     val snapshot = drafts.toList()
                     batchRunning = true
@@ -543,7 +588,7 @@ class MainActivity : ComponentActivity() {
                 if (batchResults.isNotEmpty()) {
                     Text("${batchResults.size} transcribed highlights ready to review", style = MaterialTheme.typography.bodySmall)
                     batchResults.toSortedMap().forEach { (index, segments) ->
-                        OutlinedButton(onClick = {
+                        OutlinedButton(enabled = !busy, onClick = {
                             selectedDraft = index
                             val chosen = drafts[index]
                             start = chosen.startMs.toFloat() / duration
@@ -561,7 +606,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Text("Full-video transcription (optional)", style = MaterialTheme.typography.titleMedium)
                 Text("Runs in 30-second chunks. Long videos may take hours; keep the app open. Stopping finishes the current chunk first.", style = MaterialTheme.typography.bodySmall)
-                Button(enabled = video != null && modelReady && duration > 0 && !batchRunning && !transcribing && !audioPreparing, onClick = {
+                Button(enabled = !busy && video != null && modelReady && duration > 0 && !batchRunning && !transcribing && !audioPreparing, onClick = {
                     val source = video ?: return@Button
                     val chunks = HybridTranscriptionPlan.fullVideo(duration)
                     batchRunning = true
@@ -572,17 +617,16 @@ class MainActivity : ComponentActivity() {
                     status = "Preparing full-video audio…"
                     Thread {
                         try {
+                            ensureAudioWorkspace(cacheDir, duration)
                             val wav = OfflineAudioPreparer.extractWav(this@MainActivity, source, File(cacheDir, "clipforge_audio.wav"))
                             val model = File(filesDir, "models/ggml-tiny.bin")
                             val sourceKey = MessageDigest.getInstance("SHA-256")
                                 .digest((source.toString() + ":" + duration).toByteArray())
                                 .take(10).joinToString("") { "%02x".format(it) }
                             val transcriptFile = File(filesDir, "transcript_${sourceKey}.tsv")
-                            val completedThrough = if (transcriptFile.exists()) {
-                                transcriptFile.useLines { lines ->
-                                    lines.filter { it.endsWith("\\t#checkpoint") }.mapNotNull { it.substringBefore('\t').toLongOrNull() }.lastOrNull()
-                                } ?: -1L
-                            } else -1L
+                            val previous = TranscriptStore.read(transcriptFile)
+                            val completedThrough = previous.throughMs
+                            val collected = previous.segments.toMutableList()
                             var done = 0
                             for (chunk in chunks) {
                                 if (batchCancel) break
@@ -593,10 +637,8 @@ class MainActivity : ComponentActivity() {
                                     continue
                                 }
                                 val segments = WhisperNative.transcribeSegments(model, wav, chunk.startMs, chunk.endMs)
-                                transcriptFile.appendText(segments.joinToString("") { segment ->
-                                    "${segment.startMs}\\t${segment.endMs}\\t${segment.text.replace("\\n", " ")}\\n"
-                                })
-                                transcriptFile.appendText("${chunk.endMs}\\t${chunk.endMs}\\t#checkpoint\\n")
+                                collected.addAll(segments)
+                                TranscriptStore.write(transcriptFile, TranscriptStore.Snapshot(chunk.endMs, collected))
                                 done++
                                 val progressValue = done
                                 runOnUiThread {
@@ -605,6 +647,8 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                             runOnUiThread {
+                                transcriptSegments = collected.toList()
+                                transcript = collected.joinToString("\n") { it.text }
                                 batchRunning = false
                                 status = if (batchCancel) "Full-video transcription stopped; partial transcript saved" else "Full-video transcript saved locally"
                             }
@@ -616,15 +660,29 @@ class MainActivity : ComponentActivity() {
                         }
                     }.start()
                 }) { Text(if (batchRunning) "Processing offline…" else "Transcribe full video (optional)") }
+                Button(enabled = !busy && transcriptSegments.isNotEmpty() && duration > 0, onClick = {
+                    drafts = TranscriptHighlights.detect(transcriptSegments, duration)
+                    batchResults = emptyMap()
+                    selectedDraft = -1
+                    subtitleDraftIndex = -1
+                    subtitleSegments = emptyList()
+                    editingMode = "AI Draft"
+                    approved = false
+                    status = "${drafts.size} speech-ranked candidates. Review context and subtitles before approving."
+                }) { Text("Find highlights from transcript offline") }
+                Text("Speech ranking uses density, vocabulary and hook words. It does not predict engagement.", style = MaterialTheme.typography.bodySmall)
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; approved = false }, label = { Text("Manual Editor") })
-                    FilterChip(selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft"; approved = false; selectedDraft = -1 }, label = { Text("AI Draft") })
+                    FilterChip(enabled = !busy, selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; effectChoice = "None"; approved = false }, label = { Text("Manual Editor") })
+                    FilterChip(enabled = !busy, selected = editingMode == "AI Draft", onClick = { editingMode = "AI Draft"; approved = false; selectedDraft = -1 }, label = { Text("AI Draft") })
                 }
                 if (editingMode == "AI Draft") {
-                    Text("Quality-first prototype: creates up to 15 overlapping 20-second candidates covering the entire video. No speech, visual or audio AI detection yet. Review each segment individually.", style = MaterialTheme.typography.bodySmall)
-                    Button(enabled = duration >= 1000L && !exporting, onClick = {
+                    Text("Quality-first prototype: creates up to 15 overlapping 20-second candidates covering the entire video. Use transcript highlight detection above for speech-based candidates. Review each segment individually.", style = MaterialTheme.typography.bodySmall)
+                    Button(enabled = duration >= 1000L && !busy, onClick = {
                         approved = false
+                        batchResults = emptyMap()
+                        subtitleSegments = emptyList()
+                        subtitleDraftIndex = -1
                         drafts = generateQualityCandidates(duration)
                         selectedDraft = 0
                         hookText = ""
@@ -637,7 +695,7 @@ class MainActivity : ComponentActivity() {
                     }) { Text("Generate quality-first candidates") }
                 }
                 if (editingMode == "AI Draft" && drafts.isNotEmpty()) {
-                    Button(enabled = !analyzing && video != null && !exporting, onClick = {
+                    Button(enabled = !busy && video != null, onClick = {
                         val source = video ?: return@Button
                         analyzing = true
                         status = "Sampling video frames locally…"
@@ -661,17 +719,21 @@ class MainActivity : ComponentActivity() {
                             }
                         }.start()
                     }) { Text(if (analyzing) "Analyzing…" else "Analyze visual activity offline") }
-                    Text("Visual activity measures frame changes, not semantic scene quality. Audio and speech analysis are not implemented.", style = MaterialTheme.typography.bodySmall)
+                    Text("Visual activity measures frame changes, not semantic scene quality. Speech ranking is available after transcription.", style = MaterialTheme.typography.bodySmall)
                     Text("Draft segments — tap to preview and edit", style = MaterialTheme.typography.titleMedium)
                     Text("Balanced baseline score = clarity + context + pacing + neutral engagement, each weighted 25%. This is a duration/position heuristic, not an AI prediction.", style = MaterialTheme.typography.bodySmall)
                     drafts.withIndex().sortedByDescending { (baselineDraftScore(it.value, duration).balanced * 3 + (it.value.visualScore ?: 50)) / 4 }.forEach { (index, draft) ->
                         val active = selectedDraft == index
                         OutlinedButton(
+                            enabled = !busy,
                             onClick = {
                                 selectedDraft = index
                                 start = draft.startMs.toFloat() / duration.toFloat()
                                 end = draft.endMs.toFloat() / duration.toFloat()
-                                approved = draft.approved
+                                val matching = transcriptSegments.filter { it.startMs >= draft.startMs && it.startMs < draft.endMs }
+                                subtitleSegments = matching
+                                subtitleDraftIndex = if (matching.isNotEmpty()) index else -1
+                                approved = false
                                 hookText = draft.hook
                                 captionText = draft.caption
                                 effectChoice = draft.effect
@@ -686,9 +748,9 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 }
-                Button(onClick = { picker.launch(arrayOf("video/*")) }) { Text("Import downloaded video / gallery") }
-                OutlinedTextField(value = link, onValueChange = { link = it }, label = { Text("Direct HTTPS MP4 link (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-                Button(enabled = !downloading && link.startsWith("https://"), onClick = {
+                Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }) { Text("Import downloaded video / gallery") }
+                OutlinedTextField(enabled = !busy, value = link, onValueChange = { link = it }, label = { Text("Direct HTTPS MP4 link (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
+                Button(enabled = !busy && link.startsWith("https://"), onClick = {
                     downloading = true
                     status = "Downloading direct video file…"
                     val address = link
@@ -718,6 +780,13 @@ class MainActivity : ComponentActivity() {
                             }
                             connection.disconnect()
                             runOnUiThread {
+                                transcript = ""
+                                transcriptSegments = emptyList()
+                                subtitleSegments = emptyList()
+                                subtitleDraftIndex = -1
+                                batchResults = emptyMap()
+                                sourceVerified = false
+                                rightsVerified = false
                                 video = Uri.fromFile(output)
                                 drafts = emptyList()
                                 selectedDraft = -1
@@ -768,34 +837,34 @@ class MainActivity : ComponentActivity() {
                 Text("Duration: ${duration / 1000}s")
                 Button(enabled = duration > 0, onClick = { player.seekTo((duration * start).toLong()); player.play() }) { Text("Preview from trim start") }
                 Text("Trim start: ${(start * duration / 1000).toInt()}s")
-                Slider(value = start, onValueChange = { approved = false; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(startMs = (duration * it.coerceAtMost(end - 0.01f)).toLong(), approved = false) }; start = it.coerceAtMost(end - 0.01f) }, valueRange = 0f..0.99f, enabled = duration > 0)
+                Slider(value = start, onValueChange = { approved = false; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(startMs = (duration * it.coerceAtMost(end - 0.01f)).toLong(), approved = false) }; start = it.coerceAtMost(end - 0.01f) }, valueRange = 0f..0.99f, enabled = duration > 0 && !busy)
                 Text("Trim end: ${(end * duration / 1000).toInt()}s")
-                Slider(value = end, onValueChange = { approved = false; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(endMs = (duration * it.coerceAtLeast(start + 0.01f)).toLong(), approved = false) }; end = it.coerceAtLeast(start + 0.01f) }, valueRange = 0.01f..1f, enabled = duration > 0)
-                Row { Checkbox(checked = vertical, onCheckedChange = { vertical = it; approved = false; drafts = drafts.map { draft -> draft.copy(approved = false) } }); Text("9:16 output canvas") }
-                Row { Checkbox(checked = mute, onCheckedChange = { mute = it; approved = false; drafts = drafts.map { draft -> draft.copy(approved = false) } }); Text("Mute original audio") }
+                Slider(value = end, onValueChange = { approved = false; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(endMs = (duration * it.coerceAtLeast(start + 0.01f)).toLong(), approved = false) }; end = it.coerceAtLeast(start + 0.01f) }, valueRange = 0.01f..1f, enabled = duration > 0 && !busy)
+                Row { Checkbox(enabled = !busy, checked = vertical, onCheckedChange = { vertical = it; approved = false; drafts = drafts.map { draft -> draft.copy(approved = false) } }); Text("9:16 output canvas") }
+                Row { Checkbox(enabled = !busy, checked = mute, onCheckedChange = { mute = it; approved = false; drafts = drafts.map { draft -> draft.copy(approved = false) } }); Text("Mute original audio") }
                 if (editingMode == "AI Draft" && selectedDraft in drafts.indices) {
                     HorizontalDivider()
                     Text("Clip draft creative notes", style = MaterialTheme.typography.titleMedium)
                     Text("Hook text is static; Whisper subtitle segments are time-synchronized when available. Prefix a line with # to highlight it yellow.", style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(value = hookText, onValueChange = { value ->
+                    OutlinedTextField(enabled = !busy, value = hookText, onValueChange = { value ->
                         hookText = value
                         approved = false
                         drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(hook = value, approved = false) }
                     }, label = { Text("Opening hook text") }, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(value = captionText, onValueChange = { value ->
+                    OutlinedTextField(enabled = !busy, value = captionText, onValueChange = { value ->
                         captionText = value
                         approved = false
                         drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(caption = value, approved = false) }
                     }, label = { Text("Subtitle / caption draft") }, modifier = Modifier.fillMaxWidth())
                     Text("Caption timing (seconds within source video)", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(value = captionFrom, onValueChange = { value ->
+                        OutlinedTextField(enabled = !busy, value = captionFrom, onValueChange = { value ->
                             captionFrom = value.filter { it.isDigit() }.take(7)
                             val ms = (captionFrom.toLongOrNull() ?: 0L) * 1000L
                             drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(captionStartMs = ms, approved = false) }
                             approved = false
                         }, label = { Text("From (s)") }, modifier = Modifier.weight(1f), singleLine = true)
-                        OutlinedTextField(value = captionTo, onValueChange = { value ->
+                        OutlinedTextField(enabled = !busy, value = captionTo, onValueChange = { value ->
                             captionTo = value.filter { it.isDigit() }.take(7)
                             val ms = (captionTo.toLongOrNull() ?: 0L) * 1000L
                             drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(captionEndMs = ms, approved = false) }
@@ -803,10 +872,10 @@ class MainActivity : ComponentActivity() {
                         }, label = { Text("To (s)") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
                     Text("MP4 export uses Whisper segment timing when the current draft has subtitles; otherwise it uses the caption interval.", style = MaterialTheme.typography.bodySmall)
-                    Text("Planned effect (not rendered)", style = MaterialTheme.typography.bodySmall)
+                    Text("Rendered effect", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("None", "Zoom", "Fade").forEach { option ->
-                            FilterChip(selected = effectChoice == option, onClick = {
+                        listOf("None", "Zoom", "Monochrome").forEach { option ->
+                            FilterChip(enabled = !busy, selected = effectChoice == option, onClick = {
                                 effectChoice = option
                                 approved = false
                                 drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(effect = option, approved = false) }
@@ -816,13 +885,31 @@ class MainActivity : ComponentActivity() {
                     Text("Review draft: ${if (hookText.isBlank()) "No hook" else hookText} | ${if (captionText.isBlank()) "No subtitles" else captionText} | Effect: $effectChoice", style = MaterialTheme.typography.bodySmall)
                 }
                 HorizontalDivider()
-                Text("Review and approve", style = MaterialTheme.typography.titleMedium)
-                Text("Preview the selected segment and verify framing, audio and duration. Static hook/caption overlays will be included in export, but planned zoom/fade effects are NOT rendered. Preview now shows the same static text bitmap used for export, but device aspect-ratio and crop differences may affect exact placement.", style = MaterialTheme.typography.bodySmall)
+                Text("Campaign Mode", style = MaterialTheme.typography.titleMedium)
                 Row {
-                    Checkbox(checked = approved, enabled = video != null && duration > 0 && !exporting && (editingMode != "AI Draft" || selectedDraft >= 0), onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
+                    Checkbox(enabled = !busy, checked = campaignEnabled, onCheckedChange = { campaignEnabled = it; approved = false })
+                    Text("Check campaign rules before export")
+                }
+                if (campaignEnabled) {
+                    Text("Enter the current brief. Checks use your inputs; platform standing, geography, engagement and payout eligibility require manual verification.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(enabled = !busy, value = campaignTags, onValueChange = { campaignTags = it; approved = false }, label = { Text("Required @mentions and #hashtags") })
+                    OutlinedTextField(enabled = !busy, value = campaignCaption, onValueChange = { campaignCaption = it; approved = false }, label = { Text("Posting caption (not burned into video)") })
+                    OutlinedTextField(enabled = !busy, value = campaignMin, onValueChange = { campaignMin = it.filter(Char::isDigit).take(4); approved = false }, label = { Text("Minimum clip seconds") })
+                    OutlinedTextField(enabled = !busy, value = campaignMax, onValueChange = { campaignMax = it.filter(Char::isDigit).take(4); approved = false }, label = { Text("Maximum clip seconds") })
+                    OutlinedTextField(enabled = !busy, value = campaignSource, onValueChange = { campaignSource = it.filter(Char::isDigit).take(4); approved = false }, label = { Text("Required source footage seconds") })
+                    Row { Checkbox(enabled = !busy, checked = sourceVerified, onCheckedChange = { sourceVerified = it; approved = false }); Text("I verified the permitted source and footage requirement") }
+                    Row { Checkbox(enabled = !busy, checked = rightsVerified, onCheckedChange = { rightsVerified = it; approved = false }); Text("I verified rights and duplicate-submission restrictions") }
+                    campaignIssues.forEach { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (campaignIssues.isEmpty()) Text("Entered rules checked. Review the clip before approving export.")
+                }
+                HorizontalDivider()
+                Text("Review and approve", style = MaterialTheme.typography.titleMedium)
+                Text("Preview the selected segment and verify framing, audio and duration. Static hook/caption overlays will be included in export, but selected visual effects are rendered. Preview now shows the same static text bitmap used for export, but device aspect-ratio and crop differences may affect exact placement.", style = MaterialTheme.typography.bodySmall)
+                Row {
+                    Checkbox(checked = approved, enabled = !busy && campaignIssues.isEmpty() && video != null && duration > 0 && (editingMode != "AI Draft" || selectedDraft >= 0), onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
                     Text("I reviewed and approve this clip for export")
                 }
-                Button(enabled = video != null && duration > 0 && approved && !exporting && (editingMode != "AI Draft" || selectedDraft >= 0), onClick = {
+                Button(enabled = !busy && campaignIssues.isEmpty() && video != null && duration > 0 && approved && (editingMode != "AI Draft" || selectedDraft >= 0), onClick = {
                     val source = video ?: return@Button
                     val outputDir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
                     val output = File(outputDir, "clipforge_${System.currentTimeMillis()}.mp4")
@@ -832,6 +919,7 @@ class MainActivity : ComponentActivity() {
                         .build()
                     val item = MediaItem.Builder().setUri(source).setClippingConfiguration(clipping).build()
                     val effects = mutableListOf<Effect>()
+                    effects.addAll(creativeEffects(effectChoice))
                     if (vertical) effects.add(Presentation.createForAspectRatio(9f / 16f, Presentation.LAYOUT_SCALE_TO_FIT))
                     if (editingMode == "AI Draft" && (hookText.isNotBlank() || captionText.isNotBlank() || (subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()))) {
                         val draft = drafts.getOrNull(selectedDraft)

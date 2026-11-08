@@ -18,9 +18,9 @@ object WhisperNative {
                 val from = fields[0].toLongOrNull()
                 val to = fields[1].toLongOrNull()
                 if (from == null || to == null) null
-                else Segment(startMs + from, startMs + to, fields[2].trim())
+                else Segment((startMs + from).coerceAtLeast(startMs), minOf(endMs, startMs + to), fields[2].trim())
             }
-        }.filter { it.text.isNotBlank() }.toList()
+        }.filter { it.text.isNotBlank() && it.endMs > it.startMs }.toList()
     }
 
     /** Reads up to 30 seconds of 16-bit mono WAV and resamples to Whisper's 16 kHz input. */
