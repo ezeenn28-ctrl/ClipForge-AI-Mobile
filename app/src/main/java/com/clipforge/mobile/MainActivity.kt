@@ -552,11 +552,22 @@ class MainActivity : ComponentActivity() {
                         try {
                             val wav = OfflineAudioPreparer.extractWav(this@MainActivity, source, File(cacheDir, "clipforge_audio.wav"))
                             val model = File(filesDir, "models/ggml-tiny.bin")
-                            val transcriptFile = File(filesDir, "full_video_transcript.tsv")
-                            transcriptFile.writeText("")
+                            val sourceKey = MessageDigest.getInstance("SHA-256")
+                                .digest((source.toString() + ":" + duration).toByteArray())
+                                .take(10).joinToString("") { "%02x".format(it) }
+                            val transcriptFile = File(filesDir, "transcript_${sourceKey}.tsv")
+                            val completedThrough = if (transcriptFile.exists()) {
+                                transcriptFile.useLines { lines ->
+                                    lines.mapNotNull { it.substringBefore('\t').toLongOrNull() }.lastOrNull()
+                                } ?: -1L
+                            } else -1L
                             var done = 0
                             for (chunk in chunks) {
                                 if (batchCancel) break
+                                if (chunk.endMs <= completedThrough) {
+                                    done++
+                                    continue
+                                }
                                 val segments = WhisperNative.transcribeSegments(model, wav, chunk.startMs, chunk.endMs)
                                 transcriptFile.appendText(segments.joinToString("") { segment ->
                                     "${segment.startMs}\\t${segment.endMs}\\t${segment.text.replace("\\n", " ")}\\n"
