@@ -728,17 +728,28 @@ class MainActivity : ComponentActivity() {
                         factory = { PlayerView(it).apply { this.player = player } },
                         modifier = Modifier.fillMaxSize()
                     )
-                    if (editingMode == "AI Draft" && selectedDraft in drafts.indices &&
-                        (hookText.isNotBlank() || captionText.isNotBlank() && (previewPosition in (drafts[selectedDraft].captionStartMs..drafts[selectedDraft].captionEndMs) || drafts[selectedDraft].captionEndMs <= drafts[selectedDraft].captionStartMs))) {
-                        val previewBitmap = remember(hookText, captionText) {
-                            makeCaptionOverlay(hookText, captionText).asImageBitmap()
+                    if (editingMode == "AI Draft" && selectedDraft in drafts.indices) {
+                        val activeSegment = if (subtitleDraftIndex == selectedDraft) {
+                            subtitleSegments.firstOrNull { previewPosition >= it.startMs && previewPosition < it.endMs }
+                        } else null
+                        val fallbackCaption = if (subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()) "" else {
+                            val draft = drafts[selectedDraft]
+                            if (draft.captionEndMs <= draft.captionStartMs ||
+                                previewPosition in draft.captionStartMs until draft.captionEndMs) captionText else ""
                         }
-                        Image(
-                            bitmap = previewBitmap,
-                            contentDescription = "Preview of static captions rendered on export",
-                            modifier = Modifier.fillMaxHeight().aspectRatio(9f / 16f),
-                            contentScale = ContentScale.FillBounds
-                        )
+                        val displayedCaption = activeSegment?.text ?: fallbackCaption
+                        if (hookText.isNotBlank() || displayedCaption.isNotBlank()) {
+                            val previewBitmap = remember(hookText, displayedCaption, subtitleSize, subtitleYellow) {
+                                makeCaptionOverlay(hookText, displayedCaption, subtitleSize,
+                                    if (subtitleYellow) Color.YELLOW else Color.WHITE).asImageBitmap()
+                            }
+                            Image(
+                                bitmap = previewBitmap,
+                                contentDescription = "Preview of time-synchronized subtitles",
+                                modifier = Modifier.fillMaxHeight().aspectRatio(9f / 16f),
+                                contentScale = ContentScale.FillBounds
+                            )
+                        }
                     }
                 }
                 Text("Duration: ${duration / 1000}s")
