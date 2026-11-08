@@ -14,6 +14,7 @@ import java.math.BigDecimal
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 
 @Composable
@@ -119,7 +120,7 @@ fun CampaignTracker(directory: File, enabled: Boolean) {
             saving = true
             scope.launch {
                 try {
-                    withContext(Dispatchers.IO) { CampaignEntryStore.write(file, updated) }
+                    withContext(Dispatchers.IO) { MetadataGate.lock.withLock { CampaignEntryStore.write(file, updated) } }
                     entries = updated
                     editingId = entry.id
                     showEntryForm = false

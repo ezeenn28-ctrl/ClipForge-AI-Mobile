@@ -17,6 +17,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Restore development signing identity
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.android/debug.keystore
+            ~/.android/clipforge-debug-cert.sha256
+          key: clipforge-debug-signing-${{ github.repository_id }}-v1
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -108,6 +115,31 @@ jobs:
           if not any('/ggml-cpu/' in path for path in checked):
               raise SystemExit('No CPU kernel compile command found')
           print('Verified optimized Whisper and CPU kernels: ' + str(len(checked)) + ' compile commands')
+      - name: Verify development signing identity
+        if: success()
+        shell: bash
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs app/build/outputs/apk/debug/app-debug.apk | tee signing-report.txt
+          python - <<'PY_SIGNING'
+          import os, re
+          from pathlib import Path
+          text = Path('signing-report.txt').read_text()
+          match = re.search(r'Signer #1 certificate SHA-256 digest: ([0-9a-fA-F]+)', text)
+          if not match:
+              raise SystemExit('APK signing fingerprint missing')
+          path = Path(os.path.expanduser('~/.android/clipforge-debug-cert.sha256'))
+          fingerprint = match.group(1).lower()
+          if path.exists() and path.read_text().strip() != fingerprint:
+              raise SystemExit('Cached development signing identity changed')
+          path.write_text(fingerprint + '\n')
+          print('Development APK signing fingerprint verified')
+          PY_SIGNING
+      - name: Upload signing report
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipForge-signing-report
+          path: signing-report.txt
       - name: Verify generated APK
         if: success()
         shell: bash

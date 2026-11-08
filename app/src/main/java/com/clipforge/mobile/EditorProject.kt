@@ -20,7 +20,9 @@ data class EditorProject(
     val currentSegments: List<WhisperNative.Segment> = emptyList(),
     val sourceSegments: List<WhisperNative.Segment> = emptyList(),
     val draftSegments: Map<Int, List<WhisperNative.Segment>> = emptyMap(),
-    val fillFrame: Boolean = false
+    val fillFrame: Boolean = false,
+    val lastSpeechJobId: String = "",
+    val lastSpeechUnits: Int = 0
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 
@@ -30,6 +32,7 @@ data class EditorProject(
         require(mode in listOf("Manual Editor", "AI Draft")) { "Unknown editing mode" }
         require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown visual effect" }
         require(subtitleSize.isFinite() && subtitleSize in 28f..55f) { "Invalid subtitle size" }
+        require(lastSpeechUnits in 0..2880) { "Invalid applied speech checkpoint" }
         require(drafts.size <= 15) { "Too many drafts" }
         require(selectedDraft == -1 || selectedDraft in drafts.indices) { "Invalid selected draft" }
         require(subtitleDraftIndex == -1 || subtitleDraftIndex in drafts.indices) { "Invalid subtitle association" }

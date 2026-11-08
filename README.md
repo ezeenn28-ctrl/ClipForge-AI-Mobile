@@ -9,6 +9,12 @@ Private Android clipping editor using Kotlin, Compose, Media3 and native whisper
 - Advanced batch tools, direct-link importing and submission editing forms are progressively disclosed rather than filling the first screen. Workspaces retain scroll positions and unfinished submission form text when switching tabs.
 - Compose interaction tests render real Android-view screenshots for layout review. These host-rendered previews do not replace physical-device testing.
 
+## Background reliability and recovery
+- User-started offline transcription runs in an Android foreground service, with an ongoing notification, bounded wake lock, progress, thermal pause checks and pause-after-window controls. Screen recreation no longer owns the speech worker.
+- Each completed audio window is atomically checkpointed. Relaunching after process interruption offers explicit Resume; no job or export silently restarts. Completed/corrected subtitle state is retained separately from inference checkpoints.
+- Metadata backups include the last project, submissions and last speech checkpoint. Videos, downloaded models, signing keys and permissions are excluded. Imported backups are validated and reviewed before replacing included records; active job states restore paused and export approvals remain cleared.
+- Development APK signing identity is cached in Actions and its fingerprint is checked. This cache is not a durable production release-keystore backup; release signing remains separate work.
+
 ## Implemented
 - Local video import and direct HTTPS video-file download (1 GB limit).
 - Offline multilingual Whisper tiny model with checksum-verified, user-initiated download; English/Tagalog accuracy requires review.
@@ -28,7 +34,7 @@ GitHub Actions runs JVM unit tests, builds the arm64 debug APK, checks optimized
 The baseline commit ae4f644 passed Actions build #59, including unit tests and APK assembly. Development stage one (0e33ce0) passed Actions build #60, including unit tests and APK assembly. See subsequent Actions runs for verification of later changes.
 
 ## Current limits
-- Foreground processing: keep the app open. Background work and automatic job recovery after process death are not implemented. The last editing project restores automatically when its original source is still accessible; active jobs are not restarted. Autosave runs after a one-second editing pause, including when completed batch results arrive. Full-transcription checkpoints survive restart; run full transcription on the restored original video to resume. Moving, replacing or deleting source media can prevent correct restoration; review it again before export.
+- Android may interrupt foreground processing because of system limits, heat or memory. Completed audio windows survive interruption and Resume is explicit; uninterrupted background execution is not guaranteed. The last editing project restores automatically when its original source is still accessible; active jobs are not restarted. Autosave runs after a one-second editing pause, including when completed batch results arrive. Full-transcription checkpoints survive restart; run full transcription on the restored original video to resume. Moving, replacing or deleting source media can prevent correct restoration; review it again before export.
 - Audio decoding seeks and trims each <=30-second inference window. Long files still require device validation of codec seeking, timestamp alignment, runtime and thermal behavior.
 - Whisper tiny accuracy varies, especially for Taglish, noise and overlapping speech. Review and correct subtitles.
 - Effects are a fixed zoom and monochrome filter; animated transitions, multitrack editing and face tracking remain future work.

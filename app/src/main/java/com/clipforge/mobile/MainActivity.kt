@@ -48,6 +48,7 @@ import androidx.media3.common.Effect
 import java.io.File
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 
 /** Official multilingual Whisper weights; .en models cannot transcribe Tagalog. */
 enum class OfflineModel(val filename: String, val approxMb: Int, val sha256: String) {
@@ -301,11 +302,14 @@ class MainActivity : ComponentActivity() {
         var exportPercent by remember { mutableIntStateOf(0) }
         var analyzing by remember { mutableStateOf(false) }
         var audioPreparing by remember { mutableStateOf(false) }
-        var transcribing by remember { mutableStateOf(false) }
-        var speechPhase by remember { mutableStateOf("") }
-        var speechPercent by remember { mutableIntStateOf(-1) }
-        var speechElapsedSeconds by remember { mutableLongStateOf(0L) }
-
+        val speechState by SpeechJobs.state.collectAsState()
+        val speechJob = speechState.job
+        var speechStarting by remember { mutableStateOf(false) }
+        val batchRunning = speechJob?.active == true && speechJob.mode in listOf(SpeechJobMode.HIGHLIGHTS, SpeechJobMode.FULL_VIDEO)
+        val transcribing = speechJob?.active == true && !batchRunning
+        val speechPhase = speechState.phase
+        val speechPercent = speechState.percent
+        var speechElapsedSeconds by remember { mutableLongStateOf(0) }
         var transcript by remember { mutableStateOf("") }
         var sourceTranscriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var transcriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
@@ -314,21 +318,18 @@ class MainActivity : ComponentActivity() {
         var subtitlePage by remember { mutableIntStateOf(0) }
         var subtitleSize by remember { mutableFloatStateOf(39f) }
         var subtitleYellow by remember { mutableStateOf(false) }
-        var batchRunning by remember { mutableStateOf(false) }
-        var batchProgress by remember { mutableIntStateOf(0) }
-        var batchTotal by remember { mutableIntStateOf(0) }
-        LaunchedEffect(transcribing, batchRunning) {
-            speechElapsedSeconds = 0
-            val began = android.os.SystemClock.elapsedRealtime()
-            while (transcribing || batchRunning) {
-                speechElapsedSeconds = (android.os.SystemClock.elapsedRealtime() - began) / 1000
+        val batchProgress = speechJob?.results?.size ?: 0
+        val batchTotal = speechJob?.units()?.size ?: 0
+        LaunchedEffect(speechJob?.id, speechJob?.active) {
+            do {
+                speechElapsedSeconds = SpeechJobs.elapsedMs() / 1000
                 delay(1000)
-            }
+            } while (speechJob?.active == true)
         }
-        val reportSpeechProgress: (String, Int) -> Unit = { phase, percent ->
-            runOnUiThread { speechPhase = phase; speechPercent = percent }
+        LaunchedEffect(Unit) {
+            try { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SpeechJobs.initialize(applicationContext) } }
+            catch (error: Exception) { status = "Saved speech task could not be read: ${error.message}" }
         }
-        val batchCancel = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
         var batchResults by remember { mutableStateOf<Map<Int, List<WhisperNative.Segment>>>(emptyMap()) }
         var modelDownloading by remember { mutableStateOf(false) }
         var modelProgress by remember { mutableIntStateOf(0) }
@@ -343,10 +344,16 @@ class MainActivity : ComponentActivity() {
         var campaignSource by remember { mutableStateOf(campaignPrefs.getString("source", "0") ?: "0") }
         var sourceVerified by remember { mutableStateOf(false) }
         var rightsVerified by remember { mutableStateOf(false) }
+        var appliedSpeechId by remember { mutableStateOf("") }
+        var appliedSpeechUnits by remember { mutableIntStateOf(0) }
+        val latestBackupProject = remember { java.util.concurrent.atomic.AtomicReference<EditorProject?>(null) }
+        var pendingRelink by remember { mutableStateOf<EditorProject?>(null) }
+        var metadataBusy by remember { mutableStateOf(false) }
+        var pendingBackup by remember { mutableStateOf<MetadataBackup.Staged?>(null) }
         var projectLoading by remember { mutableStateOf(true) }
         var projectMessage by remember { mutableStateOf("Checking saved project…") }
         var expectedRestoredDuration by remember { mutableLongStateOf(0L) }
-        val busy = projectLoading || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
+        val busy = projectLoading || metadataBusy || speechStarting || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
         val campaignIssues = if (campaignEnabled) CampaignRules(campaignTags,
             campaignMin.toLongOrNull() ?: -1, campaignMax.toLongOrNull() ?: -1,
             campaignSource.toLongOrNull() ?: -1).issues(campaignCaption,
@@ -356,6 +363,41 @@ class MainActivity : ComponentActivity() {
                 .putString("caption", campaignCaption).putString("min", campaignMin)
                 .putString("max", campaignMax).putString("source", campaignSource).apply()
             approved = false
+        }
+        val speechScope = rememberCoroutineScope()
+        var pendingSpeechRequest by remember { mutableStateOf<SpeechJob?>(null) }
+        val enqueueSpeech: (SpeechJob) -> Unit = { request ->
+            approved = false
+            drafts = drafts.map { it.copy(approved = false) }
+            speechStarting = true
+            speechScope.launch {
+                try {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        SpeechJobs.submit(applicationContext, request)
+                        SpeechJobs.startService(applicationContext)
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (error: Exception) { status = "Speech job could not start: ${error.message}" }
+                finally { speechStarting = false }
+            }
+        }
+        val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ ->
+            pendingSpeechRequest?.let(enqueueSpeech)
+            pendingSpeechRequest = null
+        }
+        val launchSpeech: (SpeechJobMode, List<SpeechRange>, String) -> Unit = { mode, ranges, target ->
+            val source = video
+            if (source != null && duration > 0) {
+                val request = SpeechJob(java.util.UUID.randomUUID().toString(), source.toString(), duration, mode, ranges, target)
+                val preferences = getSharedPreferences("processing", MODE_PRIVATE)
+                if (android.os.Build.VERSION.SDK_INT >= 33 &&
+                    androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
+                    !preferences.getBoolean("notifications-asked", false)) {
+                    preferences.edit().putBoolean("notifications-asked", true).apply()
+                    pendingSpeechRequest = request
+                    notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+                } else enqueueSpeech(request)
+            }
         }
         val player = remember { ExoPlayer.Builder(this).build() }
         LaunchedEffect(video) {
@@ -381,7 +423,7 @@ class MainActivity : ComponentActivity() {
         }
         DisposableEffect(player) { onDispose { player.release() } }
         DisposableEffect(Unit) {
-            onDispose { batchCancel.set(true); activeExportToken = null; if (activeTransformer != null) { activeTransformer?.cancel(); exportFile?.delete() } }
+            onDispose { activeExportToken = null; if (activeTransformer != null) { activeTransformer?.cancel(); exportFile?.delete() } }
         }
         LaunchedEffect(exporting) {
             val holder = ProgressHolder()
@@ -395,6 +437,78 @@ class MainActivity : ComponentActivity() {
         DisposableEffect(busy) {
             if (busy) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
             onDispose { window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+        }
+        val applySavedProject: (EditorProject, Uri) -> Unit = { saved, source ->
+                    pendingRelink = null
+                    appliedSpeechId = saved.lastSpeechJobId
+                    appliedSpeechUnits = saved.lastSpeechUnits
+                    video = source
+                    duration = saved.durationMs
+                    expectedRestoredDuration = saved.durationMs
+                    start = saved.startMs.toFloat() / saved.durationMs
+                    end = saved.endMs.toFloat() / saved.durationMs
+                    editingMode = saved.mode
+                    fillFrame = saved.fillFrame
+                    vertical = saved.vertical
+                    mute = saved.mute
+                    drafts = saved.drafts.map { it.copy(approved = false) }
+                    selectedDraft = saved.selectedDraft
+                    hookText = saved.hook
+                    captionText = saved.caption
+                    effectChoice = saved.effect
+                    subtitleSize = saved.subtitleSize
+                    subtitleYellow = saved.subtitleYellow
+                    subtitleDraftIndex = saved.subtitleDraftIndex
+                    transcriptSegments = saved.currentSegments
+                    sourceTranscriptSegments = saved.sourceSegments
+                    subtitleSegments = if (saved.subtitleDraftIndex >= 0) saved.currentSegments else emptyList()
+                    batchResults = saved.draftSegments
+                    transcript = saved.currentSegments.joinToString("\n") { it.text }
+                    val chosen = saved.drafts.getOrNull(saved.selectedDraft)
+                    captionFrom = ((chosen?.captionStartMs ?: 0L) / 1000L).toString()
+                    captionTo = ((chosen?.captionEndMs ?: 0L) / 1000L).toString()
+                    approved = false
+                    sourceVerified = false
+                    rightsVerified = false
+                    player.setVideoEffects(creativeEffects(saved.effect))
+                    player.setMediaItem(MediaItem.fromUri(source))
+                    player.seekTo(saved.startMs)
+                    player.playWhenReady = false
+                    player.prepare()
+                    projectMessage = "Local project restored. Review again before export."
+                    status = "Restored project; export approval and campaign confirmations were cleared"
+        }
+        val backupSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { destination ->
+            if (destination != null) {
+                metadataBusy = true
+                exportScope.launch {
+                    try {
+                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            MetadataGate.lock.withLock {
+                                val stream = contentResolver.openOutputStream(destination) ?: error("Unable to open backup destination")
+                                latestBackupProject.get()?.let { ProjectStore.write(File(filesDir, "projects/last-project.properties"), it) }
+                                MetadataBackup.create(filesDir, stream)
+                            }
+                        }
+                        status = "Backup saved. Video files and the speech model are not included."
+                    } catch (error: Exception) { status = "Backup failed: ${error.message}" }
+                    finally { metadataBusy = false }
+                }
+            }
+        }
+        val backupPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { source ->
+            if (source != null) {
+                metadataBusy = true
+                exportScope.launch {
+                    try {
+                        pendingBackup = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            val stream = contentResolver.openInputStream(source) ?: error("Unable to open backup")
+                            MetadataBackup.stage(filesDir, stream)
+                        }
+                    } catch (error: Exception) { status = "Backup validation failed: ${error.message}" }
+                    finally { metadataBusy = false }
+                }
+            }
         }
         var pendingSrt by remember { mutableStateOf("") }
         val subtitleSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/x-subrip")) { destination ->
@@ -413,6 +527,14 @@ class MainActivity : ComponentActivity() {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 } catch (_: SecurityException) {}
                 if (busy) return@rememberLauncherForActivityResult
+                val saved = pendingRelink
+                if (saved != null) {
+                    applySavedProject(saved.copy(source = uri.toString()), uri)
+                    speechScope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SpeechJobs.relink(applicationContext, saved.source, uri.toString(), saved.durationMs) } }
+                    status = "Original video relinked. Review framing and subtitles again."
+                    return@rememberLauncherForActivityResult
+                }
+                appliedSpeechId = ""; appliedSpeechUnits = 0
                 batchResults = emptyMap()
                 sourceVerified = false
                 rightsVerified = false
@@ -473,46 +595,13 @@ class MainActivity : ComponentActivity() {
             try {
                 val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ProjectStore.read(projectFile) }
                 if (saved != null) {
+                    pendingRelink = saved
                     val source = Uri.parse(saved.source)
                     // Check access before installing a saved editor state.
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         contentResolver.openAssetFileDescriptor(source, "r")?.use { } ?: error("Saved source is unavailable")
                     }
-                    video = source
-                    duration = saved.durationMs
-                    expectedRestoredDuration = saved.durationMs
-                    start = saved.startMs.toFloat() / saved.durationMs
-                    end = saved.endMs.toFloat() / saved.durationMs
-                    editingMode = saved.mode
-                    fillFrame = saved.fillFrame
-                    vertical = saved.vertical
-                    mute = saved.mute
-                    drafts = saved.drafts.map { it.copy(approved = false) }
-                    selectedDraft = saved.selectedDraft
-                    hookText = saved.hook
-                    captionText = saved.caption
-                    effectChoice = saved.effect
-                    subtitleSize = saved.subtitleSize
-                    subtitleYellow = saved.subtitleYellow
-                    subtitleDraftIndex = saved.subtitleDraftIndex
-                    transcriptSegments = saved.currentSegments
-                    sourceTranscriptSegments = saved.sourceSegments
-                    subtitleSegments = if (saved.subtitleDraftIndex >= 0) saved.currentSegments else emptyList()
-                    batchResults = saved.draftSegments
-                    transcript = saved.currentSegments.joinToString("\n") { it.text }
-                    val chosen = saved.drafts.getOrNull(saved.selectedDraft)
-                    captionFrom = ((chosen?.captionStartMs ?: 0L) / 1000L).toString()
-                    captionTo = ((chosen?.captionEndMs ?: 0L) / 1000L).toString()
-                    approved = false
-                    sourceVerified = false
-                    rightsVerified = false
-                    player.setVideoEffects(creativeEffects(saved.effect))
-                    player.setMediaItem(MediaItem.fromUri(source))
-                    player.seekTo(saved.startMs)
-                    player.playWhenReady = false
-                    player.prepare()
-                    projectMessage = "Local project restored. Review again before export."
-                    status = "Restored project; export approval and campaign confirmations were cleared"
+                    applySavedProject(saved, source)
                 } else projectMessage = "Edits save locally after a short pause."
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -528,14 +617,15 @@ class MainActivity : ComponentActivity() {
             hook = hookText, caption = captionText, effect = effectChoice,
             subtitleSize = subtitleSize, subtitleYellow = subtitleYellow, subtitleDraftIndex = subtitleDraftIndex,
             currentSegments = transcriptSegments, sourceSegments = sourceTranscriptSegments,
-            draftSegments = batchResults, fillFrame = fillFrame
+            draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits
         ) else null
-        LaunchedEffect(projectSnapshot, projectLoading) {
-            if (projectSnapshot != null && !projectLoading) {
+        SideEffect { latestBackupProject.set(projectSnapshot) }
+        LaunchedEffect(projectSnapshot, projectLoading, metadataBusy) {
+            if (projectSnapshot != null && !projectLoading && !metadataBusy) {
                 delay(1000)
                 try {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        ProjectStore.write(projectFile, projectSnapshot)
+                        MetadataGate.lock.withLock { ProjectStore.write(projectFile, projectSnapshot) }
                     }
                     projectMessage = "Project saved on this phone. Review approval is never restored."
                 } catch (cancelled: kotlinx.coroutines.CancellationException) {
@@ -570,6 +660,54 @@ class MainActivity : ComponentActivity() {
             StudioTab.CAMPAIGN -> campaignScroll
             StudioTab.EXPORT -> exportScroll
         }
+        LaunchedEffect(speechJob?.id, speechJob?.results?.size, speechJob?.status, video, duration) {
+            val job = speechJob
+            if (job != null && job.source == video?.toString() && job.durationMs == duration) {
+                if (!job.active) status = job.message
+                if (job.results.isNotEmpty() && (appliedSpeechId != job.id || appliedSpeechUnits != job.results.size)) {
+                    val sameJob = appliedSpeechId == job.id
+                    val grouped = job.groupedResults(job.mode != SpeechJobMode.FULL_VIDEO)
+                    fun matches(index: Int): Boolean {
+                        val range = job.ranges.firstOrNull { it.index == index } ?: return false
+                        val draft = drafts.getOrNull(index) ?: return false
+                        return draft.startMs == range.startMs && draft.endMs == range.endMs
+                    }
+                    when (job.mode) {
+                        SpeechJobMode.FIRST_30, SpeechJobMode.FULL_VIDEO -> {
+                            grouped[0]?.let { segments ->
+                                val existing = if (sameJob) sourceTranscriptSegments.associateBy { it.startMs to it.endMs } else emptyMap()
+                                val merged = segments.map { existing[it.startMs to it.endMs] ?: it }
+                                sourceTranscriptSegments = merged
+                                transcriptSegments = merged
+                                transcript = merged.joinToString("\n") { it.text }
+                                subtitleDraftIndex = -1
+                                subtitleSegments = emptyList()
+                                approved = false
+                            }
+                        }
+                        SpeechJobMode.SELECTED -> {
+                            val index = job.ranges.first().index
+                            grouped[index]?.takeIf { matches(index) }?.let { segments ->
+                                batchResults = batchResults + (index to segments)
+                                if (selectedDraft == index) {
+                                    transcriptSegments = segments; subtitleSegments = segments; subtitleDraftIndex = index
+                                    transcript = segments.joinToString("\n") { it.text }; approved = false
+                                }
+                            }
+                        }
+                        SpeechJobMode.HIGHLIGHTS -> {
+                            batchResults = grouped.filterKeys { matches(it) }.mapValues { (index, segments) ->
+                                val existing = if (sameJob) batchResults[index].orEmpty().associateBy { it.startMs to it.endMs } else emptyMap()
+                                segments.map { existing[it.startMs to it.endMs] ?: it }
+                            }
+                            drafts = drafts.map { it.copy(approved = false) }; approved = false
+                        }
+                        SpeechJobMode.TIMELINE -> Unit
+                    }
+                    appliedSpeechId = job.id; appliedSpeechUnits = job.results.size
+                }
+            }
+        }
         val previewHeight = if (screen.screenHeightDp < 760) 170.dp else 230.dp
         val previewPanel: @Composable (Boolean) -> Unit = { expanded ->
             val canvasHeight = if (expanded) (screen.screenHeightDp - 160).coerceAtLeast(170).dp else previewHeight
@@ -577,7 +715,7 @@ class MainActivity : ComponentActivity() {
                 if (video == null) {
                     Box(Modifier.fillMaxWidth()) {
                         StudioEmptyPreview()
-                        Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) { Text("Choose a video") }
+                        Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }, modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 12.dp)) { Text(if (pendingRelink != null) "Relink original video" else "Choose a video") }
                     }
                 } else {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
@@ -629,6 +767,27 @@ class MainActivity : ComponentActivity() {
             }
         }
         ClipForgeTheme {
+            pendingBackup?.let { staged ->
+                AlertDialog(onDismissRequest = { if (!metadataBusy) { staged.discard(); pendingBackup = null } },
+                    title = { Text("Restore this backup?") },
+                    text = { Text("Project: ${if (staged.hasProject) "included" else "not included"}. Submissions: ${staged.submissions}. Speech checkpoint: ${if (staged.hasSpeech) "included" else "not included"}. Included local records will be replaced. Original videos and model files are not part of this backup.") },
+                    confirmButton = { TextButton(enabled = !busy, onClick = {
+                        metadataBusy = true
+                        exportScope.launch {
+                            try {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    MetadataGate.lock.withLock {
+                                        MetadataBackup.restore(filesDir, staged)
+                                        SpeechJobs.reloadAfterRestore(applicationContext)
+                                    }
+                                }
+                                pendingBackup = null
+                                recreate()
+                            } catch (error: Exception) { pendingBackup = null; metadataBusy = false; status = "Restore failed: ${error.message}" }
+                        }
+                    }) { Text("Restore included records") } },
+                    dismissButton = { TextButton(enabled = !busy, onClick = { staged.discard(); pendingBackup = null }) { Text("Cancel") } })
+            }
             if (fullScreenPreview && video != null) {
                 androidx.compose.ui.window.Dialog(onDismissRequest = { fullScreenPreview = false },
                     properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -881,11 +1040,26 @@ class MainActivity : ComponentActivity() {
                                                 Button(enabled = !busy, onClick = { selectedTab = StudioTab.EXPORT }) { Text("Review this edit") }
                                             }
                                         }
+                                        if (pendingRelink != null) StudioCard("Original video needed", "Re-select the original video to restore its saved edits. A different source duration clears incompatible drafts.") {
+                                            Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }) { Text("Relink original source") }
+                                            TextButton(enabled = !busy, onClick = { pendingRelink = null; status = "Choose a new source to start a fresh project" }) { Text("Start a new project") }
+                                        }
                                         Text(projectMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        StudioCard("Project backup", "Save your edits, submissions and last speech checkpoint. Media and model files stay separate.") {
+                                            OutlinedButton(enabled = !busy, onClick = { backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
+                                            TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore metadata backup") }
+                                        }
                                     }
                                     StudioTab.CAPTIONS -> {
                                         StudioCard("Private by design", "Your footage stays on this phone. The speech model is downloaded once; transcription runs locally.") { StudioBadge(if (modelReady) "MODEL READY" else "MODEL NEEDED", emphasized = modelReady) }
                                         TextButton(enabled = !batchRunning, onClick = { speechAdvanced = !speechAdvanced }) { Text(if (speechAdvanced) "Hide batch & long video tools" else "Batch & long video tools") }
+                                        if (speechJob != null && !speechJob.active && speechJob.status != SpeechJobStatus.COMPLETED) {
+                                            StudioCard("Saved processing task", speechJob.message) {
+                                                Text("${speechJob.results.size}/${speechJob.units().size} audio windows saved")
+                                                Button(enabled = !busy && modelReady && speechJob.source == video?.toString() && speechJob.durationMs == duration,
+                                                    onClick = { enqueueSpeech(speechJob.copy(status = SpeechJobStatus.QUEUED)) }) { Text("Resume saved transcription") }
+                                            }
+                                        }
                                         StudioCard("Speech & subtitles") {
                 if (!modelReady || modelDownloading) {
                 Text("English, Tagalog and Taglish, processed on your phone. Review recognition before publishing.", style = MaterialTheme.typography.bodySmall)
@@ -941,35 +1115,7 @@ class MainActivity : ComponentActivity() {
                 }) { Text(if (audioPreparing) "Preparing audio…" else "Check source audio") }
                 }
                 Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing, onClick = {
-                    val selectedVideo = video ?: return@Button
-                    approved = false
-                    speechPhase = "Starting offline transcription"
-                    speechPercent = -1
-                    transcribing = true
-                    transcript = ""
-                    subtitleDraftIndex = -1
-                    subtitleSegments = emptyList()
-                    status = "Preparing first 30 seconds for offline Whisper…"
-                    Thread {
-                        try {
-                            WhisperNative.withSession {
-                            ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
-                            val result = OfflineTranscriber.range(this@MainActivity, selectedVideo, File(filesDir, "models/ggml-tiny.bin"), 0L, minOf(duration, 30_000L), progress = reportSpeechProgress)
-                            runOnUiThread {
-                                sourceTranscriptSegments = result
-                                transcriptSegments = result
-                                transcript = result.joinToString(" ") { it.text }
-                                transcribing = false
-                                status = "Offline Whisper processed first 30 seconds. Review accuracy below."
-                            }
-                            }
-                        } catch (e: Throwable) {
-                            runOnUiThread {
-                                transcribing = false
-                                status = "Whisper failed: ${e.message}"
-                            }
-                        }
-                    }.start()
+                    launchSpeech(SpeechJobMode.FIRST_30, listOf(SpeechRange(0, 0, minOf(duration, 30_000))), "")
                 }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe first 30 seconds") }
                 if (transcript.isNotBlank()) {
                     TextButton(onClick = { showTranscriptNotes = !showTranscriptNotes }) { Text(if (showTranscriptNotes) "Hide transcript notes" else "Show transcript notes") }
@@ -979,41 +1125,9 @@ class MainActivity : ComponentActivity() {
                 }
                 }
                 Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing && selectedDraft in drafts.indices, onClick = {
-                    val selectedVideo = video ?: return@Button
-                    val chosenIndex = selectedDraft
-                    val chosen = drafts.getOrNull(chosenIndex) ?: return@Button
-                    approved = false
-                    speechPhase = "Starting offline transcription"
-                    speechPercent = -1
-                    transcribing = true
-                    transcript = ""
-                    transcriptSegments = emptyList()
-                    subtitleSegments = emptyList()
-                    subtitleDraftIndex = -1
-                    status = "Transcribing selected highlight offline…"
-                    Thread {
-                        try {
-                            WhisperNative.withSession {
-                            ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
-                            val segments = OfflineTranscriber.range(this@MainActivity, selectedVideo, File(filesDir, "models/ggml-tiny.bin"), chosen.startMs, chosen.endMs, progress = reportSpeechProgress)
-                            runOnUiThread {
-                                transcriptSegments = segments
-                                subtitleSegments = segments
-                                batchResults = batchResults + (chosenIndex to segments)
-                                subtitleDraftIndex = chosenIndex
-                                approved = false
-                                transcript = segments.joinToString("\n") { it.text }
-                                transcribing = false
-                                status = "Transcribed selected highlight: ${segments.size} timed segments."
-                            }
-                            }
-                        } catch (e: Throwable) {
-                            runOnUiThread {
-                                transcribing = false
-                                status = "Highlight transcription failed: ${e.message}"
-                            }
-                        }
-                    }.start()
+                    drafts.getOrNull(selectedDraft)?.let { chosen ->
+                        launchSpeech(SpeechJobMode.SELECTED, listOf(SpeechRange(selectedDraft, chosen.startMs, chosen.endMs)), "")
+                    }
                 }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe selected clip") }
                 if (transcriptSegments.isNotEmpty()) {
                     Text("Timed subtitle editor", style = MaterialTheme.typography.titleMedium)
@@ -1039,6 +1153,10 @@ class MainActivity : ComponentActivity() {
                             changed[segmentIndex] = segment.copy(text = edited)
                             transcriptSegments = changed
                             subtitleSegments = changed
+                            val corrected = changed[segmentIndex]
+                            sourceTranscriptSegments = sourceTranscriptSegments.map { original ->
+                                if (original.startMs == corrected.startMs && original.endMs == corrected.endMs) corrected else original
+                            }
                             if (selectedDraft >= 0 && subtitleDraftIndex == selectedDraft) batchResults = batchResults + (selectedDraft to changed)
                             transcript = changed.joinToString("\n") { it.text }
                             approved = false
@@ -1068,47 +1186,7 @@ class MainActivity : ComponentActivity() {
                 Text("Batch highlight transcription", style = MaterialTheme.typography.titleMedium)
                 Text("Process each candidate offline, up to 15. This can take substantial time and battery.", style = MaterialTheme.typography.bodySmall)
                 Button(enabled = !busy && video != null && modelReady && drafts.isNotEmpty() && !batchRunning && !transcribing && !audioPreparing, onClick = {
-                    val source = video ?: return@Button
-                    val snapshot = drafts.toList()
-                    approved = false
-                    speechPhase = "Starting offline batch"
-                    speechPercent = -1
-                    batchRunning = true
-                    batchCancel.set(false)
-                    batchProgress = 0
-                    batchTotal = snapshot.size
-                    batchResults = emptyMap()
-                    status = "Preparing audio for highlight batch…"
-                    Thread {
-                        try {
-                            WhisperNative.withSession {
-                            ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
-                            val model = File(filesDir, "models/ggml-tiny.bin")
-                            val completed = mutableMapOf<Int, List<WhisperNative.Segment>>()
-                            for ((index, draft) in snapshot.withIndex()) {
-                                if (batchCancel.get()) break
-                                runOnUiThread { status = "Processing highlight ${index + 1}/${snapshot.size}"; speechPhase = "Decoding highlight ${index + 1}"; speechPercent = -1 }
-                                val segments = OfflineTranscriber.range(this@MainActivity, source, model, draft.startMs, minOf(draft.endMs, draft.startMs + 30_000L), progress = reportSpeechProgress)
-                                completed[index] = segments
-                                val completedSnapshot = completed.toMap()
-                                runOnUiThread {
-                                    batchResults = completedSnapshot
-                                    batchProgress = index + 1
-                                    status = "Transcribed ${batchProgress}/${batchTotal} highlights"
-                                }
-                            }
-                            runOnUiThread {
-                                batchRunning = false
-                                status = if (batchCancel.get()) "Batch stopped after ${completed.size} highlights" else "Batch complete: ${completed.size} highlights"
-                            }
-                            }
-                        } catch (e: Throwable) {
-                            runOnUiThread {
-                                batchRunning = false
-                                status = "Batch failed: ${e.message}"
-                            }
-                        }
-                    }.start()
+                    launchSpeech(SpeechJobMode.HIGHLIGHTS, drafts.mapIndexed { index, draft -> SpeechRange(index, draft.startMs, draft.endMs) }, "")
                 }) { Text(if (batchRunning) "Transcribing highlights…" else "Transcribe all highlight candidates") }
                 if (batchRunning) {
                     LinearProgressIndicator(progress = { if (batchTotal > 0) batchProgress.toFloat() / batchTotal else 0f }, modifier = Modifier.fillMaxWidth())
@@ -1118,7 +1196,7 @@ class MainActivity : ComponentActivity() {
                     else LinearProgressIndicator(progress = { speechPercent / 100f }, modifier = Modifier.fillMaxWidth())
                     Text("Elapsed: ${speechElapsedSeconds / 60}m ${speechElapsedSeconds % 60}s • ${if (speechPercent < 0) "Preparing current window" else "$speechPercent% of current window"}", style = MaterialTheme.typography.bodySmall)
                     Text("${batchProgress}/${batchTotal} audio windows completed", style = MaterialTheme.typography.bodySmall)
-                    OutlinedButton(onClick = { batchCancel.set(true) }) { Text("Stop after current audio window") }
+                    OutlinedButton(onClick = { SpeechJobs.pause() }) { Text("Stop after current audio window") }
                 }
                 if (batchResults.isNotEmpty()) {
                     Text("${batchResults.size} transcribed highlights ready to review", style = MaterialTheme.typography.bodySmall)
@@ -1145,68 +1223,9 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 Text("Full-video transcription (optional)", style = MaterialTheme.typography.titleMedium)
-                Text("Runs in 30-second chunks. Long videos may take hours; keep the app open. Stopping finishes the current chunk first.", style = MaterialTheme.typography.bodySmall)
+                Text("Runs in 30-second chunks. You can switch apps while processing. Pause finishes the current window; Resume continues from saved progress.", style = MaterialTheme.typography.bodySmall)
                 Button(enabled = !busy && video != null && modelReady && duration > 0 && !batchRunning && !transcribing && !audioPreparing, onClick = {
-                    val source = video ?: return@Button
-                    val chunks = HybridTranscriptionPlan.fullVideo(duration)
-                    approved = false
-                    speechPhase = "Starting offline batch"
-                    speechPercent = -1
-                    batchRunning = true
-                    batchCancel.set(false)
-                    batchProgress = 0
-                    batchTotal = chunks.size
-                    batchResults = emptyMap()
-                    subtitleDraftIndex = -1
-                    subtitleSegments = emptyList()
-                    status = "Preparing full-video audio…"
-                    Thread {
-                        try {
-                            WhisperNative.withSession {
-                            ensureAudioWorkspace(cacheDir, minOf(duration, 30_000L))
-                            val model = File(filesDir, "models/ggml-tiny.bin")
-                            val sourceKey = MessageDigest.getInstance("SHA-256")
-                                .digest((source.toString() + ":chunk-v2:" + duration).toByteArray())
-                                .take(10).joinToString("") { "%02x".format(it) }
-                            val transcriptFile = File(filesDir, "transcript_${sourceKey}.tsv")
-                            val previous = TranscriptStore.read(transcriptFile)
-                            val completedThrough = previous.throughMs
-                            val collected = previous.segments.toMutableList()
-                            var done = 0
-                            for (chunk in chunks) {
-                                if (batchCancel.get()) break
-                                if (chunk.endMs <= completedThrough) {
-                                    done++
-                                    val skipped = done
-                                    runOnUiThread { batchProgress = skipped }
-                                    continue
-                                }
-                                runOnUiThread { status = "Processing chunk ${chunk.index + 1}/${chunks.size}"; speechPhase = "Decoding chunk ${chunk.index + 1}"; speechPercent = -1 }
-                                val segments = OfflineTranscriber.range(this@MainActivity, source, model, chunk.startMs, chunk.endMs, progress = reportSpeechProgress)
-                                collected.addAll(segments)
-                                TranscriptStore.write(transcriptFile, TranscriptStore.Snapshot(chunk.endMs, collected))
-                                done++
-                                val progressValue = done
-                                runOnUiThread {
-                                    batchProgress = progressValue
-                                    status = "Full video: ${progressValue}/${chunks.size} chunks; transcript saved locally"
-                                }
-                            }
-                            runOnUiThread {
-                                sourceTranscriptSegments = collected.toList()
-                                transcriptSegments = collected.toList()
-                                transcript = collected.joinToString("\n") { it.text }
-                                batchRunning = false
-                                status = if (batchCancel.get()) "Full-video transcription stopped; partial transcript saved" else "Full-video transcript saved locally"
-                            }
-                            }
-                        } catch (e: Throwable) {
-                            runOnUiThread {
-                                batchRunning = false
-                                status = "Full-video transcription failed: ${e.message}"
-                            }
-                        }
-                    }.start()
+                    launchSpeech(SpeechJobMode.FULL_VIDEO, listOf(SpeechRange(0, 0, duration)), "")
                 }) { Text(if (batchRunning) "Processing offline…" else "Transcribe full video (optional)") }
                 }
                 Button(enabled = !busy && (sourceTranscriptSegments.isNotEmpty() || transcriptSegments.isNotEmpty()) && duration > 0, onClick = {
