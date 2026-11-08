@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.plugin.compose")
 }
+val ciBuildNumber = providers.environmentVariable("GITHUB_RUN_NUMBER").orNull?.toIntOrNull() ?: 1
 android {
     namespace = "com.clipforge.mobile"
     compileSdk = 35
@@ -10,8 +11,8 @@ android {
         applicationId = "com.clipforge.mobile"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = ciBuildNumber
+        versionName = "0.2.$ciBuildNumber"
         ndk { abiFilters += listOf("arm64-v8a") }
     }
     buildTypes { release { isMinifyEnabled = false } }
@@ -20,11 +21,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
     kotlinOptions { jvmTarget = "17" }
-    buildFeatures { compose = true }
+    buildFeatures { compose = true; buildConfig = true }
     externalNativeBuild { cmake { path = file("src/main/cpp/CMakeLists.txt") } }
 }
 dependencies {
     testImplementation("junit:junit:4.13.2")
+    implementation("androidx.core:core:1.15.0")
     implementation(platform("androidx.compose:compose-bom:2024.12.01"))
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.compose.material3:material3")

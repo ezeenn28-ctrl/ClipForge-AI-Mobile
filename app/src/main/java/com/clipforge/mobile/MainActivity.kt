@@ -43,6 +43,7 @@ import androidx.media3.effect.Presentation
 import androidx.media3.common.Effect
 import java.io.File
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /** Official multilingual Whisper weights; .en models cannot transcribe Tagalog. */
 enum class OfflineModel(val filename: String, val approxMb: Int, val sha256: String) {
@@ -279,6 +280,9 @@ class MainActivity : ComponentActivity() {
         var link by remember { mutableStateOf("") }
         var downloading by remember { mutableStateOf(false) }
         var exporting by remember { mutableStateOf(false) }
+        var lastExportUri by remember { mutableStateOf<Uri?>(null) }
+        val exportScope = rememberCoroutineScope()
+        var activeExportToken by remember { mutableStateOf<Any?>(null) }
         var activeTransformer by remember { mutableStateOf<Transformer?>(null) }
         var exportFile by remember { mutableStateOf<File?>(null) }
         var exportPercent by remember { mutableIntStateOf(0) }
@@ -344,7 +348,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(effectChoice) { player.setVideoEffects(creativeEffects(effectChoice)) }
         DisposableEffect(player) { onDispose { player.release() } }
         DisposableEffect(Unit) {
-            onDispose { batchCancel.set(true); activeTransformer?.cancel(); if (exporting) exportFile?.delete() }
+            onDispose { batchCancel.set(true); activeExportToken = null; if (activeTransformer != null) { activeTransformer?.cancel(); exportFile?.delete() } }
         }
         LaunchedEffect(exporting) {
             val holder = ProgressHolder()
@@ -546,7 +550,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Text(if (cloudConsent) "Cloud permission granted, but cloud processing is not available yet." else "Offline-only analysis mode active.", style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
-                Text("Hybrid transcription • Build #25", style = MaterialTheme.typography.titleMedium)
+                Text("Offline transcription • ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
                 Text("Experimental offline Whisper recognition is available. Test English, Tagalog and Taglish accuracy; selected highlights can now be transcribed.", style = MaterialTheme.typography.bodySmall)
                 Text("Transcription prerequisites: ${if (video != null) "video selected" else "select video"} • ${if (modelReady) "model installed" else "download model"}", style = MaterialTheme.typography.bodySmall)
                 Text("Multilingual Whisper tiny (~78 MB) runs locally; no video is uploaded for transcription.", style = MaterialTheme.typography.bodySmall)
@@ -1111,8 +1115,9 @@ class MainActivity : ComponentActivity() {
                     Text("I reviewed and approve this clip for export")
                 }
                 Button(enabled = !busy && campaignIssues.isEmpty() && video != null && duration > 0 && approved && (editingMode != "AI Draft" || selectedDraft >= 0), onClick = {
+                    if (!approved || busy || campaignIssues.isNotEmpty()) return@Button
                     val source = video ?: return@Button
-                    val outputDir = getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: filesDir
+                    val outputDir = (getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: File(filesDir, "exports")).apply { mkdirs() }
                     val output = File(outputDir, "clipforge_${System.currentTimeMillis()}.mp4")
                     val clipping = MediaItem.ClippingConfiguration.Builder()
                         .setStartPositionMs((duration * start).toLong())
@@ -1136,24 +1141,42 @@ class MainActivity : ComponentActivity() {
                     exportPercent = 0
                     exporting = true
                     status = "Exporting…"
+                    val requestToken = Any()
+                    activeExportToken = requestToken
                     val transformer = Transformer.Builder(this@MainActivity)
                         .addListener(object : Transformer.Listener {
                             override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
                                 runOnUiThread {
+                                    if (activeExportToken !== requestToken) return@runOnUiThread
                                     activeTransformer = null
-                                    exporting = false
-                                    status = "Saved: ${output.absolutePath}"
-                                    Toast.makeText(this@MainActivity, "Export complete", Toast.LENGTH_LONG).show()
+                                    exportPercent = 100
+                                    status = "Rendering complete. Saving approved MP4…"
+                                    exportScope.launch {
+                                        try {
+                                            val published = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                ExportPublisher.publish(applicationContext, output)
+                                            }
+                                            lastExportUri = published.uri
+                                            if (published.inGallery) output.delete()
+                                            status = if (published.inGallery) "Saved to Gallery: Movies/ClipForge/${output.name}" else "Saved privately. Use Open or Share below."
+                                            Toast.makeText(this@MainActivity, "Export complete", Toast.LENGTH_LONG).show()
+                                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                                            throw cancelled
+                                        } catch (error: Exception) {
+                                            lastExportUri = runCatching { ExportPublisher.privateUri(this@MainActivity, output) }.getOrNull()
+                                            status = "MP4 rendered and retained privately. Gallery save failed: ${error.message}. Use Share if available."
+                                        } finally { activeExportToken = null; exporting = false; exportFile = null }
+                                    }
                                 }
                             }
                             override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
-                                runOnUiThread { output.delete(); activeTransformer = null; exporting = false; status = "Export failed: ${exportException.message}" }
+                                runOnUiThread { if (activeExportToken !== requestToken) return@runOnUiThread; activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; status = "Export failed: ${exportException.message}" }
                             }
                         }).build()
                     exportFile = output
                     activeTransformer = transformer
                     try { transformer.start(edited, output.absolutePath) }
-                    catch (e: Exception) { output.delete(); activeTransformer = null; exporting = false; status = "Export failed: ${e.message}" }
+                    catch (e: Exception) { activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; status = "Export failed: ${e.message}" }
                 }) { Text(if (exporting) "Exporting…" else "Export MP4") }
                 OutlinedButton(enabled = !busy && approved && campaignIssues.isEmpty() && subtitleDraftIndex == selectedDraft && selectedDraft >= 0 && subtitleSegments.isNotEmpty(), onClick = {
                     pendingSrt = SubtitleSrt.render(subtitleSegments, (duration * start).toLong(), (duration * end).toLong())
@@ -1162,7 +1185,8 @@ class MainActivity : ComponentActivity() {
                 if (exporting) {
                     LinearProgressIndicator(progress = { exportPercent / 100f }, modifier = Modifier.fillMaxWidth())
                     Text("Export progress: $exportPercent%")
-                    OutlinedButton(onClick = {
+                    if (activeTransformer != null) OutlinedButton(onClick = {
+                        activeExportToken = null
                         activeTransformer?.cancel()
                         exportFile?.delete()
                         exportFile = null
@@ -1172,8 +1196,27 @@ class MainActivity : ComponentActivity() {
                         status = "Export cancelled. Review before starting again."
                     }) { Text("Cancel export") }
                 }
+                lastExportUri?.let { uri ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(enabled = !busy, onClick = {
+                            try {
+                                startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "video/mp4")
+                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+                            } catch (error: Exception) { status = "Could not open MP4: ${error.message}" }
+                        }) { Text("Open last MP4") }
+                        OutlinedButton(enabled = !busy, onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_SEND).setType("video/mp4")
+                                    .putExtra(Intent.EXTRA_STREAM, uri)
+                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                intent.clipData = android.content.ClipData.newRawUri("Approved ClipForge export", uri)
+                                startActivity(Intent.createChooser(intent, "Share approved clip"))
+                            } catch (error: Exception) { status = "Could not share MP4: ${error.message}" }
+                        }) { Text("Share last MP4") }
+                    }
+                }
                 Text(status, style = MaterialTheme.typography.bodySmall)
-                Text("Exports are saved in the app-specific Movies directory.", style = MaterialTheme.typography.bodySmall)
+                Text("Approved MP4s save to Movies/ClipForge on Android 10+. Older devices retain private files with Open/Share access.", style = MaterialTheme.typography.bodySmall)
             }
             }
         }

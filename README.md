@@ -28,7 +28,7 @@ The baseline commit ae4f644 passed Actions build #59, including unit tests and A
 - Campaign checks do not fetch briefs or verify audience geography, account standing, engagement, duplicate submissions or payout eligibility.
 - Cloud AI has no provider implemented. No paid service is used. A future provider requires explicit permission before upload.
 - Export progress and cancellation are available; failed/cancelled partial files are removed. Downloads use unique temporary files so a failed import cannot overwrite the selected source.
-- Export remains in the app-specific Movies directory. Device codec, aspect-ratio and playback/export behavior need physical-phone validation.
+- Approved renders publish to Gallery (Movies/ClipForge) on Android 10+, using pending entries until writing finishes. Older devices use scoped FileProvider sharing from export directories. Open/Share actions appear only for a completed render; failed Gallery writes retain the private MP4. Device codec, aspect-ratio, Gallery and sharing behavior need physical-phone validation.
 - No claim of complete production readiness or verified two-hour processing until consolidated device testing.
 
 ## Stack
