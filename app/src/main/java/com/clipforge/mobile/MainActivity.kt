@@ -266,6 +266,8 @@ class MainActivity : ComponentActivity() {
         var start by remember { mutableFloatStateOf(0f) }
         var end by remember { mutableFloatStateOf(1f) }
         var selectedTab by remember { mutableStateOf(StudioTab.STUDIO) }
+        var fullScreenPreview by remember { mutableStateOf(false) }
+        var sourceName by remember { mutableStateOf("Imported video") }
         var studioEditing by remember { mutableStateOf(false) }
         var speechAdvanced by remember { mutableStateOf(false) }
         var showTranscriptNotes by remember { mutableStateOf(false) }
@@ -331,7 +333,7 @@ class MainActivity : ComponentActivity() {
         var modelProgress by remember { mutableIntStateOf(0) }
         var modelReady by remember { mutableStateOf(File(filesDir, "models/ggml-tiny.bin").exists()) }
         val campaignPrefs = remember { getSharedPreferences("campaign", MODE_PRIVATE) }
-        var showTracker by remember { mutableStateOf(false) }
+        var showTracker by remember { mutableStateOf(true) }
         var campaignEnabled by remember { mutableStateOf(campaignPrefs.getBoolean("enabled", false)) }
         var campaignTags by remember { mutableStateOf(campaignPrefs.getString("tags", "") ?: "") }
         var campaignCaption by remember { mutableStateOf(campaignPrefs.getString("caption", "") ?: "") }
@@ -355,6 +357,17 @@ class MainActivity : ComponentActivity() {
             approved = false
         }
         val player = remember { ExoPlayer.Builder(this).build() }
+        LaunchedEffect(video) {
+            val source = video
+            sourceName = if (source == null) "Imported video" else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                runCatching {
+                    if (source.scheme == "file") File(source.path.orEmpty()).name
+                    else contentResolver.query(source, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                        if (cursor.moveToFirst()) cursor.getString(0) else null
+                    }.orEmpty()
+                }.getOrDefault("").ifBlank { "Imported video" }.replace('\n', ' ').take(70)
+            }
+        }
         LaunchedEffect(effectChoice, vertical, fillFrame) {
             val previewEffects = creativeEffects(effectChoice).toMutableList()
             if (vertical) previewEffects.add(Presentation.createForAspectRatio(9f / 16f,
@@ -542,8 +555,11 @@ class MainActivity : ComponentActivity() {
                 delay(150)
             }
         }
-        val previewHeight = if (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 760) 170.dp else 230.dp
-        val previewPanel: @Composable () -> Unit = {
+        val screen = androidx.compose.ui.platform.LocalConfiguration.current
+        val wideWorkspace = screen.screenWidthDp >= 700
+        val previewHeight = if (screen.screenHeightDp < 760) 170.dp else 230.dp
+        val previewPanel: @Composable (Boolean) -> Unit = { expanded ->
+            val canvasHeight = if (expanded) (screen.screenHeightDp - 160).coerceAtLeast(170).dp else previewHeight
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (video == null) {
                     Box(Modifier.fillMaxWidth()) {
@@ -554,12 +570,15 @@ class MainActivity : ComponentActivity() {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(if (selectedDraft >= 0) "CLIP ${(selectedDraft + 1).toString().padStart(2, '0')}" else "SOURCE PREVIEW", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         StudioBadge(if (vertical) if (fillFrame) "9:16 · CROP" else "9:16 · FIT" else "SOURCE", false)
+                        if (!expanded) TextButton(onClick = { fullScreenPreview = true }) { Text("Full screen", fontSize = 11.sp) }
                     }
-                Box(modifier = Modifier.fillMaxWidth().height(previewHeight).clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp)).background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
+                Box(modifier = Modifier.fillMaxWidth().height(canvasHeight).clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp)).background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
                     Box(Modifier.fillMaxHeight().aspectRatio(if (vertical) 9f / 16f else 16f / 9f, matchHeightConstraintsFirst = true), contentAlignment = Alignment.Center) {
                     AndroidView(
                         factory = { PlayerView(it).apply { this.player = player; useController = false; resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT } },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        onReset = null,
+                        onRelease = { it.player = null }
                     )
                     if (editingMode == "AI Draft" && selectedDraft in drafts.indices) {
                         val activeSegment = if (subtitleDraftIndex == selectedDraft) {
@@ -597,6 +616,17 @@ class MainActivity : ComponentActivity() {
             }
         }
         ClipForgeTheme {
+            if (fullScreenPreview && video != null) {
+                androidx.compose.ui.window.Dialog(onDismissRequest = { fullScreenPreview = false },
+                    properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+                    Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                        Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState())) {
+                            TextButton(onClick = { fullScreenPreview = false }, modifier = Modifier.padding(horizontal = 12.dp)) { Text("Back to editor") }
+                            previewPanel(true)
+                        }
+                    }
+                }
+            }
             Surface(Modifier.fillMaxSize().systemBarsPadding(), color = MaterialTheme.colorScheme.background) {
                 Scaffold(
                     modifier = Modifier.fillMaxSize().imePadding(),
@@ -612,14 +642,15 @@ class MainActivity : ComponentActivity() {
                         }
                     }
                 ) { innerPadding ->
-                    Column(Modifier.fillMaxSize().padding(innerPadding)) {
-                        if (selectedTab != StudioTab.CAMPAIGN) previewPanel()
+                    StudioWorkspaceLayout(modifier = Modifier.fillMaxSize().padding(innerPadding),
+                        showPreview = selectedTab != StudioTab.CAMPAIGN && !fullScreenPreview,
+                        wide = wideWorkspace, preview = { previewPanel(false) }) {
                         key(selectedTab, studioEditing) {
-                            Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                                 StudioIntro(selectedTab)
                                 when (selectedTab) {
                                     StudioTab.STUDIO -> {
-                                        StudioCard("Source footage", if (video == null) "Choose a video to start your project." else "${Timecode.format(duration)} source · saved locally") {
+                                        StudioCard("Source footage", if (video == null) "Choose a video to start your project." else "$sourceName · ${Timecode.format(duration)}") {
                 Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }) { Text(if (video == null) "Import video" else "Replace source video") }
                 TextButton(enabled = !busy, onClick = { advancedImport = !advancedImport }) { Text(if (advancedImport) "Hide direct-link import" else "Import from a direct link") }
                 if (advancedImport) {

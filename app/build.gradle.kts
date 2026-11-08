@@ -44,3 +44,8 @@ dependencies {
     implementation("androidx.media3:media3-transformer:1.5.1")
     implementation("androidx.media3:media3-effect:1.5.1")
 }
+// Render real Android layouts during the studio interaction tests.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    maxHeapSize = "2g"
+    systemProperty("roborazzi.test.record", "true")
+}

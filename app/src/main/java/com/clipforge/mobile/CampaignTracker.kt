@@ -20,6 +20,7 @@ fun CampaignTracker(directory: File, enabled: Boolean) {
     var loadFailed by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
+    var showEntryForm by remember { mutableStateOf(false) }
     var editingId by remember { mutableStateOf<String?>(null) }
     var campaign by remember { mutableStateOf("") }
     var platform by remember { mutableStateOf("TikTok") }
@@ -60,6 +61,11 @@ fun CampaignTracker(directory: File, enabled: Boolean) {
     Text("Approved estimates meeting entered limits: USD ${estimateTotal.toPlainString()}")
     Text("Actual paid (entered by you): USD ${paidTotal.toPlainString()}")
 
+    OutlinedButton(enabled = editable, onClick = {
+        showEntryForm = true; editingId = null; campaign = ""; url = ""; status = SubmissionStatus.PENDING
+        views = "0"; paid = "0.00"; tierActual = ""; reason = ""; message = "New submission"
+    }) { Text("Add submission") }
+    if (showEntryForm) {
     OutlinedTextField(enabled = editable, value = campaign, onValueChange = { campaign = it.take(200) }, label = { Text("Campaign name") }, modifier = Modifier.fillMaxWidth())
     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         listOf("TikTok", "Instagram", "YouTube", "X").forEach { option ->
@@ -99,19 +105,19 @@ fun CampaignTracker(directory: File, enabled: Boolean) {
                     withContext(Dispatchers.IO) { CampaignEntryStore.write(file, updated) }
                     entries = updated
                     editingId = entry.id
+                    showEntryForm = false
                     message = "Submission saved locally"
                 } catch (error: Exception) { message = "Save failed: ${error.message}" }
                 finally { saving = false }
             }
         } catch (error: Exception) { message = "Check the submission fields: ${error.message}" }
     }) { Text(if (saving) "Saving…" else if (editingId == null) "Save submission" else "Update submission") }
-    OutlinedButton(enabled = editable, onClick = {
-        editingId = null; campaign = ""; url = ""; status = SubmissionStatus.PENDING
-        views = "0"; paid = "0.00"; tierActual = ""; reason = ""; message = "New submission"
-    }) { Text("New submission") }
+        TextButton(enabled = editable, onClick = { showEntryForm = false }) { Text("Cancel editing") }
+    }
     if (message.isNotBlank()) Text(message, style = MaterialTheme.typography.bodySmall)
     val pages = ((entries.size + 9) / 10).coerceAtLeast(1)
     val currentPage = page.coerceIn(0, pages - 1)
+    if (entries.isEmpty()) Text("No submissions yet. Add your first clip to track its progress.", style = MaterialTheme.typography.bodySmall)
     if (entries.isNotEmpty()) {
         Row {
             OutlinedButton(enabled = editable && currentPage > 0, onClick = { page = currentPage - 1 }) { Text("Previous") }
@@ -126,7 +132,7 @@ fun CampaignTracker(directory: File, enabled: Boolean) {
                     entry.estimateIssues().forEach { Text(it, style = MaterialTheme.typography.bodySmall) }
                     if (entry.rejectionReason.isNotBlank()) Text(entry.rejectionReason)
                     OutlinedButton(enabled = editable, onClick = {
-                        editingId = entry.id; campaign = entry.campaign; platform = entry.platform; url = entry.postUrl
+                        showEntryForm = true; editingId = entry.id; campaign = entry.campaign; platform = entry.platform; url = entry.postUrl
                         status = entry.status; views = entry.views.toString(); cpm = entry.ratePerThousand.toPlainString()
                         minimum = entry.minimumPayout.toPlainString(); maximum = entry.maximumPayout.toPlainString()
                         paid = entry.paid.toPlainString(); tierMinimum = entry.minimumTierOnePercent.toString()

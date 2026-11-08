@@ -5,6 +5,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -181,6 +183,30 @@ fun ClipReviewCard(index: Int, draft: HighlightDraft, active: Boolean, score: In
             }
             Text(if (draft.approved) "Approved" else if (active) "Editing" else "Review", fontSize = 11.sp,
                 color = if (active || draft.approved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Keep navigation fixed while allowing independent preview/tools scrolling in landscape. */
+@Composable
+fun StudioWorkspaceLayout(
+    modifier: Modifier = Modifier,
+    showPreview: Boolean,
+    wide: Boolean,
+    preview: @Composable () -> Unit,
+    content: @Composable () -> Unit
+) {
+    if (wide && showPreview) {
+        Row(modifier) {
+            Box(Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState())) { preview() }
+            Box(Modifier.weight(1f).fillMaxHeight()) { content() }
+        }
+    } else {
+        Column(modifier) {
+            if (showPreview) preview()
+            Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.TopCenter) {
+                Box(Modifier.fillMaxHeight().widthIn(max = 720.dp)) { content() }
+            }
         }
     }
 }

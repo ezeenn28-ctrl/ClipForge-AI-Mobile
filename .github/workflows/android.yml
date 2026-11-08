@@ -67,15 +67,6 @@ jobs:
           name: ClipForge-studio-previews
           path: app/build/outputs/studio-previews/*.png
           if-no-files-found: warn
-      - name: Emit studio previews for visual inspection
-        if: always()
-        shell: python
-        run: |
-          import base64, glob, os
-          for path in sorted(glob.glob('app/build/outputs/studio-previews/*.png')):
-              print('CLIPFORGE_PREVIEW_BEGIN:' + os.path.basename(path))
-              print(base64.b64encode(open(path, 'rb').read()).decode())
-              print('CLIPFORGE_PREVIEW_END')
       - name: Build APK with concise diagnostics
         shell: bash
         run: |

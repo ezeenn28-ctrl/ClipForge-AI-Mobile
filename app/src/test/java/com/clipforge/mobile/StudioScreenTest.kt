@@ -3,6 +3,7 @@ package com.clipforge.mobile
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import com.github.takahirom.roborazzi.captureRoboImage
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -18,9 +19,7 @@ class StudioScreenTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
 
     @Test fun emptyStudioKeepsImportAndNavigationVisible() {
-        compose.waitUntil(timeoutMillis = 15_000) {
-            compose.onAllNodesWithText("Choose a video").fetchSemanticsNodes().isNotEmpty()
-        }
+        waitForProjectLoad()
         compose.onNodeWithText("Choose a video").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("Studio").assertIsDisplayed()
         compose.onNodeWithText("Captions").assertIsDisplayed()
@@ -30,9 +29,7 @@ class StudioScreenTest {
     }
 
     @Test fun workspacesStayReachableAndExportRequiresApproval() {
-        compose.waitUntil(timeoutMillis = 15_000) {
-            compose.onAllNodesWithText("Choose a video").fetchSemanticsNodes().isNotEmpty()
-        }
+        waitForProjectLoad()
         compose.onNodeWithText("Captions").performClick()
         compose.onNodeWithText("Every word, in place.").assertIsDisplayed()
         screenshot("captions")
@@ -46,8 +43,34 @@ class StudioScreenTest {
         compose.onNodeWithText("Choose a video").assertIsDisplayed()
     }
 
+    @Test
+    @Config(qualifiers = "w360dp-h640dp-mdpi")
+    fun compactPhoneKeepsPrimaryActionAndTabsVisible() {
+        waitForProjectLoad()
+        compose.onNodeWithText("Choose a video").assertIsDisplayed()
+        compose.onNodeWithText("Export").assertIsDisplayed()
+        screenshot("studio-compact")
+    }
+
+    @Test
+    @Config(qualifiers = "w800dp-h360dp-mdpi")
+    fun landscapeKeepsSourceToolsAndNavigationReachable() {
+        waitForProjectLoad()
+        compose.onNodeWithText("Import video").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Export").assertIsDisplayed()
+        screenshot("studio-landscape")
+    }
+
+    private fun waitForProjectLoad() {
+        compose.waitUntil(timeoutMillis = 15_000) {
+            runCatching { compose.onNodeWithText("Choose a video").assertIsEnabled(); true }.getOrDefault(false)
+        }
+    }
+
     private fun screenshot(name: String) {
         val directory = File("build/outputs/studio-previews").apply { mkdirs() }
-        compose.onRoot().captureRoboImage(File(directory, "$name.png").absolutePath)
+        val output = File(directory, "$name.png")
+        compose.onRoot().captureRoboImage(output.absolutePath)
+        assertTrue("Rendered preview was not written", output.isFile && output.length() > 1_000)
     }
 }
