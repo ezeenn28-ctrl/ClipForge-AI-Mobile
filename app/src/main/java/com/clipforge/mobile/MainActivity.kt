@@ -315,7 +315,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Text(if (cloudConsent) "Cloud permission granted, but cloud processing is not available yet." else "Offline-only analysis mode active.", style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
-                Text("Offline transcription • Build #24", style = MaterialTheme.typography.titleMedium)
+                Text("Hybrid transcription • Build #25", style = MaterialTheme.typography.titleMedium)
                 Text("Planned: automatic English/Tagalog detection, including Taglish. Current stage: verify local audio and model prerequisites; native Whisper inference is not installed.", style = MaterialTheme.typography.bodySmall)
                 Text("Transcription prerequisites: ${if (video != null) "video selected" else "select video"} • ${if (modelReady) "model installed" else "download model"}", style = MaterialTheme.typography.bodySmall)
                 Text("English + Filipino/Tagalog: multilingual Whisper tiny (~78 MB). One-time verified download; no video is uploaded. The speech inference engine is not integrated yet.", style = MaterialTheme.typography.bodySmall)
@@ -365,6 +365,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }.start()
                 }) { Text(if (audioPreparing) "Preparing audio…" else "Prepare video audio for offline transcription") }
+                Text("Hybrid transcription planning", style = MaterialTheme.typography.titleMedium)
+                val highlightPlan = HybridTranscriptionPlan.highlights(drafts)
+                val fullPlan = HybridTranscriptionPlan.fullVideo(duration)
+                Text("Highlight-first: ${highlightPlan.size} × up-to-30-second audio chunks from current drafts.", style = MaterialTheme.typography.bodySmall)
+                Text("Optional full video: ${fullPlan.size} × up-to-30-second chunks.", style = MaterialTheme.typography.bodySmall)
+                Text("These are processing estimates only. Native offline Whisper inference and timestamped subtitles are not yet available.", style = MaterialTheme.typography.bodySmall)
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; approved = false }, label = { Text("Manual Editor") })
