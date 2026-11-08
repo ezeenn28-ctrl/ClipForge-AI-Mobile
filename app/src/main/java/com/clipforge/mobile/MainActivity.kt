@@ -190,33 +190,50 @@ fun timedCaptionOverlay(
     caption: String,
     startMs: Long,
     endMs: Long,
-    trimStartMs: Long
+    trimStartMs: Long,
+    calibrateClock: Boolean = false
 ): BitmapOverlay {
-    val withCaption = makeCaptionOverlay(hook, caption)
-    val withoutCaption = makeCaptionOverlay(hook, "")
+    var withCaption: Bitmap? = null
+    var withoutCaption: Bitmap? = null
     val fromUs = (startMs - trimStartMs).coerceAtLeast(0L) * 1000L
     val untilUs = (endMs - trimStartMs).coerceAtLeast(0L) * 1000L
+    val clock = ClipPresentationClock()
     return object : BitmapOverlay() {
-        override fun getBitmap(presentationTimeUs: Long): Bitmap =
-            if (untilUs <= fromUs || presentationTimeUs in fromUs until untilUs) withCaption else withoutCaption
+        override fun getBitmap(presentationTimeUs: Long): Bitmap {
+            val timeUs = if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs
+            return if (untilUs <= fromUs || timeUs in fromUs until untilUs) {
+                withCaption ?: makeCaptionOverlay(hook, caption).also { withCaption = it }
+            } else withoutCaption ?: makeCaptionOverlay(hook, "").also { withoutCaption = it }
+        }
+        override fun release() {
+            super.release()
+            withCaption?.recycle(); withoutCaption?.recycle()
+            withCaption = null; withoutCaption = null
+        }
     }
 }
 
-fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long, subtitleSize: Float, subtitleColor: Int): BitmapOverlay {
-    val empty = makeCaptionOverlay(hook, "")
+fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long, subtitleSize: Float, subtitleColor: Int, calibrateClock: Boolean = false): BitmapOverlay {
+    var empty: Bitmap? = null
     // Retain only the current subtitle bitmap, independent of transcript length.
+    val clock = ClipPresentationClock()
     var cachedIndex = -1
     var cachedBitmap: Bitmap? = null
     return object : BitmapOverlay() {
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
-            val absoluteMs = SubtitleTimeline.sourcePositionMs(trimStartMs, presentationTimeUs)
+            val absoluteMs = SubtitleTimeline.sourcePositionMs(trimStartMs, if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs)
             val index = SubtitleTimeline.activeSegmentIndex(segments, absoluteMs)
-            if (index < 0) return empty
+            if (index < 0) return empty ?: makeCaptionOverlay(hook, "").also { empty = it }
             if (cachedIndex != index) {
                 cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor)
                 cachedIndex = index
             }
-            return cachedBitmap ?: empty
+            return cachedBitmap ?: (empty ?: makeCaptionOverlay(hook, "").also { empty = it })
+        }
+        override fun release() {
+            super.release()
+            cachedBitmap?.recycle(); empty?.recycle()
+            cachedBitmap = null; empty = null
         }
     }
 }
@@ -289,6 +306,14 @@ class MainActivity : ComponentActivity() {
         var effectChoice by remember { mutableStateOf("None") }
         var captionFrom by remember { mutableStateOf("0") }
         var captionTo by remember { mutableStateOf("5") }
+        var timeline by remember { mutableStateOf(TimelineHistory()) }
+        var timelineMode by remember { mutableStateOf(false) }
+        var selectedTimelineId by remember { mutableStateOf("") }
+        var timelinePlaybackIndex by remember { mutableIntStateOf(0) }
+        var timelinePosition by remember { mutableLongStateOf(0) }
+        var timelineSubtitleTarget by remember { mutableStateOf("") }
+        val timelineActive = timelineMode && timeline.clips.isNotEmpty()
+        val playingTimelineClip = if (timelineActive) timeline.clips.getOrNull(timelinePlaybackIndex) else null
         var previewPosition by remember { mutableLongStateOf(0L) }
         var status by remember { mutableStateOf("Select a video to begin") }
         var link by remember { mutableStateOf("") }
@@ -354,10 +379,12 @@ class MainActivity : ComponentActivity() {
         var projectMessage by remember { mutableStateOf("Checking saved project…") }
         var expectedRestoredDuration by remember { mutableLongStateOf(0L) }
         val busy = projectLoading || metadataBusy || speechStarting || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
+        val deliveryDuration = if (timelineMode) TimelineModel.duration(timeline.clips) else (duration * end).toLong() - (duration * start).toLong()
+        val exportReady = video != null && duration > 0 && if (timelineMode) timeline.clips.isNotEmpty() else (editingMode != "AI Draft" || selectedDraft >= 0)
         val campaignIssues = if (campaignEnabled) CampaignRules(campaignTags,
             campaignMin.toLongOrNull() ?: -1, campaignMax.toLongOrNull() ?: -1,
             campaignSource.toLongOrNull() ?: -1).issues(campaignCaption,
-            (duration * end).toLong() - (duration * start).toLong(), sourceVerified, rightsVerified) else emptyList()
+            deliveryDuration, sourceVerified, rightsVerified) else emptyList()
         LaunchedEffect(campaignEnabled, campaignTags, campaignCaption, campaignMin, campaignMax, campaignSource) {
             campaignPrefs.edit().putBoolean("enabled", campaignEnabled).putString("tags", campaignTags)
                 .putString("caption", campaignCaption).putString("min", campaignMin)
@@ -402,20 +429,86 @@ class MainActivity : ComponentActivity() {
         val player = remember { ExoPlayer.Builder(this).build() }
         LaunchedEffect(video) {
             val source = video
-            sourceName = if (source == null) "Imported video" else kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                runCatching {
-                    if (source.scheme == "file") File(source.path.orEmpty()).name
-                    else contentResolver.query(source, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-                        if (cursor.moveToFirst()) cursor.getString(0) else null
-                    }.orEmpty()
-                }.getOrDefault("").ifBlank { "Imported video" }.replace('\n', ' ').take(70)
+            if (source == null) sourceName = "Imported video"
+            else {
+                val info = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val name = runCatching {
+                        if (source.scheme == "file") File(source.path.orEmpty()).name
+                        else contentResolver.query(source, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null }.orEmpty()
+                    }.getOrDefault("").ifBlank { "Imported video" }.replace('\n', ' ').take(70)
+                    val retriever = MediaMetadataRetriever()
+                    val length = try {
+                        retriever.setDataSource(this@MainActivity, source)
+                        retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull()
+                    } catch (_: Exception) { null } finally { retriever.release() }
+                    name to length
+                }
+                sourceName = info.first
+                info.second?.takeIf { it > 0 }?.let { actual ->
+                    if (expectedRestoredDuration > 0 && kotlin.math.abs(expectedRestoredDuration - actual) > 1000) {
+                        timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""
+                        drafts = emptyList(); selectedDraft = -1; batchResults = emptyMap()
+                        transcriptSegments = emptyList(); subtitleSegments = emptyList(); sourceTranscriptSegments = emptyList(); subtitleDraftIndex = -1
+                        hookText = ""; captionText = ""; approved = false; start = 0f; end = 1f
+                        status = "Source duration changed. Incompatible edits were cleared; review the video again."
+                    }
+                    expectedRestoredDuration = 0
+                    duration = actual
+                }
             }
         }
-        LaunchedEffect(effectChoice, vertical, fillFrame) {
-            val previewEffects = creativeEffects(effectChoice).toMutableList()
+        LaunchedEffect(effectChoice, vertical, fillFrame, timelineActive, playingTimelineClip?.effect) {
+            val previewEffects = creativeEffects(if (timelineActive) playingTimelineClip?.effect ?: "None" else effectChoice).toMutableList()
             if (vertical) previewEffects.add(Presentation.createForAspectRatio(9f / 16f,
                 if (fillFrame) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT))
             player.setVideoEffects(previewEffects)
+        }
+        val seekTimeline: (Long) -> Unit = { time ->
+            TimelineModel.position(timeline.clips, time)?.let { position ->
+                timelinePosition = time.coerceIn(0, TimelineModel.duration(timeline.clips))
+                timelinePlaybackIndex = position.index
+                previewPosition = position.sourceMs
+                if (player.mediaItemCount == timeline.clips.size && timelineActive) player.seekTo(position.index, position.localMs)
+            }
+        }
+        val updateTimeline: (TimelineHistory) -> Unit = { changed ->
+            try {
+                TimelineModel.validate(changed.clips, duration)
+                timeline = changed
+                if (changed.clips.none { it.id == selectedTimelineId }) selectedTimelineId = changed.clips.firstOrNull()?.id.orEmpty()
+                timelinePosition = timelinePosition.coerceIn(0, TimelineModel.duration(changed.clips))
+                approved = false
+                status = "Timeline updated. Review before export."
+            } catch (error: Exception) { status = error.message ?: "Timeline change failed" }
+        }
+        val addTimelineSelection: () -> Unit = {
+            val from = (duration * start).toLong()
+            val until = (duration * end).toLong()
+            if (Timecode.validTrim(from, until, duration)) {
+                val cues = if (subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()) subtitleSegments else sourceTranscriptSegments.filter { it.endMs > from && it.startMs < until }
+                val draft = drafts.getOrNull(selectedDraft)
+                val clip = TimelineClip(java.util.UUID.randomUUID().toString(), from, until, hookText, captionText,
+                    draft?.captionStartMs ?: from, draft?.captionEndMs ?: until, effectChoice, subtitles = cues)
+                updateTimeline(timeline.edit(timeline.clips + clip))
+                if (timeline.clips.any { it.id == clip.id }) {
+                    selectedTimelineId = clip.id; timelineMode = true
+                    timelinePosition = TimelineModel.offset(timeline.clips, timeline.clips.lastIndex)
+                }
+            }
+        }
+        LaunchedEffect(video, timelineActive, timeline.clips.map { Triple(it.id, it.startMs, it.endMs) }) {
+            val source = video ?: return@LaunchedEffect
+            player.pause()
+            if (timelineActive) {
+                val items = timeline.clips.map { clip -> MediaItem.Builder().setUri(source)
+                    .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(clip.startMs).setEndPositionMs(clip.endMs).build()).build() }
+                val position = TimelineModel.position(timeline.clips, timelinePosition)!!
+                player.setMediaItems(items, position.index, position.localMs)
+            } else {
+                player.setMediaItem(MediaItem.fromUri(source))
+                player.seekTo((duration * start).toLong())
+            }
+            player.prepare()
         }
         LaunchedEffect(start, end, duration) {
             trimInText = Timecode.precise((duration * start).toLong())
@@ -442,6 +535,10 @@ class MainActivity : ComponentActivity() {
                     pendingRelink = null
                     appliedSpeechId = saved.lastSpeechJobId
                     appliedSpeechUnits = saved.lastSpeechUnits
+                    timeline = TimelineHistory(saved.timelineClips)
+                    timelineMode = saved.timelineMode
+                    selectedTimelineId = saved.selectedTimelineId.ifEmpty { saved.timelineClips.firstOrNull()?.id.orEmpty() }
+                    timelinePosition = 0; timelinePlaybackIndex = 0
                     video = source
                     duration = saved.durationMs
                     expectedRestoredDuration = saved.durationMs
@@ -535,6 +632,7 @@ class MainActivity : ComponentActivity() {
                     return@rememberLauncherForActivityResult
                 }
                 appliedSpeechId = ""; appliedSpeechUnits = 0
+                timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""; timelinePosition = 0
                 batchResults = emptyMap()
                 sourceVerified = false
                 rightsVerified = false
@@ -560,12 +658,13 @@ class MainActivity : ComponentActivity() {
                 status = "Video loaded"
             }
         }
-        DisposableEffect(player) {
+        DisposableEffect(player, timelineActive) {
             val listener = object : Player.Listener {
                 override fun onPlaybackStateChanged(playbackState: Int) {
-                    if (playbackState == Player.STATE_READY) {
+                    if (playbackState == Player.STATE_READY && !timelineActive) {
                         val actual = player.duration.coerceAtLeast(0)
                         if (expectedRestoredDuration > 0 && kotlin.math.abs(expectedRestoredDuration - actual) > 1_000) {
+                            timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""
                             drafts = emptyList()
                             selectedDraft = -1
                             subtitleDraftIndex = -1
@@ -617,7 +716,7 @@ class MainActivity : ComponentActivity() {
             hook = hookText, caption = captionText, effect = effectChoice,
             subtitleSize = subtitleSize, subtitleYellow = subtitleYellow, subtitleDraftIndex = subtitleDraftIndex,
             currentSegments = transcriptSegments, sourceSegments = sourceTranscriptSegments,
-            draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits
+            draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits, timelineClips = timeline.clips, timelineMode = timelineMode, selectedTimelineId = selectedTimelineId
         ) else null
         SideEffect { latestBackupProject.set(projectSnapshot) }
         LaunchedEffect(projectSnapshot, projectLoading, metadataBusy) {
@@ -635,15 +734,25 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        LaunchedEffect(player, duration, start, end, video) {
+        LaunchedEffect(player, duration, start, end, video, timelineActive, timeline.clips) {
             while (true) {
-                if (duration > 0 && player.isPlaying && player.currentPosition >= (duration * end).toLong()) {
-                    player.pause()
-                    player.seekTo((duration * start).toLong())
+                if (timelineActive) {
+                    val index = player.currentMediaItemIndex.coerceIn(0, timeline.clips.lastIndex)
+                    val clip = timeline.clips[index]
+                    val local = player.currentPosition.coerceIn(0, clip.durationMs)
+                    timelinePlaybackIndex = index
+                    timelinePosition = TimelineModel.offset(timeline.clips, index) + local
+                    previewPosition = clip.startMs + local
+                    player.volume = if (mute) 0f else TimelineModel.audioGain(clip, local).coerceIn(0f, 1f)
+                } else {
+                    if (duration > 0 && player.isPlaying && player.currentPosition >= (duration * end).toLong()) {
+                        player.pause(); player.seekTo((duration * start).toLong())
+                    }
+                    previewPosition = player.currentPosition.coerceAtLeast(0L)
+                    player.volume = if (mute) 0f else 1f
                 }
                 previewPlaying = player.isPlaying
-                previewPosition = player.currentPosition.coerceAtLeast(0L)
-                delay(150)
+                delay(50)
             }
         }
         val screen = androidx.compose.ui.platform.LocalConfiguration.current
@@ -678,6 +787,8 @@ class MainActivity : ComponentActivity() {
                                 val existing = if (sameJob) sourceTranscriptSegments.associateBy { it.startMs to it.endMs } else emptyMap()
                                 val merged = segments.map { existing[it.startMs to it.endMs] ?: it }
                                 sourceTranscriptSegments = merged
+                                timelineSubtitleTarget = ""
+                                timeline = timeline.copy(clips = timeline.clips.map { clip -> if (clip.subtitles.isEmpty()) clip.copy(subtitles = merged.filter { it.endMs > clip.startMs && it.startMs < clip.endMs }) else clip })
                                 transcriptSegments = merged
                                 transcript = merged.joinToString("\n") { it.text }
                                 subtitleDraftIndex = -1
@@ -702,7 +813,17 @@ class MainActivity : ComponentActivity() {
                             }
                             drafts = drafts.map { it.copy(approved = false) }; approved = false
                         }
-                        SpeechJobMode.TIMELINE -> Unit
+                        SpeechJobMode.TIMELINE -> {
+                            val clip = timeline.clips.firstOrNull { it.id == job.targetId }
+                            val range = job.ranges.first()
+                            grouped[0]?.takeIf { clip != null && clip.startMs == range.startMs && clip.endMs == range.endMs }?.let { cues ->
+                                timeline = timeline.copy(clips = timeline.clips.map { if (it.id == job.targetId) it.copy(subtitles = cues) else it })
+                                if (selectedTimelineId == job.targetId) {
+                                    timelineSubtitleTarget = job.targetId; transcriptSegments = cues; transcript = cues.joinToString("\n") { it.text }
+                                }
+                                approved = false
+                            }
+                        }
                     }
                     appliedSpeechId = job.id; appliedSpeechUnits = job.results.size
                 }
@@ -731,19 +852,19 @@ class MainActivity : ComponentActivity() {
                         onReset = null,
                         onRelease = { it.player = null }
                     )
-                    if (editingMode == "AI Draft" && selectedDraft in drafts.indices) {
-                        val activeSegment = if (subtitleDraftIndex == selectedDraft) {
-                            subtitleSegments.getOrNull(SubtitleTimeline.activeSegmentIndex(subtitleSegments, previewPosition))
-                        } else null
-                        val fallbackCaption = if (subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()) "" else {
-                            val draft = drafts[selectedDraft]
-                            if (draft.captionEndMs <= draft.captionStartMs ||
-                                previewPosition in draft.captionStartMs until draft.captionEndMs) captionText else ""
-                        }
-                        val displayedCaption = activeSegment?.text ?: fallbackCaption
-                        if (hookText.isNotBlank() || displayedCaption.isNotBlank()) {
-                            val previewBitmap = remember(hookText, displayedCaption, subtitleSize, subtitleYellow) {
-                                makeCaptionOverlay(hookText, displayedCaption, subtitleSize,
+                    if (timelineActive || (editingMode == "AI Draft" && selectedDraft in drafts.indices)) {
+                        val playing = if (timelineActive) timeline.clips.getOrNull(timelinePlaybackIndex) else null
+                        val hook = playing?.hook ?: hookText
+                        val cues = playing?.subtitles ?: if (subtitleDraftIndex == selectedDraft) subtitleSegments else emptyList()
+                        val activeSegment = cues.getOrNull(SubtitleTimeline.activeSegmentIndex(cues, previewPosition))
+                        val caption = playing?.caption ?: captionText
+                        val from = playing?.captionStartMs ?: drafts.getOrNull(selectedDraft)?.captionStartMs ?: 0
+                        val until = playing?.captionEndMs ?: drafts.getOrNull(selectedDraft)?.captionEndMs ?: 0
+                        val fallback = if (cues.isNotEmpty()) "" else if (until <= from || previewPosition in from until until) caption else ""
+                        val displayedCaption = activeSegment?.text ?: fallback
+                        if (hook.isNotBlank() || displayedCaption.isNotBlank()) {
+                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow) {
+                                makeCaptionOverlay(hook, displayedCaption, subtitleSize,
                                     if (subtitleYellow) Color.YELLOW else Color.WHITE).asImageBitmap()
                             }
                             Image(
@@ -759,9 +880,9 @@ class MainActivity : ComponentActivity() {
 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         FilledTonalButton(enabled = !busy, onClick = { if (player.isPlaying) player.pause() else player.play() }) { Text(if (previewPlaying) "Pause" else "Play") }
-                        TextButton(enabled = !busy, onClick = { player.seekTo((duration * start).toLong()); player.play() }) { Text("Restart clip") }
+                        TextButton(enabled = !busy, onClick = { if (timelineActive) seekTimeline(0) else player.seekTo((duration * start).toLong()); player.play() }) { Text(if (timelineActive) "Restart sequence" else "Restart clip") }
                         Spacer(Modifier.weight(1f))
-                        Text("${Timecode.format(previewPosition)} / ${Timecode.format(duration)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${Timecode.format(if (timelineActive) timelinePosition else previewPosition)} / ${Timecode.format(if (timelineActive) TimelineModel.duration(timeline.clips) else duration)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -819,10 +940,10 @@ class MainActivity : ComponentActivity() {
                         wide = wideWorkspace, preview = { previewPanel(false) }) {
                         workspaceState.SaveableStateProvider(selectedTab.name + if (selectedTab == StudioTab.STUDIO) studioEditing.toString() else "") {
                             Column(Modifier.fillMaxSize().verticalScroll(activeWorkspaceScroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                StudioIntro(selectedTab)
+                                if (selectedTab != StudioTab.STUDIO || !studioEditing || video == null) StudioIntro(selectedTab)
                                 when (selectedTab) {
                                     StudioTab.STUDIO -> {
-                                        StudioCard(if (video == null) "Your workflow" else "Source footage", if (video == null) "" else "$sourceName · ${Timecode.format(duration)}") {
+                                        if (!studioEditing || video == null) StudioCard(if (video == null) "Your workflow" else "Source footage", if (video == null) "" else "$sourceName · ${Timecode.format(duration)}") {
                 if (video == null) StudioWorkflowSteps()
                 if (video != null) Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }) { Text(if (video == null) "Import video" else "Replace source video") }
                 TextButton(enabled = !busy, onClick = { advancedImport = !advancedImport }) { Text(if (advancedImport) "Hide direct-link import" else "Import from a direct link") }
@@ -848,6 +969,7 @@ class MainActivity : ComponentActivity() {
                                 hookText = ""
                                 captionText = ""
                                 expectedRestoredDuration = 0
+                                timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""; timelinePosition = 0
                                 video = Uri.fromFile(output)
                                 drafts = emptyList()
                                 selectedDraft = -1
@@ -935,6 +1057,7 @@ class MainActivity : ComponentActivity() {
                             onClick = {
                                 selectedDraft = index
                                 studioEditing = true
+                                timelineMode = false
                                 start = draft.startMs.toFloat() / duration.toFloat()
                                 end = draft.endMs.toFloat() / duration.toFloat()
                                 val matching = batchResults[index] ?: (sourceTranscriptSegments.ifEmpty { transcriptSegments }).filter { it.startMs >= draft.startMs && it.startMs < draft.endMs }
@@ -957,6 +1080,22 @@ class MainActivity : ComponentActivity() {
                                                 if (selectedDraft in drafts.indices) Button(enabled = !busy, onClick = { studioEditing = true }) { Text("Edit selected clip") }
                                                 OutlinedButton(enabled = !busy, onClick = { selectedTab = StudioTab.CAPTIONS }) { Text("Open speech tools") }
                                             } else {
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                    FilterChip(selected = !timelineMode, onClick = { timelineMode = false; approved = false }, label = { Text("Source selection") }, enabled = !busy)
+                                                    FilterChip(selected = timelineMode, onClick = { timelineMode = true; approved = false }, label = { Text("Timeline editor") }, enabled = !busy)
+                                                }
+                                                if (timelineMode) {
+                                                    TimelineEditor(this@MainActivity, video, duration, timeline, selectedTimelineId, timelinePosition, !busy,
+                                                        onHistory = updateTimeline,
+                                                        onSelect = { id ->
+                                                            selectedTimelineId = id
+                                                            timeline.clips.firstOrNull { it.id == id }?.let { clip ->
+                                                                timelineSubtitleTarget = id; transcriptSegments = clip.subtitles; transcript = clip.subtitles.joinToString("\n") { it.text }
+                                                            }
+                                                        }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it })
+                                                    Row(verticalAlignment = Alignment.CenterVertically) { Switch(enabled = !busy, checked = mute, onCheckedChange = { mute = it; approved = false }); Spacer(Modifier.width(8.dp)); Text("Mute all source audio") }
+                                                    Button(enabled = !busy && timeline.clips.isNotEmpty(), onClick = { selectedTab = StudioTab.EXPORT }) { Text("Review sequence export") }
+                                                } else {
                                                 StudioCard("Trim & framing", "Set an exact range, then choose how the frame fills the canvas.") {
                                                     Text("IN · ${Timecode.precise((duration * start).toLong())}", style = MaterialTheme.typography.bodySmall)
                                                     Slider(value = start, onValueChange = { value ->
@@ -1037,7 +1176,9 @@ class MainActivity : ComponentActivity() {
 
                                                     if (selectedDraft !in drafts.indices || editingMode != "AI Draft") Text("Select a highlight to add a hook and manual caption.", style = MaterialTheme.typography.bodySmall)
                                                 }
+                                                Button(enabled = !busy, onClick = addTimelineSelection) { Text("Add selection to timeline") }
                                                 Button(enabled = !busy, onClick = { selectedTab = StudioTab.EXPORT }) { Text("Review this edit") }
+                                                }
                                             }
                                         }
                                         if (pendingRelink != null) StudioCard("Original video needed", "Re-select the original video to restore its saved edits. A different source duration clears incompatible drafts.") {
@@ -1124,8 +1265,10 @@ class MainActivity : ComponentActivity() {
                     OutlinedTextField(enabled = !busy, value = transcript, onValueChange = { transcript = it }, label = { Text("Transcript notes (edit timed cues below)") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
                 }
                 }
-                Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing && selectedDraft in drafts.indices, onClick = {
-                    drafts.getOrNull(selectedDraft)?.let { chosen ->
+                Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing && (selectedDraft in drafts.indices || (timelineMode && timeline.clips.any { it.id == selectedTimelineId })), onClick = {
+                    val clip = timeline.clips.firstOrNull { it.id == selectedTimelineId }
+                    if (timelineMode && clip != null) launchSpeech(SpeechJobMode.TIMELINE, listOf(SpeechRange(0, clip.startMs, clip.endMs)), clip.id)
+                    else drafts.getOrNull(selectedDraft)?.let { chosen ->
                         launchSpeech(SpeechJobMode.SELECTED, listOf(SpeechRange(selectedDraft, chosen.startMs, chosen.endMs)), "")
                     }
                 }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe selected clip") }
@@ -1154,6 +1297,10 @@ class MainActivity : ComponentActivity() {
                             transcriptSegments = changed
                             subtitleSegments = changed
                             val corrected = changed[segmentIndex]
+                            timeline = timeline.copy(clips = timeline.clips.map { clip ->
+                                if (timelineSubtitleTarget == clip.id) clip.copy(subtitles = changed)
+                                else clip.copy(subtitles = clip.subtitles.map { cue -> if (cue.startMs == corrected.startMs && cue.endMs == corrected.endMs) corrected else cue })
+                            })
                             sourceTranscriptSegments = sourceTranscriptSegments.map { original ->
                                 if (original.startMs == corrected.startMs && original.endMs == corrected.endMs) corrected else original
                             }
@@ -1288,19 +1435,19 @@ class MainActivity : ComponentActivity() {
                                             }
                                         } else {
                                         StudioCard("Delivery details") {
-                                            Text("Range · ${Timecode.precise((duration * start).toLong())} — ${Timecode.precise((duration * end).toLong())}")
+                                            Text(if (timelineMode) "Sequence · ${timeline.clips.size} cuts · ${Timecode.precise(deliveryDuration)}" else "Range · ${Timecode.precise((duration * start).toLong())} — ${Timecode.precise((duration * end).toLong())}")
                                             Text("Frame · ${if (vertical) if (fillFrame) "9:16 crop" else "9:16 fit" else "Source aspect"}   /   Audio · ${if (mute) "Muted" else "Original"}")
-                                            Text("Captions · ${if (subtitleDraftIndex == selectedDraft) subtitleSegments.size else 0} timed cues   /   Style · $effectChoice")
+                                            Text("Captions · ${if (timelineMode) TimelineModel.subtitles(timeline.clips).size else if (subtitleDraftIndex == selectedDraft) subtitleSegments.size else 0} timed cues")
                                         }
                                         StudioCard("Ready when you are") {
                 Text("Export review", style = MaterialTheme.typography.titleMedium)
                 Text("Check framing, audio and subtitle timing in the preview. Approval applies to this edit and is cleared when you change it.", style = MaterialTheme.typography.bodySmall)
                 Row {
-                    Checkbox(checked = approved, enabled = !busy && campaignIssues.isEmpty() && video != null && duration > 0 && (editingMode != "AI Draft" || selectedDraft >= 0), onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
+                    Checkbox(checked = approved, enabled = !busy && campaignIssues.isEmpty() && exportReady, onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
                     Text("I reviewed this edit and approve its export", modifier = Modifier.weight(1f))
                 }
-                Button(enabled = !busy && campaignIssues.isEmpty() && video != null && duration > 0 && approved && (editingMode != "AI Draft" || selectedDraft >= 0), onClick = {
-                    if (!approved || busy || campaignIssues.isNotEmpty()) return@Button
+                Button(enabled = !busy && campaignIssues.isEmpty() && exportReady && approved, onClick = {
+                    if (!approved || !exportReady || busy || campaignIssues.isNotEmpty()) return@Button
                     val source = video ?: return@Button
                     val outputDir = (getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: File(filesDir, "exports")).apply { mkdirs() }
                     val output = File(outputDir, "clipforge_${System.currentTimeMillis()}.mp4")
@@ -1360,11 +1507,15 @@ class MainActivity : ComponentActivity() {
                         }).build()
                     exportFile = output
                     activeTransformer = transformer
-                    try { transformer.start(edited, output.absolutePath) }
+                    try {
+                        if (timelineMode) transformer.start(TimelineExport.composition(source, timeline.clips, vertical, fillFrame, mute, subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE), output.absolutePath)
+                        else transformer.start(edited, output.absolutePath)
+                    }
                     catch (e: Exception) { activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; status = "Export failed: ${e.message}" }
                 }) { Text(if (exporting) "Exporting approved clip…" else "Export approved MP4") }
-                OutlinedButton(enabled = !busy && approved && campaignIssues.isEmpty() && subtitleDraftIndex == selectedDraft && selectedDraft >= 0 && subtitleSegments.isNotEmpty(), onClick = {
-                    pendingSrt = SubtitleSrt.render(subtitleSegments, (duration * start).toLong(), (duration * end).toLong())
+                OutlinedButton(enabled = !busy && approved && campaignIssues.isEmpty() && (if (timelineMode) TimelineModel.subtitles(timeline.clips).isNotEmpty() else subtitleDraftIndex == selectedDraft && selectedDraft >= 0 && subtitleSegments.isNotEmpty()), onClick = {
+                    pendingSrt = if (timelineMode) SubtitleSrt.render(TimelineModel.subtitles(timeline.clips), 0, TimelineModel.duration(timeline.clips))
+                        else SubtitleSrt.render(subtitleSegments, (duration * start).toLong(), (duration * end).toLong())
                     subtitleSaver.launch("clipforge_subtitles.srt")
                 }) { Text("Save approved clip subtitles (.srt)") }
                 if (exporting) {

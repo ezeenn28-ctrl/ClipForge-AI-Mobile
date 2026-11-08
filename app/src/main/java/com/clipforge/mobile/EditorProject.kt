@@ -22,7 +22,10 @@ data class EditorProject(
     val draftSegments: Map<Int, List<WhisperNative.Segment>> = emptyMap(),
     val fillFrame: Boolean = false,
     val lastSpeechJobId: String = "",
-    val lastSpeechUnits: Int = 0
+    val lastSpeechUnits: Int = 0,
+    val timelineClips: List<TimelineClip> = emptyList(),
+    val timelineMode: Boolean = false,
+    val selectedTimelineId: String = ""
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 
@@ -32,6 +35,8 @@ data class EditorProject(
         require(mode in listOf("Manual Editor", "AI Draft")) { "Unknown editing mode" }
         require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown visual effect" }
         require(subtitleSize.isFinite() && subtitleSize in 28f..55f) { "Invalid subtitle size" }
+        TimelineModel.validate(timelineClips, durationMs)
+        require(selectedTimelineId.isEmpty() || timelineClips.any { it.id == selectedTimelineId }) { "Invalid selected timeline clip" }
         require(lastSpeechUnits in 0..2880) { "Invalid applied speech checkpoint" }
         require(drafts.size <= 15) { "Too many drafts" }
         require(selectedDraft == -1 || selectedDraft in drafts.indices) { "Invalid selected draft" }

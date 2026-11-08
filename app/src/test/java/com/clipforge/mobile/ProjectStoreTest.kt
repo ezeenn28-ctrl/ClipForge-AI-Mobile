@@ -59,6 +59,19 @@ class ProjectStoreTest {
         } finally { directory.deleteRecursively() }
     }
 
+    @Test fun restoresTimelineAudioAndCorrectedSubtitlesWithoutApproval() {
+        val directory = Files.createTempDirectory("clipforge-timeline").toFile()
+        try {
+            val file = File(directory, "project.properties")
+            val clip = TimelineClip("cut-1", 10_000, 30_000, volume = .5f, fadeInMs = 1000,
+                subtitles = listOf(WhisperNative.Segment(10_000, 12_000, "Corrected cue")))
+            val original = project().copy(timelineClips = listOf(clip), timelineMode = true, selectedTimelineId = clip.id,
+                lastSpeechJobId = "speech-1", lastSpeechUnits = 1)
+            ProjectStore.write(file, original)
+            assertEquals(original.reviewedAgain(), ProjectStore.read(file))
+        } finally { directory.deleteRecursively() }
+    }
+
     @Test fun rejectsRemoteSourcesAndInvalidSubtitleAssociation() {
         try { project().copy(source = "https://example.com/media.mp4").validate(); fail("Remote source accepted") }
         catch (_: IllegalArgumentException) {}

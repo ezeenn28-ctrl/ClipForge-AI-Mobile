@@ -1,0 +1,89 @@
+package com.clipforge.mobile
+
+import java.util.UUID
+
+/** Non-destructive cuts from the current source. All subtitle times remain in source time. */
+data class TimelineClip(
+    val id: String,
+    val startMs: Long,
+    val endMs: Long,
+    val hook: String = "",
+    val caption: String = "",
+    val captionStartMs: Long = 0,
+    val captionEndMs: Long = 0,
+    val effect: String = "None",
+    val volume: Float = 1f,
+    val fadeInMs: Long = 0,
+    val fadeOutMs: Long = 0,
+    val subtitles: List<WhisperNative.Segment> = emptyList()
+) {
+    val durationMs: Long get() = endMs - startMs
+    fun validate(sourceDurationMs: Long) {
+        require(id.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "Invalid timeline clip ID" }
+        require(startMs >= 0 && endMs > startMs && endMs <= sourceDurationMs) { "Invalid timeline trim" }
+        require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown timeline effect" }
+        require(volume.isFinite() && volume in 0f..1f && fadeInMs in 0..durationMs && fadeOutMs in 0..durationMs) { "Invalid audio settings" }
+        require(subtitles.size <= 20_000) { "Too many subtitle cues" }
+        subtitles.forEach { require(it.startMs >= 0 && it.endMs > it.startMs && it.endMs <= sourceDurationMs) { "Invalid timeline subtitle" } }
+    }
+}
+object TimelineModel {
+    data class Position(val index: Int, val localMs: Long, val sourceMs: Long)
+    fun duration(clips: List<TimelineClip>): Long = clips.sumOf { it.durationMs }
+    fun validate(clips: List<TimelineClip>, sourceDurationMs: Long) {
+        require(clips.size <= 60 && clips.map { it.id }.distinct().size == clips.size) { "Timeline allows up to 60 unique cuts" }
+        clips.forEach { it.validate(sourceDurationMs) }
+        require(duration(clips) <= 21_600_000) { "Timeline exceeds six hours" }
+        require(clips.sumOf { it.subtitles.size } <= 50_000) { "Timeline subtitles exceed project limit" }
+    }
+    fun offset(clips: List<TimelineClip>, index: Int): Long = clips.take(index).sumOf { it.durationMs }
+    fun position(clips: List<TimelineClip>, compositionMs: Long): Position? {
+        if (clips.isEmpty()) return null
+        var cursor = compositionMs.coerceIn(0, duration(clips))
+        clips.forEachIndexed { index, clip ->
+            if (cursor < clip.durationMs || index == clips.lastIndex) return Position(index, cursor.coerceAtMost(clip.durationMs), clip.startMs + cursor.coerceAtMost(clip.durationMs))
+            cursor -= clip.durationMs
+        }
+        return null
+    }
+    fun split(clips: List<TimelineClip>, compositionMs: Long, newId: String = UUID.randomUUID().toString()): List<TimelineClip> {
+        val position = position(clips, compositionMs) ?: error("Add a clip before splitting")
+        val clip = clips[position.index]
+        require(position.localMs >= 100 && clip.durationMs - position.localMs >= 100) { "Place the playhead at least 0.1s inside a clip" }
+        val left = clip.copy(endMs = position.sourceMs, fadeInMs = minOf(clip.fadeInMs, position.localMs), fadeOutMs = 0)
+        val right = clip.copy(id = newId, startMs = position.sourceMs, fadeInMs = 0, fadeOutMs = minOf(clip.fadeOutMs, clip.durationMs - position.localMs))
+        return clips.take(position.index) + listOf(left, right) + clips.drop(position.index + 1)
+    }
+    fun move(clips: List<TimelineClip>, index: Int, delta: Int): List<TimelineClip> {
+        val destination = index + delta
+        if (index !in clips.indices || destination !in clips.indices) return clips
+        return clips.toMutableList().also { val item = it.removeAt(index); it.add(destination, item) }
+    }
+    fun subtitles(clips: List<TimelineClip>): List<WhisperNative.Segment> = clips.flatMapIndexed { index, clip ->
+        val offset = offset(clips, index)
+        val cues = if (clip.subtitles.isNotEmpty()) clip.subtitles else if (clip.caption.isNotBlank()) listOf(
+            WhisperNative.Segment(if (clip.captionEndMs > clip.captionStartMs) clip.captionStartMs else clip.startMs,
+                if (clip.captionEndMs > clip.captionStartMs) clip.captionEndMs else clip.endMs, clip.caption)
+        ) else emptyList()
+        cues.mapNotNull { cue ->
+            val start = maxOf(cue.startMs, clip.startMs)
+            val end = minOf(cue.endMs, clip.endMs)
+            if (end <= start) null else cue.copy(startMs = offset + start - clip.startMs, endMs = offset + end - clip.startMs)
+        }
+    }
+    fun audioGain(clip: TimelineClip, localMs: Long): Float {
+        val fadeIn = if (clip.fadeInMs > 0) (localMs.toDouble() / clip.fadeInMs).coerceIn(0.0, 1.0) else 1.0
+        val fadeOut = if (clip.fadeOutMs > 0) ((clip.durationMs - localMs).toDouble() / clip.fadeOutMs).coerceIn(0.0, 1.0) else 1.0
+        return (clip.volume * minOf(fadeIn, fadeOut)).toFloat()
+    }
+}
+
+data class TimelineHistory(
+    val clips: List<TimelineClip> = emptyList(),
+    val past: List<List<TimelineClip>> = emptyList(),
+    val future: List<List<TimelineClip>> = emptyList()
+) {
+    fun edit(next: List<TimelineClip>) = if (next == clips) this else TimelineHistory(next, (past + listOf(clips)).takeLast(30), emptyList())
+    fun undo() = if (past.isEmpty()) this else TimelineHistory(past.last(), past.dropLast(1), listOf(clips) + future)
+    fun redo() = if (future.isEmpty()) this else TimelineHistory(future.first(), (past + listOf(clips)).takeLast(30), future.drop(1))
+}

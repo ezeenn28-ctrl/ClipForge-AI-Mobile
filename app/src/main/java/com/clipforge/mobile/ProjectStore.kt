@@ -39,6 +39,16 @@ object ProjectStore {
         }
         segments("current", safe.currentSegments)
         segments("sourceSpeech", safe.sourceSegments)
+        put("timeline.mode", safe.timelineMode); put("timeline.selected", safe.selectedTimelineId)
+        put("timeline.count", safe.timelineClips.size)
+        safe.timelineClips.forEachIndexed { i, clip ->
+            put("timeline.$i.id", clip.id); put("timeline.$i.start", clip.startMs); put("timeline.$i.end", clip.endMs)
+            put("timeline.$i.hook", clip.hook); put("timeline.$i.caption", clip.caption)
+            put("timeline.$i.captionStart", clip.captionStartMs); put("timeline.$i.captionEnd", clip.captionEndMs)
+            put("timeline.$i.effect", clip.effect); put("timeline.$i.volume", clip.volume)
+            put("timeline.$i.fadeIn", clip.fadeInMs); put("timeline.$i.fadeOut", clip.fadeOutMs)
+            segments("timeline.$i.cues", clip.subtitles)
+        }
         file.parentFile?.mkdirs()
         val temporary = File(file.parentFile, file.name + ".partial")
         try {
@@ -76,11 +86,19 @@ object ProjectStore {
                 captionStartMs = number("drafts.$i.captionStart"), captionEndMs = number("drafts.$i.captionEnd"))
         }
         val draftSegments = (0 until count).associateWith { segments("drafts.$it.segments") }.filterValues { it.isNotEmpty() }
+        val timelineCount = data.getProperty("timeline.count", "0").toInt()
+        require(timelineCount in 0..60) { "Invalid timeline count" }
+        val timeline = (0 until timelineCount).map { i ->
+            TimelineClip(text("timeline.$i.id"), number("timeline.$i.start"), number("timeline.$i.end"),
+                text("timeline.$i.hook"), text("timeline.$i.caption"), number("timeline.$i.captionStart"), number("timeline.$i.captionEnd"),
+                text("timeline.$i.effect"), text("timeline.$i.volume").toFloat(), number("timeline.$i.fadeIn"), number("timeline.$i.fadeOut"), segments("timeline.$i.cues"))
+        }
         return EditorProject(text("source"), number("duration"), number("start"), number("end"),
             text("mode"), bool("vertical"), bool("mute"), drafts, integer("selected"), text("hook"), text("caption"),
             text("effect"), text("subtitleSize").toFloat(), bool("subtitleYellow"), integer("subtitleDraft"),
             segments("current"), segments("sourceSpeech"), draftSegments,
             fillFrame = data.getProperty("fillFrame", "false").toBooleanStrict(),
-            lastSpeechJobId = data.getProperty("speechJob", ""), lastSpeechUnits = data.getProperty("speechUnits", "0").toInt()).also { it.validate() }
+            lastSpeechJobId = data.getProperty("speechJob", ""), lastSpeechUnits = data.getProperty("speechUnits", "0").toInt(),
+            timelineClips = timeline, timelineMode = data.getProperty("timeline.mode", "false").toBooleanStrict(), selectedTimelineId = data.getProperty("timeline.selected", "")).also { it.validate() }
     }
 }

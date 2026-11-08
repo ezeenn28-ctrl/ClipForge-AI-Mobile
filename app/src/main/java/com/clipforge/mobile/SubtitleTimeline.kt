@@ -14,3 +14,13 @@ object SubtitleTimeline {
     fun sourcePositionMs(trimStartMs: Long, presentationTimeUs: Long): Long =
         trimStartMs + (presentationTimeUs.coerceAtLeast(0L) / 1_000L)
 }
+
+/** Normalize each export item's first frame to zero, independent of sequence offsets. */
+class ClipPresentationClock {
+    private var originUs: Long? = null
+    fun relativeUs(presentationTimeUs: Long): Long {
+        if (presentationTimeUs < 0) return 0
+        if (originUs == null) originUs = presentationTimeUs
+        return (presentationTimeUs - originUs!!).coerceAtLeast(0)
+    }
+}

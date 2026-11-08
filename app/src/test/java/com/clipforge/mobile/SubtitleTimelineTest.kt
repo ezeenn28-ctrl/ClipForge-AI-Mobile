@@ -25,6 +25,16 @@ class SubtitleTimelineTest {
             SubtitleTimeline.sourcePositionMs(10_000L, 2_500_000L)))
     }
 
+    @Test fun eachExportItemCanNormalizeItsOwnPresentationOrigin() {
+        val first = ClipPresentationClock()
+        val second = ClipPresentationClock()
+        assertEquals(0L, first.relativeUs(-1))
+        assertEquals(0L, first.relativeUs(0))
+        assertEquals(1_000_000L, first.relativeUs(1_000_000))
+        assertEquals(0L, second.relativeUs(20_000_000))
+        assertEquals(62_000L, SubtitleTimeline.sourcePositionMs(60_000, second.relativeUs(22_000_000)))
+    }
+
     @Test fun emptyAndInvalidSegmentsAreIgnored() {
         assertEquals(-1, SubtitleTimeline.activeSegmentIndex(emptyList(), 10_000))
         assertEquals(-1, SubtitleTimeline.activeSegmentIndex(
