@@ -3,6 +3,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+concurrency:
+  group: clipforge-android-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -28,6 +31,11 @@ jobs:
       - name: Fetch pinned whisper.cpp native inference source
         run: |
           git clone --depth 1 --branch v1.7.6 https://github.com/ggml-org/whisper.cpp.git app/src/main/cpp/whisper.cpp
+      - name: Validate source and run available unit tests
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle :app:testDebugUnitTest --no-daemon --console=plain --warning-mode=none 2>&1 | tee android-test.log
       - name: Build APK with concise diagnostics
         shell: bash
         run: |
@@ -45,7 +53,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ClipForge-build-log
-          path: android-build.log
+          path: |
+            android-build.log
+            android-test.log
           if-no-files-found: ignore
       - name: Verify generated APK
         if: success()
