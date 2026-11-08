@@ -12,6 +12,7 @@ Private Android clipping editor using Kotlin, Compose, Media3 and native whisper
 - Rendered 1.12× zoom and monochrome effects shared by playback and export.
 - Campaign Mode with locally saved caption/rules, required tags, duration checks and manual source/rights confirmations. Failed checks block campaign export approval.
 - Atomic local autosave and automatic restoration of the last editing project, including trim, drafts, subtitle edits/style and effects. Playback is paused after restore; export approval, cloud permission and campaign confirmations are never restored. Downloaded source files are retained in app-private storage.
+- Local submission tracker with pending/approved/rejected states, views, CPM, payout thresholds/caps, audience geography, rejection notes and actual paid amounts. Pending/rejected submissions and unmet entered limits are excluded from approved estimates. All values are manual USD bookkeeping; estimates are not payout guarantees.
 - Explicit clip review approval before export. Routine edits revoke approval. No automatic export or media upload.
 
 ## Build and verification

@@ -317,6 +317,7 @@ class MainActivity : ComponentActivity() {
         var modelProgress by remember { mutableIntStateOf(0) }
         var modelReady by remember { mutableStateOf(File(filesDir, "models/ggml-tiny.bin").exists()) }
         val campaignPrefs = remember { getSharedPreferences("campaign", MODE_PRIVATE) }
+        var showTracker by remember { mutableStateOf(false) }
         var campaignEnabled by remember { mutableStateOf(campaignPrefs.getBoolean("enabled", false)) }
         var campaignTags by remember { mutableStateOf(campaignPrefs.getString("tags", "") ?: "") }
         var campaignCaption by remember { mutableStateOf(campaignPrefs.getString("caption", "") ?: "") }
@@ -1084,6 +1085,8 @@ class MainActivity : ComponentActivity() {
                 }
                 HorizontalDivider()
                 Text("Campaign Mode", style = MaterialTheme.typography.titleMedium)
+                OutlinedButton(enabled = !busy, onClick = { showTracker = !showTracker }) { Text(if (showTracker) "Hide submission tracker" else "Open submission and payout tracker") }
+                if (showTracker) CampaignTracker(filesDir, enabled = !busy)
                 Row {
                     Checkbox(enabled = !busy, checked = campaignEnabled, onCheckedChange = { campaignEnabled = it; approved = false })
                     Text("Check campaign rules before export")
