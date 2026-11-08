@@ -21,7 +21,11 @@ void report_progress(whisper_context*, whisper_state*, int progress, void* data)
     bool attached = false;
     const auto status = target->vm->GetEnv(reinterpret_cast<void**>(&env), JNI_VERSION_1_6);
     if (status == JNI_EDETACHED) {
+#ifdef __ANDROID__
         if (target->vm->AttachCurrentThread(&env, nullptr) != JNI_OK) return;
+#else
+        if (target->vm->AttachCurrentThread(reinterpret_cast<void**>(&env), nullptr) != JNI_OK) return;
+#endif
         attached = true;
     } else if (status != JNI_OK) return;
     env->CallVoidMethod(target->listener, target->method, static_cast<jint>(progress));

@@ -14,7 +14,7 @@ Private Android clipping editor using Kotlin, Compose, Media3 and native whisper
 - Explicit clip review approval before export. Routine edits revoke approval. No automatic export or media upload.
 
 ## Build and verification
-GitHub Actions runs JVM unit tests, builds the arm64 debug APK, checks optimized Whisper/CPU compiler flags and validates APK ZIP structure. Unit test reports, logs and APK are uploaded as artifacts. Open the latest successful **Build Android APK** run to download the APK at a consolidated device-testing milestone.
+GitHub Actions runs JVM unit tests, builds the arm64 debug APK, checks optimized Whisper/CPU compiler flags and validates APK ZIP structure. A separate Linux JNI smoke job uses the public JFK sample and checksum-verified model to exercise timed recognition, progress callbacks, model reuse, cleanup and reload. Host success does not establish Android speed or subtitle accuracy. Unit test reports, logs and APK are uploaded as artifacts. Open the latest successful **Build Android APK** run to download the APK at a consolidated device-testing milestone.
 
 The baseline commit ae4f644 passed Actions build #59, including unit tests and APK assembly. Development stage one (0e33ce0) passed Actions build #60, including unit tests and APK assembly. See subsequent Actions runs for verification of later changes.
 

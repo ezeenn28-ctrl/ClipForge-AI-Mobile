@@ -94,7 +94,7 @@ jobs:
                       args = entry.get('arguments') or shlex.split(entry['command'])
                       levels = [arg for arg in args if arg in ('-O0', '-O1', '-O2', '-O3', '-Os', '-Oz', '-Ofast')]
                       if not levels or levels[-1] not in ('-O3', '-Ofast'):
-                          raise SystemExit('Inference is not optimized: ' + source + ' ' + str(levels))
+                          raise SystemExit('Inference is not optimized: ' + source + ' ' + str(levels) + ' command=' + str(args))
                       checked.append(source)
           if not any(path.endswith('/src/whisper.cpp') for path in checked):
               raise SystemExit('No Whisper compile command found')
@@ -118,3 +118,34 @@ jobs:
           name: ClipForge-AI-Mobile-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+  native-smoke:
+    name: Native Whisper integration smoke test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Cache verified public test model
+        uses: actions/cache@v4
+        with:
+          path: .ci-models/ggml-tiny.bin
+          key: whisper-tiny-be07e048e1e599ad-v1
+      - name: Fetch pinned native source and public speech fixture
+        run: git clone --depth 1 --branch v1.7.6 https://github.com/ggml-org/whisper.cpp.git app/src/main/cpp/whisper.cpp
+      - name: Exercise native callbacks and model lifecycle
+        shell: bash
+        run: |
+          set -o pipefail
+          bash .github/scripts/native-smoke.sh 2>&1 | tee native-smoke.log
+      - name: Upload native integration log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipForge-native-smoke-log
+          path: native-smoke.log
+          if-no-files-found: warn
