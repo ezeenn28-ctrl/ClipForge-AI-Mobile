@@ -734,7 +734,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        LaunchedEffect(player, duration, start, end, video, timelineActive, timeline.clips) {
+        LaunchedEffect(player, duration, start, end, video, timelineActive, timeline.clips, mute) {
             while (true) {
                 if (timelineActive) {
                     val index = player.currentMediaItemIndex.coerceIn(0, timeline.clips.lastIndex)
@@ -1443,7 +1443,7 @@ class MainActivity : ComponentActivity() {
                 Text("Export review", style = MaterialTheme.typography.titleMedium)
                 Text("Check framing, audio and subtitle timing in the preview. Approval applies to this edit and is cleared when you change it.", style = MaterialTheme.typography.bodySmall)
                 Row {
-                    Checkbox(checked = approved, enabled = !busy && campaignIssues.isEmpty() && exportReady, onCheckedChange = { value -> approved = value; if (selectedDraft >= 0) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
+                    Checkbox(checked = approved, enabled = !busy && campaignIssues.isEmpty() && exportReady, onCheckedChange = { value -> approved = value; if (selectedDraft in drafts.indices) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
                     Text("I reviewed this edit and approve its export", modifier = Modifier.weight(1f))
                 }
                 Button(enabled = !busy && campaignIssues.isEmpty() && exportReady && approved, onClick = {

@@ -46,3 +46,10 @@ The baseline commit ae4f644 passed Actions build #59, including unit tests and A
 
 ## Stack
 Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6; Android 8+; arm64-v8a.
+
+## Timeline editing milestone
+- Add source selections to a non-destructive sequence of up to 60 cuts. Split at the playhead, duplicate, remove, reorder, trim precisely, and undo/redo. The timeline shows video, caption coverage and original audio against one scrub clock.
+- Clipped playlist preview and Media3 sequence export use the same source ranges. Captions are rebased into sequence time for SRT; each rendered cut retains its own source-time subtitle mapping, hook and effect.
+- Per-cut original-audio volume and one-second fade controls are implemented for preview and PCM export. Global mute applies to the whole sequence.
+- Project autosave and metadata backups retain the sequence, corrected cues and audio settings; approval is always reviewed again after restore.
+- This milestone edits cuts from one source. Imported music, multiple source videos, transitions, keyframes, speed ramps and draggable trim handles remain future work. Timeline audio/video synchronization and hardware export still require consolidated physical-device verification.

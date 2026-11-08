@@ -48,4 +48,5 @@ dependencies {
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     maxHeapSize = "2g"
     systemProperty("roborazzi.test.record", "true")
+    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
 }
