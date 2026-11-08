@@ -268,6 +268,11 @@ class MainActivity : ComponentActivity() {
         var transcriptSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var subtitleSegments by remember { mutableStateOf<List<WhisperNative.Segment>>(emptyList()) }
         var subtitleDraftIndex by remember { mutableIntStateOf(-1) }
+        var batchRunning by remember { mutableStateOf(false) }
+        var batchProgress by remember { mutableIntStateOf(0) }
+        var batchTotal by remember { mutableIntStateOf(0) }
+        var batchCancel by remember { mutableStateOf(false) }
+        var batchResults by remember { mutableStateOf<Map<Int, List<WhisperNative.Segment>>>(emptyMap()) }
         var modelDownloading by remember { mutableStateOf(false) }
         var modelProgress by remember { mutableIntStateOf(0) }
         var modelReady by remember { mutableStateOf(File(filesDir, "models/ggml-tiny.bin").exists()) }
@@ -470,6 +475,68 @@ class MainActivity : ComponentActivity() {
                 Text("Highlight-first: ${highlightPlan.size} × up-to-30-second audio chunks from current drafts.", style = MaterialTheme.typography.bodySmall)
                 Text("Optional full video: ${fullPlan.size} × up-to-30-second chunks.", style = MaterialTheme.typography.bodySmall)
                 Text("Chunk counts are estimates. Timestamped speech segments can be reviewed; multi-segment subtitle rendering and full-video processing are not implemented yet.", style = MaterialTheme.typography.bodySmall)
+                Text("Batch highlight transcription", style = MaterialTheme.typography.titleMedium)
+                Text("Process each candidate offline, up to 15. This can take substantial time and battery.", style = MaterialTheme.typography.bodySmall)
+                Button(enabled = video != null && modelReady && drafts.isNotEmpty() && !batchRunning && !transcribing && !audioPreparing, onClick = {
+                    val source = video ?: return@Button
+                    val snapshot = drafts.toList()
+                    batchRunning = true
+                    batchCancel = false
+                    batchProgress = 0
+                    batchTotal = snapshot.size
+                    batchResults = emptyMap()
+                    status = "Preparing audio for highlight batch…"
+                    Thread {
+                        try {
+                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, source, File(cacheDir, "clipforge_audio.wav"))
+                            val model = File(filesDir, "models/ggml-tiny.bin")
+                            val completed = mutableMapOf<Int, List<WhisperNative.Segment>>()
+                            snapshot.forEachIndexed { index, draft ->
+                                if (batchCancel) return@forEachIndexed
+                                val segments = WhisperNative.transcribeSegments(model, wav, draft.startMs, minOf(draft.endMs, draft.startMs + 30_000L))
+                                completed[index] = segments
+                                runOnUiThread {
+                                    batchResults = completed.toMap()
+                                    batchProgress = index + 1
+                                    status = "Transcribed ${batchProgress}/${batchTotal} highlights"
+                                }
+                            }
+                            runOnUiThread {
+                                batchRunning = false
+                                status = if (batchCancel) "Batch stopped after ${completed.size} highlights" else "Batch complete: ${completed.size} highlights"
+                            }
+                        } catch (e: Throwable) {
+                            runOnUiThread {
+                                batchRunning = false
+                                status = "Batch failed: ${e.message}"
+                            }
+                        }
+                    }.start()
+                }) { Text(if (batchRunning) "Transcribing highlights…" else "Transcribe all highlight candidates") }
+                if (batchRunning) {
+                    LinearProgressIndicator(progress = { if (batchTotal > 0) batchProgress.toFloat() / batchTotal else 0f }, modifier = Modifier.fillMaxWidth())
+                    Text("${batchProgress}/${batchTotal} highlights completed", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = { batchCancel = true }) { Text("Stop after current highlight") }
+                }
+                if (batchResults.isNotEmpty()) {
+                    Text("${batchResults.size} transcribed highlights ready to review", style = MaterialTheme.typography.bodySmall)
+                    batchResults.toSortedMap().forEach { (index, segments) ->
+                        OutlinedButton(onClick = {
+                            selectedDraft = index
+                            val chosen = drafts[index]
+                            start = chosen.startMs.toFloat() / duration
+                            end = chosen.endMs.toFloat() / duration
+                            subtitleDraftIndex = index
+                            transcriptSegments = segments
+                            subtitleSegments = segments
+                            transcript = segments.joinToString(" ") { it.text }
+                            captionText = transcript
+                            approved = false
+                            player.seekTo(chosen.startMs)
+                            status = "Review subtitles for clip ${index + 1}, then approve before export"
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Review clip ${index + 1} • ${segments.size} subtitles") }
+                    }
+                }
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; approved = false }, label = { Text("Manual Editor") })
