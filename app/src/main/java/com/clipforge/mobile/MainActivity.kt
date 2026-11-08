@@ -324,7 +324,7 @@ class MainActivity : ComponentActivity() {
         MaterialTheme(colorScheme = darkColorScheme()) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
-                Text("Mobile editor • Build #26 selected-highlight transcription")
+                Text("Mobile editor • consolidated subtitle and transcription development")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
                 Text("Offline by default. No video is uploaded for analysis in this build.", style = MaterialTheme.typography.bodySmall)
                 Row {
@@ -402,7 +402,7 @@ class MainActivity : ComponentActivity() {
                     Thread {
                         try {
                             val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
-                            val result = WhisperNative.transcribeWav(File(filesDir, "models/ggml-tiny.bin"), wav)
+                            val result = WhisperNative.transcribeSegments(File(filesDir, "models/ggml-tiny.bin"), wav, 0L, 30_000L).joinToString(" ") { it.text }
                             runOnUiThread {
                                 transcript = result
                                 transcribing = false
@@ -483,7 +483,7 @@ class MainActivity : ComponentActivity() {
                 val fullPlan = HybridTranscriptionPlan.fullVideo(duration)
                 Text("Highlight-first: ${highlightPlan.size} × up-to-30-second audio chunks from current drafts.", style = MaterialTheme.typography.bodySmall)
                 Text("Optional full video: ${fullPlan.size} × up-to-30-second chunks.", style = MaterialTheme.typography.bodySmall)
-                Text("Chunk counts are estimates. Timestamped speech segments can be reviewed; multi-segment subtitle rendering and full-video processing are not implemented yet.", style = MaterialTheme.typography.bodySmall)
+                Text("Chunk counts are estimates. Timed subtitle rendering and chunked transcription are experimental until device-tested.", style = MaterialTheme.typography.bodySmall)
                 Text("Batch highlight transcription", style = MaterialTheme.typography.titleMedium)
                 Text("Process each candidate offline, up to 15. This can take substantial time and battery.", style = MaterialTheme.typography.bodySmall)
                 Button(enabled = video != null && modelReady && drafts.isNotEmpty() && !batchRunning && !transcribing && !audioPreparing, onClick = {
@@ -567,7 +567,7 @@ class MainActivity : ComponentActivity() {
                             val transcriptFile = File(filesDir, "transcript_${sourceKey}.tsv")
                             val completedThrough = if (transcriptFile.exists()) {
                                 transcriptFile.useLines { lines ->
-                                    lines.mapNotNull { it.substringBefore('\t').toLongOrNull() }.lastOrNull()
+                                    lines.filter { it.endsWith("\\t#checkpoint") }.mapNotNull { it.substringBefore('\t').toLongOrNull() }.lastOrNull()
                                 } ?: -1L
                             } else -1L
                             var done = 0
@@ -575,6 +575,8 @@ class MainActivity : ComponentActivity() {
                                 if (batchCancel) break
                                 if (chunk.endMs <= completedThrough) {
                                     done++
+                                    val skipped = done
+                                    runOnUiThread { batchProgress = skipped }
                                     continue
                                 }
                                 val segments = WhisperNative.transcribeSegments(model, wav, chunk.startMs, chunk.endMs)
@@ -750,7 +752,7 @@ class MainActivity : ComponentActivity() {
                 if (editingMode == "AI Draft" && selectedDraft in drafts.indices) {
                     HorizontalDivider()
                     Text("Clip draft creative notes", style = MaterialTheme.typography.titleMedium)
-                    Text("Hook and caption text are rendered as static bold overlays on export. Prefix a line with # to highlight it yellow. Word timing and automatic transcription are not yet available.", style = MaterialTheme.typography.bodySmall)
+                    Text("Hook text is static; Whisper subtitle segments are time-synchronized when available. Prefix a line with # to highlight it yellow.", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(value = hookText, onValueChange = { value ->
                         hookText = value
                         approved = false
@@ -776,7 +778,7 @@ class MainActivity : ComponentActivity() {
                             approved = false
                         }, label = { Text("To (s)") }, modifier = Modifier.weight(1f), singleLine = true)
                     }
-                    Text("Timed preview is available; MP4 export now uses the selected caption interval; automatic transcription is not yet implemented.", style = MaterialTheme.typography.bodySmall)
+                    Text("MP4 export uses Whisper segment timing when the current draft has subtitles; otherwise it uses the caption interval.", style = MaterialTheme.typography.bodySmall)
                     Text("Planned effect (not rendered)", style = MaterialTheme.typography.bodySmall)
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         listOf("None", "Zoom", "Fade").forEach { option ->
