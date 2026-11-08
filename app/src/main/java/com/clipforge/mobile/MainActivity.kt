@@ -401,7 +401,12 @@ class MainActivity : ComponentActivity() {
             }
         }
         MaterialTheme(colorScheme = darkColorScheme()) {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = MaterialTheme.colorScheme.background,
+                contentColor = MaterialTheme.colorScheme.onBackground
+            ) {
+            Column(Modifier.fillMaxSize().systemBarsPadding().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("ClipForge AI", style = MaterialTheme.typography.headlineMedium)
                 Text("Mobile editor • consolidated subtitle and transcription development")
                 Text("Analysis privacy", style = MaterialTheme.typography.titleMedium)
@@ -1018,6 +1023,7 @@ class MainActivity : ComponentActivity() {
                 }
                 Text(status, style = MaterialTheme.typography.bodySmall)
                 Text("Exports are saved in the app-specific Movies directory.", style = MaterialTheme.typography.bodySmall)
+            }
             }
         }
     }
