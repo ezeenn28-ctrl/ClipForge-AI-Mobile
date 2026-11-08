@@ -537,6 +537,49 @@ class MainActivity : ComponentActivity() {
                         }, modifier = Modifier.fillMaxWidth()) { Text("Review clip ${index + 1} • ${segments.size} subtitles") }
                     }
                 }
+                Text("Full-video transcription (optional)", style = MaterialTheme.typography.titleMedium)
+                Text("Runs in 30-second chunks. Long videos may take hours; keep the app open. Stopping finishes the current chunk first.", style = MaterialTheme.typography.bodySmall)
+                Button(enabled = video != null && modelReady && duration > 0 && !batchRunning && !transcribing && !audioPreparing, onClick = {
+                    val source = video ?: return@Button
+                    val chunks = HybridTranscriptionPlan.fullVideo(duration)
+                    batchRunning = true
+                    batchCancel = false
+                    batchProgress = 0
+                    batchTotal = chunks.size
+                    batchResults = emptyMap()
+                    status = "Preparing full-video audio…"
+                    Thread {
+                        try {
+                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, source, File(cacheDir, "clipforge_audio.wav"))
+                            val model = File(filesDir, "models/ggml-tiny.bin")
+                            val transcriptFile = File(filesDir, "full_video_transcript.tsv")
+                            transcriptFile.writeText("")
+                            var done = 0
+                            for (chunk in chunks) {
+                                if (batchCancel) break
+                                val segments = WhisperNative.transcribeSegments(model, wav, chunk.startMs, chunk.endMs)
+                                transcriptFile.appendText(segments.joinToString("") { segment ->
+                                    "${segment.startMs}\\t${segment.endMs}\\t${segment.text.replace("\\n", " ")}\\n"
+                                })
+                                done++
+                                val progressValue = done
+                                runOnUiThread {
+                                    batchProgress = progressValue
+                                    status = "Full video: ${progressValue}/${chunks.size} chunks; transcript saved locally"
+                                }
+                            }
+                            runOnUiThread {
+                                batchRunning = false
+                                status = if (batchCancel) "Full-video transcription stopped; partial transcript saved" else "Full-video transcript saved locally"
+                            }
+                        } catch (e: Throwable) {
+                            runOnUiThread {
+                                batchRunning = false
+                                status = "Full-video transcription failed: ${e.message}"
+                            }
+                        }
+                    }.start()
+                }) { Text(if (batchRunning) "Processing offline…" else "Transcribe full video (optional)") }
                 Text("Editing mode", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = editingMode == "Manual Editor", onClick = { editingMode = "Manual Editor"; selectedDraft = -1; approved = false }, label = { Text("Manual Editor") })
