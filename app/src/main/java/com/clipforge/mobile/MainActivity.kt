@@ -250,6 +250,8 @@ class MainActivity : ComponentActivity() {
         var exporting by remember { mutableStateOf(false) }
         var analyzing by remember { mutableStateOf(false) }
         var audioPreparing by remember { mutableStateOf(false) }
+        var transcribing by remember { mutableStateOf(false) }
+        var transcript by remember { mutableStateOf("") }
         var modelDownloading by remember { mutableStateOf(false) }
         var modelProgress by remember { mutableIntStateOf(0) }
         var modelReady by remember { mutableStateOf(File(filesDir, "models/ggml-tiny.bin").exists()) }
@@ -316,9 +318,9 @@ class MainActivity : ComponentActivity() {
                 Text(if (cloudConsent) "Cloud permission granted, but cloud processing is not available yet." else "Offline-only analysis mode active.", style = MaterialTheme.typography.bodySmall)
                 HorizontalDivider()
                 Text("Hybrid transcription • Build #25", style = MaterialTheme.typography.titleMedium)
-                Text("Planned: automatic English/Tagalog detection, including Taglish. Current stage: verify local audio and model prerequisites; native Whisper inference is not installed.", style = MaterialTheme.typography.bodySmall)
+                Text("Planned: automatic English/Tagalog detection, including Taglish. Current stage: verify local audio and model prerequisites; native Whisper inference is experimental and processes the first 30 seconds.", style = MaterialTheme.typography.bodySmall)
                 Text("Transcription prerequisites: ${if (video != null) "video selected" else "select video"} • ${if (modelReady) "model installed" else "download model"}", style = MaterialTheme.typography.bodySmall)
-                Text("English + Filipino/Tagalog: multilingual Whisper tiny (~78 MB). One-time verified download; no video is uploaded. The speech inference engine is not integrated yet.", style = MaterialTheme.typography.bodySmall)
+                Text("English + Filipino/Tagalog: multilingual Whisper tiny (~78 MB). One-time verified download; no video is uploaded. The speech inference engine is experimental.", style = MaterialTheme.typography.bodySmall)
                 Text(if (modelReady) "Multilingual model downloaded" else if (modelDownloading) "Downloading model: $modelProgress%" else "Model not installed")
                 Button(enabled = !modelDownloading, onClick = {
                     if (modelReady) {
@@ -365,6 +367,32 @@ class MainActivity : ComponentActivity() {
                         }
                     }.start()
                 }) { Text(if (audioPreparing) "Preparing audio…" else "Prepare video audio for offline transcription") }
+                Button(enabled = video != null && modelReady && !transcribing && !audioPreparing, onClick = {
+                    val selectedVideo = video ?: return@Button
+                    transcribing = true
+                    transcript = ""
+                    status = "Preparing first 30 seconds for offline Whisper…"
+                    Thread {
+                        try {
+                            val wav = OfflineAudioPreparer.extractWav(this@MainActivity, selectedVideo, File(cacheDir, "clipforge_audio.wav"))
+                            val result = WhisperNative.transcribeWav(File(filesDir, "models/ggml-tiny.bin"), wav)
+                            runOnUiThread {
+                                transcript = result
+                                transcribing = false
+                                status = "Offline Whisper processed first 30 seconds. Review accuracy below."
+                            }
+                        } catch (e: Throwable) {
+                            runOnUiThread {
+                                transcribing = false
+                                status = "Whisper failed: ${e.message}"
+                            }
+                        }
+                    }.start()
+                }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe first 30 seconds offline") }
+                if (transcript.isNotBlank()) {
+                    Text("Whisper transcript (editable)", style = MaterialTheme.typography.titleMedium)
+                    OutlinedTextField(value = transcript, onValueChange = { transcript = it }, label = { Text("Recognized speech") }, modifier = Modifier.fillMaxWidth(), minLines = 3)
+                }
                 Text("Hybrid transcription planning", style = MaterialTheme.typography.titleMedium)
                 val highlightPlan = HybridTranscriptionPlan.highlights(drafts)
                 val fullPlan = HybridTranscriptionPlan.fullVideo(duration)
