@@ -6,7 +6,7 @@ import android.media.MediaExtractor
 import android.media.MediaFormat
 import android.net.Uri
 import java.io.File
-import java.io.FileOutputStream
+import java.io.RandomAccessFile
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -27,13 +27,18 @@ object OfflineAudioPreparer {
             codec = MediaCodec.createDecoderByType(mime)
             codec.configure(format, null, null, 0)
             codec.start()
-            val output = java.io.ByteArrayOutputStream()
+            destination.parentFile?.mkdirs()
+            val wav = RandomAccessFile(destination, "rw")
+            wav.setLength(0)
+            wav.write(ByteArray(44))
+            var writtenBytes = 0L
             val info = MediaCodec.BufferInfo()
             var inputDone = false
             var outputDone = false
             var sampleRate = format.getInteger(MediaFormat.KEY_SAMPLE_RATE)
             var channels = format.getInteger(MediaFormat.KEY_CHANNEL_COUNT)
             var encoding = android.media.AudioFormat.ENCODING_PCM_16BIT
+            try {
             while (!outputDone) {
                 if (!inputDone) {
                     val inputIndex = codec.dequeueInputBuffer(10000)
@@ -66,37 +71,40 @@ object OfflineAudioPreparer {
                         buffer.limit(info.offset + info.size)
                         val bytes = ByteArray(info.size)
                         buffer.get(bytes)
-                        output.write(bytes)
+                        require(channels > 0) { "Invalid channel count" }
+                        require(encoding == android.media.AudioFormat.ENCODING_PCM_16BIT) { "Unsupported PCM encoding: $encoding" }
+                        val samples = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
+                        val frames = samples.remaining() / channels
+                        val mono = ByteArray(frames * 2)
+                        for (frame in 0 until frames) {
+                            var sum = 0
+                            for (channel in 0 until channels) sum += samples.get(frame * channels + channel).toInt()
+                            val value = sum / channels
+                            mono[frame * 2] = value.toByte()
+                            mono[frame * 2 + 1] = (value ushr 8).toByte()
+                        }
+                        wav.write(mono)
+                        writtenBytes += mono.size
                         codec.releaseOutputBuffer(index, false)
                         if (info.flags and MediaCodec.BUFFER_FLAG_END_OF_STREAM != 0) outputDone = true
                     }
                 }
             }
             require(sampleRate > 0 && channels > 0) { "Invalid decoded audio format" }
-            val pcm = output.toByteArray()
-            val mono = java.io.ByteArrayOutputStream()
-            val samples = ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer()
-            val frames = samples.remaining() / channels
-            for (frame in 0 until frames) {
-                var sum = 0
-                for (channel in 0 until channels) sum += samples.get(frame * channels + channel).toInt()
-                val value = (sum / channels).toShort().toInt()
-                mono.write(value and 255)
-                mono.write((value ushr 8) and 255)
-            }
-            val audio = mono.toByteArray()
-            destination.parentFile?.mkdirs()
-            FileOutputStream(destination).use { file ->
-                val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
-                header.put("RIFF".toByteArray(Charsets.US_ASCII))
-                header.putInt(36 + audio.size)
-                header.put("WAVEfmt ".toByteArray(Charsets.US_ASCII))
-                header.putInt(16); header.putShort(1); header.putShort(1)
-                header.putInt(sampleRate); header.putInt(sampleRate * 2)
-                header.putShort(2); header.putShort(16)
-                header.put("data".toByteArray(Charsets.US_ASCII)); header.putInt(audio.size)
-                file.write(header.array())
-                file.write(audio)
+            require(writtenBytes <= Int.MAX_VALUE - 36L) { "Audio too long for standard WAV format" }
+            val header = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN)
+            header.put("RIFF".toByteArray(Charsets.US_ASCII))
+            header.putInt((36L + writtenBytes).toInt())
+            header.put("WAVEfmt ".toByteArray(Charsets.US_ASCII))
+            header.putInt(16); header.putShort(1); header.putShort(1)
+            header.putInt(sampleRate); header.putInt(sampleRate * 2)
+            header.putShort(2); header.putShort(16)
+            header.put("data".toByteArray(Charsets.US_ASCII))
+            header.putInt(writtenBytes.toInt())
+            wav.seek(0)
+            wav.write(header.array())
+            } finally {
+                wav.close()
             }
             return destination
         } finally {
