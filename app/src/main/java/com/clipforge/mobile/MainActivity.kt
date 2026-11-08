@@ -500,8 +500,8 @@ class MainActivity : ComponentActivity() {
                             val wav = OfflineAudioPreparer.extractWav(this@MainActivity, source, File(cacheDir, "clipforge_audio.wav"))
                             val model = File(filesDir, "models/ggml-tiny.bin")
                             val completed = mutableMapOf<Int, List<WhisperNative.Segment>>()
-                            snapshot.forEachIndexed { index, draft ->
-                                if (batchCancel) return@forEachIndexed
+                            for ((index, draft) in snapshot.withIndex()) {
+                                if (batchCancel) break
                                 val segments = WhisperNative.transcribeSegments(model, wav, draft.startMs, minOf(draft.endMs, draft.startMs + 30_000L))
                                 completed[index] = segments
                                 runOnUiThread {
