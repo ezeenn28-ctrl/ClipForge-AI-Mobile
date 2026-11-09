@@ -446,7 +446,9 @@ class MainActivity : ComponentActivity() {
                 } else enqueueSpeech(request)
             }
         }
-        val player = remember { ExoPlayer.Builder(this).build() }
+        val playbackPrefs = remember { getSharedPreferences("playback", MODE_PRIVATE) }
+        var compatiblePreview by remember { mutableStateOf(playbackPrefs.getBoolean("software-preview", false)) }
+        val player = remember(compatiblePreview) { PreviewPlayerFactory.create(this, compatiblePreview) }
         val previewPlayback = remember(player) { PreviewPlayback(player) }
         val previewBinding = remember(player) { PreviewSurfaceBinding(player) }
         var playbackError by remember { mutableStateOf("") }
@@ -471,7 +473,7 @@ class MainActivity : ComponentActivity() {
                 musicPlayer.prepare()
             } else musicPlayer.clearMediaItems()
         }
-        DisposableEffect(Unit) {
+        DisposableEffect(player, musicPlayer) {
             val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                 if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) { player.pause(); musicPlayer.pause() }
             }
@@ -507,14 +509,6 @@ class MainActivity : ComponentActivity() {
                     duration = actual
                 }
             }
-        }
-        LaunchedEffect(effectChoice, vertical, fillFrame, timelineActive, playingTimelineClip?.effect) {
-            val previewEffects = creativeEffects(if (timelineActive) playingTimelineClip?.effect ?: "None" else effectChoice).toMutableList()
-            if (vertical) previewEffects.add(Presentation.createForAspectRatio(9f / 16f,
-                if (fillFrame) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT))
-            if (timelineActive && !vertical) previewEffects.add(Presentation.createForAspectRatio(16f / 9f,
-                if (fillFrame) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT))
-            player.setVideoEffects(previewEffects)
         }
         val seekTimeline: (Long) -> Unit = { time ->
             TimelineModel.position(timeline.clips, time)?.let { position ->
@@ -555,7 +549,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        LaunchedEffect(video, timelineActive, timeline.clips.map { listOf(it.id, it.startMs, it.endMs, it.source) }) {
+        LaunchedEffect(player, video, timelineActive, timeline.clips.map { listOf(it.id, it.startMs, it.endMs, it.source) }) {
             val source = video ?: return@LaunchedEffect
             if (timelineActive) {
                 val position = TimelineModel.position(timeline.clips, timelinePosition)!!
@@ -622,7 +616,6 @@ class MainActivity : ComponentActivity() {
                     approved = false
                     sourceVerified = false
                     rightsVerified = false
-                    player.setVideoEffects(creativeEffects(saved.effect))
                     previewPlayback.load(listOf(PreviewPlayback.Source(source.toString())), positionMs = saved.startMs)
                     player.seekTo(saved.startMs)
                     player.pause()
@@ -810,7 +803,11 @@ class MainActivity : ComponentActivity() {
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                     approved = false
                     playbackError = "${error.errorCodeName}: ${error.message}"
-                    status = "Preview error. Use Reload preview, or relink the source if access expired."
+                    if (PreviewFailurePolicy.useCompatibleDecoder(compatiblePreview, error.errorCode)) {
+                        compatiblePreview = true
+                        playbackPrefs.edit().putBoolean("software-preview", true).apply()
+                        status = "Decoder recovery: compatible preview enabled. Press Play to retry."
+                    } else status = "Preview error. Use Reload preview, or relink the source if access expired."
                 }
             }
             player.addListener(listener)
@@ -1005,11 +1002,13 @@ class MainActivity : ComponentActivity() {
                     val localVisualMs = if (timelineActive) (previewPosition - (playingTimelineClip?.startMs ?: 0)).coerceAtLeast(0) else 0L
                     val visuals = playingTimelineClip?.visuals ?: ClipVisuals()
                     val point = visuals.point(localVisualMs, playingTimelineClip?.durationMs ?: 1)
+                    val previewEffect = if (timelineActive) playingTimelineClip?.effect ?: "None" else effectChoice
+                    val staticZoom = if (previewEffect == "Zoom") 1.12f else 1f
                     val visualOpacity = visuals.opacity(localVisualMs, playingTimelineClip?.durationMs ?: 1)
-                    PreviewVideo(previewBinding, Modifier.fillMaxSize().graphicsLayer {
-                        scaleX = point.scale; scaleY = point.scale
+                    PreviewVideo(previewBinding, Modifier.fillMaxSize().previewMonochrome(previewEffect == "Monochrome").graphicsLayer {
+                        scaleX = point.scale * staticZoom; scaleY = point.scale * staticZoom
                         translationX = point.x * size.width; translationY = point.y * size.height; alpha = visualOpacity
-                    })
+                    }, crop = fillFrame)
                     if (timelineActive || (editingMode == "AI Draft" && selectedDraft in drafts.indices)) {
                         val playing = if (timelineActive) timeline.clips.getOrNull(timelinePlaybackIndex) else null
                         val hook = playing?.hook ?: hookText
@@ -1185,6 +1184,11 @@ class MainActivity : ComponentActivity() {
                                         TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore metadata backup") }
                                         TextButton(onClick = { selectedTab = StudioTab.CAMPAIGN }) { Text("Campaign tools") }
                                         TextButton(enabled = !busy, onClick = { musicPlayer.pause(); previewPlayback.recover(); playbackError = "" }) { Text("Reload preview") }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Switch(checked = compatiblePreview, enabled = !busy, onCheckedChange = {
+                                                player.pause(); compatiblePreview = it; playbackPrefs.edit().putBoolean("software-preview", it).apply(); playbackError = ""
+                                            }); Text("Compatible preview decoder")
+                                        }
                                         TextButton(onClick = { advancedEditor = true }) { Text("Advanced source tools") }
                                     }
                                     else -> Unit

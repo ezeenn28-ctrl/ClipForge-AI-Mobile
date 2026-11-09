@@ -23,8 +23,11 @@ class PreviewSurfaceBinding(private val player: Player) {
 
 @Composable
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-fun PreviewVideo(binding: PreviewSurfaceBinding, modifier: Modifier = Modifier) {
+fun PreviewVideo(binding: PreviewSurfaceBinding, modifier: Modifier = Modifier, crop: Boolean = false) {
     AndroidView(factory = { context ->
         (LayoutInflater.from(context).inflate(R.layout.video_preview, null, false) as PlayerView).also(binding::attach)
-    }, modifier = modifier, update = binding::attach, onReset = null, onRelease = binding::release)
+    }, modifier = modifier, update = { view ->
+        binding.attach(view)
+        view.resizeMode = if (crop) androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM else androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    }, onReset = null, onRelease = binding::release)
 }

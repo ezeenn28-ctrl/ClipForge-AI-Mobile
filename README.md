@@ -87,3 +87,9 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Fade-from/to-black controls keep durations unchanged and apply to the video and captions. They are not overlapping cross-dissolves. Fades clamp to half the cut duration on short cuts. Original audio fades remain separate.
 - Captions offers Bold clean, Minimal and Caption card presets, with existing size/color controls. Presets and per-cut motion/fades persist in autosave/backups, and old projects receive neutral defaults.
 - Preview uses the player clock sampled by the UI; export evaluates motion/fade effects per frame with each item's local presentation clock. Host tests verify values, matrices, persistence and controls, not hardware rendering or perceptual preview/export matching. Physical-device checking remains required.
+
+## Release stabilization: decoder timeouts
+- Device feedback from Build 80 identified ERROR_CODE_TIMEOUT after a timeline transition. Preview no longer enables ExoPlayer's GL video-effects pipeline; framing uses the PlayerView fit/crop mode, with zoom/motion/color in view layers. Export retains its own GL rendering effects.
+- Preview enables decoder fallback and can switch once to a software-preferred compatible decoder after timeout/decoding failure. The preference persists and is available under More. Software decoding may consume more CPU; access/file errors are not retried as codec failures.
+- CI now includes an Android emulator media job using generated, synthetic fixtures. It tests real source/highlight/sequence playback, changing video frames, restart, the compatible decoder, and a 1080p synthetic export with mixed audio/captions/effects. These tests never use or automatically export user media.
+- Emulator results do not replace a check on the user's device. The app remains in stabilization until the reported workflow succeeds on the phone; a successful host build alone is not a finished-release claim.
