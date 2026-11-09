@@ -1,0 +1,71 @@
+package com.clipforge.mobile
+
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Typeface
+
+/** Shared bitmap renderer for live captions and MP4 captions.
+ * Highlight is a visual emphasis rule, not word-level speech alignment. */
+fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
+                       subtitleColor: Int = Color.WHITE, preset: CaptionPreset = CaptionPreset.BOLD): Bitmap {
+    val bitmap = Bitmap.createBitmap(720, 1280, Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textAlign = Paint.Align.LEFT
+        typeface = Typeface.create(Typeface.DEFAULT, if (preset == CaptionPreset.CLEAN) Typeface.NORMAL else Typeface.BOLD)
+        setShadowLayer(5f, 2f, 3f, Color.BLACK)
+    }
+    data class Word(val text: String, val marked: Boolean)
+    listOf(hook.take(65), caption.take(100)).forEachIndexed { index, text ->
+        if (text.isBlank()) return@forEachIndexed
+        val baseSize = if (index == 0) 45f else subtitleSize
+        paint.textSize = baseSize
+        val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }.map {
+            val marked = it.startsWith("#") && it.length > 1
+            Word(if (marked) it.drop(1) else it, marked)
+        }
+        val rows = mutableListOf<List<Word>>()
+        var current = mutableListOf<Word>()
+        words.forEach { word ->
+            val proposed = (current + word).joinToString(" ") { it.text }
+            if (current.isNotEmpty() && paint.measureText(proposed) > 624f) {
+                rows.add(current); current = mutableListOf()
+            }
+            current.add(word)
+        }
+        if (current.isNotEmpty()) rows.add(current)
+        val explicitHighlights = words.any { it.marked }
+        rows.take(3).forEachIndexed { row, line ->
+            val clean = line.joinToString(" ") { it.text }
+            paint.textSize = baseSize
+            val naturalWidth = paint.measureText(clean)
+            if (naturalWidth > 624f) paint.textSize = baseSize * 624f / naturalWidth
+            val width = paint.measureText(clean)
+            val left = (720f - width) / 2f
+            val y = (if (index == 0) 210f else 970f) + row * 55f
+            if (preset == CaptionPreset.CARD && index == 1) {
+                paint.color = Color.argb(210, 0, 0, 0); paint.style = Paint.Style.FILL
+                canvas.drawRoundRect(left - 18f, y - paint.textSize - 7f, left + width + 18f, y + 13f, 12f, 12f, paint)
+            }
+            paint.color = Color.BLACK; paint.style = Paint.Style.STROKE
+            paint.strokeWidth = if (preset == CaptionPreset.CLEAN) 5f else 9f
+            canvas.drawText(clean, left, y, paint)
+            paint.style = Paint.Style.FILL
+            var prefix = ""
+            line.forEachIndexed { wordIndex, word ->
+                val autoHighlight = index == 1 && preset == CaptionPreset.HIGHLIGHT &&
+                    !explicitHighlights && wordIndex == line.lastIndex
+                paint.color = when {
+                    word.marked || autoHighlight -> Color.YELLOW
+                    index == 0 || preset == CaptionPreset.HIGHLIGHT -> Color.WHITE
+                    else -> subtitleColor
+                }
+                canvas.drawText(word.text, left + paint.measureText(prefix), y, paint)
+                prefix += word.text + " "
+            }
+        }
+    }
+    return bitmap
+}

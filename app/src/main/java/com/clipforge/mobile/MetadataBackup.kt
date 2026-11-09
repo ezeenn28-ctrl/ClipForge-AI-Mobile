@@ -14,14 +14,14 @@ object MetadataGate { val lock = Mutex() }
 object MetadataBackup {
     private val allowed = setOf("projects/last-project.properties", "campaigns/submissions.properties", "speech/last-job.properties")
     private const val LIMIT = 50L * 1024 * 1024
-    data class Staged(val directory: File, val paths: Set<String>, val hasProject: Boolean, val submissions: Int, val hasSpeech: Boolean) {
+    data class Staged(val directory: File, val paths: Set<String>, val hasProject: Boolean, val submissions: Int, val hasSpeech: Boolean, val projectCount: Int = 0) {
         fun discard() { directory.deleteRecursively() }
     }
     fun create(root: File, destination: OutputStream) {
         ZipOutputStream(destination.buffered()).use { zip ->
             zip.putNextEntry(ZipEntry("manifest.properties")); zip.write("format=clipforge-metadata-v1\n".toByteArray()); zip.closeEntry()
             var total = 0L
-            for (path in allowed) {
+            for (path in allowed + ProjectCatalog.backupPaths(root)) {
                 val file = File(root, path)
                 if (!file.isFile) continue
                 total += file.length(); require(total <= LIMIT) { "Backup metadata exceeds 50 MB" }
@@ -37,7 +37,7 @@ object MetadataBackup {
             ZipInputStream(input.buffered()).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
-                    require(!entry.isDirectory && (entry.name in allowed || entry.name == "manifest.properties") && seen.add(entry.name)) { "Unexpected or duplicate backup entry" }
+                    require(!entry.isDirectory && (entry.name in allowed || ProjectCatalog.isCatalogPath(entry.name) || entry.name == "manifest.properties") && seen.add(entry.name)) { "Unexpected or duplicate backup entry" }
                     val destination = File(directory, entry.name).apply { parentFile?.mkdirs() }
                     destination.outputStream().use { out ->
                         val buffer = ByteArray(65_536)
@@ -55,12 +55,16 @@ object MetadataBackup {
             val manifest = Properties().apply { File(directory, "manifest.properties").reader().use { load(it) } }
             require(manifest.getProperty("format") == "clipforge-metadata-v1") { "Unknown backup version" }
             val project = ProjectStore.read(File(directory, "projects/last-project.properties"))
+            for (path in seen.filter { ProjectCatalog.isCatalogPath(it) }) {
+                val item = ProjectCatalog.read(directory, File(path).nameWithoutExtension)
+                ProjectStore.write(File(directory, path), item)
+            }
             val campaigns = CampaignEntryStore.read(File(directory, "campaigns/submissions.properties"))
             val speech = SpeechJobStore.read(File(directory, "speech/last-job.properties"))
             // Re-encode validated records, stripping any approval state and pausing active jobs.
             project?.let { ProjectStore.write(File(directory, "projects/last-project.properties"), it.reviewedAgain()) }
             speech?.let { SpeechJobStore.write(File(directory, "speech/last-job.properties"), it.recovered()) }
-            return Staged(directory, seen.intersect(allowed), project != null, campaigns.size, speech != null)
+            return Staged(directory, seen.filter { it in allowed || ProjectCatalog.isCatalogPath(it) }.toSet(), project != null, campaigns.size, speech != null, seen.count { ProjectCatalog.isCatalogPath(it) })
         } catch (error: Throwable) { directory.deleteRecursively(); throw error }
     }
     fun restore(root: File, staged: Staged) {
@@ -86,3 +90,4 @@ object MetadataBackup {
         } finally { staged.discard() }
     }
 }
+

@@ -20,6 +20,7 @@ object ProjectStore {
             }
         }
         put("format", "clipforge-project-v1")
+        put("project.id", safe.projectId); put("project.name", safe.projectName)
         put("fillFrame", safe.fillFrame)
         put("speechJob", safe.lastSpeechJobId); put("speechUnits", safe.lastSpeechUnits)
         put("source", safe.source); put("duration", safe.durationMs)
@@ -120,6 +121,8 @@ object ProjectStore {
             fillFrame = data.getProperty("fillFrame", "false").toBooleanStrict(),
             lastSpeechJobId = data.getProperty("speechJob", ""), lastSpeechUnits = data.getProperty("speechUnits", "0").toInt(),
             timelineClips = timeline, timelineMode = data.getProperty("timeline.mode", "false").toBooleanStrict(), selectedTimelineId = data.getProperty("timeline.selected", ""),
-            currentTimelineId = data.getProperty("timeline.current", ""), music = music, captionPreset = data.getProperty("captionPreset", "BOLD")).also { it.validate() }
+            currentTimelineId = data.getProperty("timeline.current", ""), music = music, captionPreset = data.getProperty("captionPreset", "BOLD"),
+            projectId = data.getProperty("project.id", ""), projectName = data.getProperty("project.name", "")).also { it.validate() }
     }
 }
+

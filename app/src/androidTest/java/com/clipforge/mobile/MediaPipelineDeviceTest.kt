@@ -132,8 +132,14 @@ class MediaPipelineDeviceTest {
                 assertEquals("yes", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO))
                 val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
                 assertTrue("Unexpected duration: $duration", duration in 2700..3400)
-                val frame = retriever.getFrameAtTime(1_000_000)!!
-                assertTrue("Export is black", hasPicture(frame)); frame.recycle()
+                // The default retriever option chooses a sync frame, which can be
+                // the intentionally black first frame of a fade-in. Decode near
+                // the requested time so this checks visible content in both cuts.
+                for (timeUs in listOf(750_000L, 1_000_000L, 2_000_000L)) {
+                    val frame = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)!!
+                    try { assertTrue("Export is black at $timeUs us", hasPicture(frame)) }
+                    finally { frame.recycle() }
+                }
             } finally { retriever.release() }
         } finally { InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }; output.delete() }
     }

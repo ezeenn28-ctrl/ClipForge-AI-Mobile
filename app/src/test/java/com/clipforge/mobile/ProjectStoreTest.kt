@@ -78,4 +78,15 @@ class ProjectStoreTest {
         try { project().copy(subtitleDraftIndex = 15).validate(); fail("Invalid association accepted") }
         catch (_: IllegalArgumentException) {}
     }
+
+    @Test fun savesHighlightStyleAndClearsApprovalOnRestore() {
+        val directory = Files.createTempDirectory("clipforge-highlight").toFile()
+        try {
+            val file = File(directory, "project.properties")
+            ProjectStore.write(file, project().copy(captionPreset = "HIGHLIGHT"))
+            val restored = ProjectStore.read(file)!!
+            assertEquals("HIGHLIGHT", restored.captionPreset)
+            assertFalse(restored.drafts.single().approved)
+        } finally { directory.deleteRecursively() }
+    }
 }

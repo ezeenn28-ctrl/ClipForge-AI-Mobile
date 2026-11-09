@@ -33,14 +33,14 @@ enum class StudioTab(val label: String, val title: String, val description: Stri
 }
 
 private val studioColors = darkColorScheme(
-    primary = Color(0xFF85E6C4), onPrimary = Color(0xFF09251B),
-    primaryContainer = Color(0xFF183A30), onPrimaryContainer = Color(0xFFB8F7DE),
+    primary = Color(0xFF00DDE5), onPrimary = Color(0xFF002E31),
+    primaryContainer = Color(0xFF07383D), onPrimaryContainer = Color(0xFFA6F8FB),
     secondary = Color(0xFFB6BFFF), onSecondary = Color(0xFF202548),
     secondaryContainer = Color(0xFF223148), onSecondaryContainer = Color(0xFFD5DFFF),
-    background = Color(0xFF0B1018), onBackground = Color(0xFFEDF2F8),
-    surface = Color(0xFF131C28), onSurface = Color(0xFFEDF2F8),
-    surfaceVariant = Color(0xFF1B2838), onSurfaceVariant = Color(0xFFAAB9CB),
-    outline = Color(0xFF42516A), outlineVariant = Color(0xFF253349),
+    background = Color(0xFF0D1014), onBackground = Color(0xFFEDF2F8),
+    surface = Color(0xFF181C22), onSurface = Color(0xFFEDF2F8),
+    surfaceVariant = Color(0xFF222830), onSurfaceVariant = Color(0xFFAAB9CB),
+    outline = Color(0xFF42516A), outlineVariant = Color(0xFF303740),
     error = Color(0xFFFFB4B0)
 )
 
@@ -60,18 +60,18 @@ fun ClipForgeTheme(content: @Composable () -> Unit) {
 fun StudioHeader(version: String) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
         Canvas(Modifier.size(40.dp)) {
-            drawRoundRect(Color(0xFF85E6C4), cornerRadius = CornerRadius(12.dp.toPx()))
+            drawRoundRect(Color(0xFF00DDE5), cornerRadius = CornerRadius(12.dp.toPx()))
             val triangle = Path().apply {
                 moveTo(size.width * .40f, size.height * .28f)
                 lineTo(size.width * .72f, size.height * .50f)
                 lineTo(size.width * .40f, size.height * .72f); close()
             }
-            drawPath(triangle, Color(0xFF0B1018))
-            drawLine(Color(0xFF0B1018), Offset(size.width * .26f, size.height * .28f), Offset(size.width * .26f, size.height * .72f), 2.dp.toPx())
+            drawPath(triangle, Color(0xFF0D1014))
+            drawLine(Color(0xFF0D1014), Offset(size.width * .26f, size.height * .28f), Offset(size.width * .26f, size.height * .72f), 2.dp.toPx())
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text("ClipForge", fontWeight = FontWeight.Bold, fontSize = 20.sp, letterSpacing = (-.5).sp)
+            Text("ClipForge AI", fontWeight = FontWeight.Bold, fontSize = 20.sp, letterSpacing = (-.5).sp)
             Text("PERSONAL STUDIO  /  $version", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
         }
         StudioBadge("ON DEVICE")
@@ -237,3 +237,4 @@ fun StudioWorkflowSteps() {
         }
     }
 }
+

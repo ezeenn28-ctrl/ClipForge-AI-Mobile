@@ -28,11 +28,15 @@ data class EditorProject(
     val selectedTimelineId: String = "",
     val currentTimelineId: String = "",
     val music: MusicTrack? = null,
-    val captionPreset: String = "BOLD"
+    val captionPreset: String = "BOLD",
+    val projectId: String = "",
+    val projectName: String = ""
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 
     fun validate() {
+        require(projectId.isEmpty() || projectId.matches(Regex("[a-f0-9]{32}"))) { "Invalid project identity" }
+        require(projectName.length <= 80 && projectName.none { it.isISOControl() }) { "Invalid project name" }
         require(source.startsWith("content://") || source.startsWith("file://")) { "Project source must be a local video" }
         require(durationMs > 0 && startMs >= 0 && endMs > startMs && endMs <= durationMs) { "Invalid project trim" }
         require(mode in listOf("Manual Editor", "AI Draft")) { "Unknown editing mode" }
@@ -61,3 +65,4 @@ data class EditorProject(
         }
     }
 }
+

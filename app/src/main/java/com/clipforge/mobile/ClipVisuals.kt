@@ -26,4 +26,5 @@ data class ClipVisuals(val start: MotionPoint = MotionPoint(), val end: MotionPo
         return copy(end = middle, fadeOutMs = 0) to copy(start = middle, fadeInMs = 0)
     }
 }
-enum class CaptionPreset(val label: String) { BOLD("Bold clean"), CLEAN("Minimal"), CARD("Caption card") }
+enum class CaptionPreset(val label: String) { BOLD("Bold clean"), HIGHLIGHT("Bold highlight"), CLEAN("Minimal"), CARD("Caption card") }
+

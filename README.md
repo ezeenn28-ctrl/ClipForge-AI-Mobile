@@ -93,3 +93,12 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Preview enables decoder fallback and can switch once to a software-preferred compatible decoder after timeout/decoding failure. The preference persists and is available under More. Software decoding may consume more CPU; access/file errors are not retried as codec failures.
 - CI now includes an Android emulator media job using generated, synthetic fixtures. It tests real source/highlight/sequence playback, changing video frames, restart, the compatible decoder, and a 1080p synthetic export with mixed audio/captions/effects. These tests never use or automatically export user media.
 - Emulator results do not replace a check on the user's device. The app remains in stabilization until the reported workflow succeeds on the phone; a successful host build alone is not a finished-release claim.
+
+
+## Approved design and named projects
+- The original dark/cyan interface follows the approved ClipForge concept. The editor has a larger responsive preview and visual caption-style cards.
+- Projects now have independent identities and names. Importing the same source twice creates separate drafts; the previous draft is checkpointed before source replacement. Recent project cards reopen saved edits, and More allows renaming the active project.
+- Named drafts and the last-open project autosave locally. Metadata backups include named drafts with strict path validation; source media and document permissions remain separate. Older project files load with neutral name/identity defaults and migrate on save. Corrupted draft files are retained and reported rather than silently removed.
+- Bold highlight emphasizes the last word of each rendered caption line. A # prefix chooses explicit words instead. This is visual emphasis, not inferred word-level speech timing or semantic keyword detection. The shared renderer keeps preview and export styling consistent.
+- Selected-source exports now use the same fixed-canvas composition as timeline exports. Portrait validation accounts for encoded dimensions and MP4 rotation metadata.
+- The approved release gates and consolidated phone checklist are in [docs/RELEASE_PLAN.md](docs/RELEASE_PLAN.md). Release signing and physical-device acceptance remain outstanding.
