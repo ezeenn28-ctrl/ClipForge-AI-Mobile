@@ -30,14 +30,14 @@ describe implementation, not physical-device acceptance.
 ## Ordered release gates
 
 1. [x] Baseline tests and synthetic Android playback/export tests pass (Actions #86).
-2. [ ] Named projects, autosave, reopen, legacy migration and metadata backup pass.
+2. [x] Named projects, autosave, reopen and legacy migration passed automated checks; reopen/autosave also confirmed on phone. Metadata backup passed host tests; device restore remains pending.
 3. [ ] Approved theme, readable caption styles and phone layout pass visual review.
 4. [ ] Import, trim, split, reorder, undo/redo, audio and framing pass end to end.
 5. [ ] Captions retain timing/style across preview, saves and MP4 export.
 6. [ ] Up to 15 editable highlight candidates; approval required for every render.
 7. [ ] Long-video interruption/resume works within documented storage/thermal limits.
 8. [ ] Campaign checks and manual payout records retain correct states.
-9. [ ] Consolidated Nubia Neo 2 device test has no blocking playback/export failure.
+9. [x] Build 87 owner-reported Nubia Neo 2 playback/export test has no reported blocker. New changes still require their own acceptance; music controls remain unconfirmed.
 10. [ ] Release signing is configured securely without changing the update identity.
 11. [ ] Signed release APK, checksum, quick-start guide and actual limitations delivered.
 

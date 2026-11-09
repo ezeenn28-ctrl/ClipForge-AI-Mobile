@@ -9,9 +9,12 @@ import android.graphics.Typeface
 /** Shared bitmap renderer for live captions and MP4 captions.
  * Highlight is a visual emphasis rule, not word-level speech alignment. */
 fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
-                       subtitleColor: Int = Color.WHITE, preset: CaptionPreset = CaptionPreset.BOLD): Bitmap {
-    val bitmap = Bitmap.createBitmap(720, 1280, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(bitmap)
+                       subtitleColor: Int = Color.WHITE, preset: CaptionPreset = CaptionPreset.BOLD,
+                       appearance: CaptionAppearance = CaptionAppearance(), bitmapScale: Float = 1f): Bitmap {
+    appearance.validate()
+    require(bitmapScale.isFinite() && bitmapScale in .25f..1f) { "Invalid caption bitmap scale" }
+    val bitmap = Bitmap.createBitmap((720 * bitmapScale).toInt(), (1280 * bitmapScale).toInt(), Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap).apply { scale(bitmapScale, bitmapScale) }
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.LEFT
         typeface = Typeface.create(Typeface.DEFAULT, if (preset == CaptionPreset.CLEAN) Typeface.NORMAL else Typeface.BOLD)
@@ -20,6 +23,8 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
     data class Word(val text: String, val marked: Boolean)
     listOf(hook.take(65), caption.take(100)).forEachIndexed { index, text ->
         if (text.isBlank()) return@forEachIndexed
+        paint.typeface = Typeface.create(if (index == 0) "sans-serif" else appearance.font.family,
+            if (preset == CaptionPreset.CLEAN) Typeface.NORMAL else Typeface.BOLD)
         val baseSize = if (index == 0) 45f else subtitleSize
         paint.textSize = baseSize
         val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }.map {
@@ -43,8 +48,12 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
             val naturalWidth = paint.measureText(clean)
             if (naturalWidth > 624f) paint.textSize = baseSize * 624f / naturalWidth
             val width = paint.measureText(clean)
-            val left = (720f - width) / 2f
-            val y = (if (index == 0) 210f else 970f) + row * 55f
+            val left = if (index == 0) (720f - width) / 2f else when (appearance.alignment) {
+                CaptionAlignment.LEFT -> 48f
+                CaptionAlignment.CENTER -> (720f - width) / 2f
+                CaptionAlignment.RIGHT -> 672f - width
+            }
+            val y = (if (index == 0) 210f else appearance.positionY * 1280f) + row * 55f
             if (preset == CaptionPreset.CARD && index == 1) {
                 paint.color = Color.argb(210, 0, 0, 0); paint.style = Paint.Style.FILL
                 canvas.drawRoundRect(left - 18f, y - paint.textSize - 7f, left + width + 18f, y + 13f, 12f, 12f, paint)
@@ -58,9 +67,9 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
                 val autoHighlight = index == 1 && preset == CaptionPreset.HIGHLIGHT &&
                     !explicitHighlights && wordIndex == line.lastIndex
                 paint.color = when {
-                    word.marked || autoHighlight -> Color.YELLOW
-                    index == 0 || preset == CaptionPreset.HIGHLIGHT -> Color.WHITE
-                    else -> subtitleColor
+                    word.marked || autoHighlight -> appearance.highlightColor()
+                    index == 0 -> Color.WHITE
+                    else -> appearance.textColor(preset, subtitleColor)
                 }
                 canvas.drawText(word.text, left + paint.measureText(prefix), y, paint)
                 prefix += word.text + " "

@@ -29,6 +29,9 @@ object ProjectStore {
         put("selected", safe.selectedDraft); put("hook", safe.hook); put("caption", safe.caption)
         put("effect", safe.effect); put("subtitleSize", safe.subtitleSize)
         put("captionPreset", safe.captionPreset)
+        put("caption.font", safe.captionAppearance.font.name); put("caption.y", safe.captionAppearance.positionY)
+        put("caption.color", safe.captionAppearance.color.name); put("caption.highlight", safe.captionAppearance.highlight.name)
+        put("caption.align", safe.captionAppearance.alignment.name)
         put("subtitleYellow", safe.subtitleYellow); put("subtitleDraft", safe.subtitleDraftIndex)
         put("drafts.count", safe.drafts.size)
         safe.drafts.forEachIndexed { i, draft ->
@@ -122,7 +125,13 @@ object ProjectStore {
             lastSpeechJobId = data.getProperty("speechJob", ""), lastSpeechUnits = data.getProperty("speechUnits", "0").toInt(),
             timelineClips = timeline, timelineMode = data.getProperty("timeline.mode", "false").toBooleanStrict(), selectedTimelineId = data.getProperty("timeline.selected", ""),
             currentTimelineId = data.getProperty("timeline.current", ""), music = music, captionPreset = data.getProperty("captionPreset", "BOLD"),
-            projectId = data.getProperty("project.id", ""), projectName = data.getProperty("project.name", "")).also { it.validate() }
+            projectId = data.getProperty("project.id", ""), projectName = data.getProperty("project.name", ""),
+            captionAppearance = CaptionAppearance(
+                font = CaptionFont.valueOf(data.getProperty("caption.font", "SANS")),
+                positionY = data.getProperty("caption.y", (970f / 1280f).toString()).toFloat(),
+                color = CaptionColor.valueOf(data.getProperty("caption.color", "INHERIT")),
+                highlight = CaptionColor.valueOf(data.getProperty("caption.highlight", "YELLOW")),
+                alignment = CaptionAlignment.valueOf(data.getProperty("caption.align", "CENTER")))).also { it.validate() }
     }
 }
 

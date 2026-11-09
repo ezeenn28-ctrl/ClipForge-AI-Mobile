@@ -102,3 +102,10 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Bold highlight emphasizes the last word of each rendered caption line. A # prefix chooses explicit words instead. This is visual emphasis, not inferred word-level speech timing or semantic keyword detection. The shared renderer keeps preview and export styling consistent.
 - Selected-source exports now use the same fixed-canvas composition as timeline exports. Portrait validation accounts for encoded dimensions and MP4 rotation metadata.
 - The approved release gates and consolidated phone checklist are in [docs/RELEASE_PLAN.md](docs/RELEASE_PLAN.md). Release signing and physical-device acceptance remain outstanding.
+
+## Caption appearance controls
+- Captions has Style, Font, Color and Position panels. System Sans, Serif and Mono fonts, text/highlight palettes, alignment and bounded vertical positioning apply to all captions in the current project. The hook keeps its separate top placement.
+- Appearance persists in autosave and metadata backups; older projects retain their existing style defaults. Changing appearance revokes export approval.
+- Export now scales the caption bitmap to the same centered, full-height 9:16 text canvas used by preview, including inside landscape output. This corrects the previous use of native bitmap dimensions in export.
+- Automated checks cover glyph/color/position rendering, legacy project recovery, UI interaction and a synthetic Android MP4 with saved custom caption settings.
+- Build 87 device feedback confirmed 26 checklist items. Music import and volume controls remain unconfirmed; see docs/VERIFICATION.md.

@@ -158,18 +158,19 @@ fun timedCaptionOverlay(
     calibrateClock: Boolean = false,
     subtitleSize: Float = 39f,
     subtitleColor: Int = Color.WHITE,
-    preset: CaptionPreset = CaptionPreset.BOLD
+    preset: CaptionPreset = CaptionPreset.BOLD,
+    appearance: CaptionAppearance = CaptionAppearance()
 ): BitmapOverlay {
     var withCaption: Bitmap? = null
     var withoutCaption: Bitmap? = null
     val fromUs = (startMs - trimStartMs).coerceAtLeast(0L) * 1000L
     val untilUs = (endMs - trimStartMs).coerceAtLeast(0L) * 1000L
     val clock = ClipPresentationClock()
-    return object : BitmapOverlay() {
+    return object : CaptionBitmapOverlay() {
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val timeUs = if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs
             return if (untilUs <= fromUs || timeUs in fromUs until untilUs) {
-                withCaption ?: makeCaptionOverlay(hook, caption, subtitleSize, subtitleColor, preset).also { withCaption = it }
+                withCaption ?: makeCaptionOverlay(hook, caption, subtitleSize, subtitleColor, preset, appearance).also { withCaption = it }
             } else withoutCaption ?: makeCaptionOverlay(hook, "").also { withoutCaption = it }
         }
         override fun release() {
@@ -180,20 +181,20 @@ fun timedCaptionOverlay(
     }
 }
 
-fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long, subtitleSize: Float, subtitleColor: Int, calibrateClock: Boolean = false, preset: CaptionPreset = CaptionPreset.BOLD): BitmapOverlay {
+fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long, subtitleSize: Float, subtitleColor: Int, calibrateClock: Boolean = false, preset: CaptionPreset = CaptionPreset.BOLD, appearance: CaptionAppearance = CaptionAppearance()): BitmapOverlay {
     var empty: Bitmap? = null
     // Retain only the current subtitle bitmap, independent of transcript length.
     val clock = ClipPresentationClock()
     var cachedIndex = -1
     var cachedBitmap: Bitmap? = null
-    return object : BitmapOverlay() {
+    return object : CaptionBitmapOverlay() {
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val absoluteMs = SubtitleTimeline.sourcePositionMs(trimStartMs, if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs)
             val index = SubtitleTimeline.activeSegmentIndex(segments, absoluteMs)
             if (index < 0) return empty ?: makeCaptionOverlay(hook, "").also { empty = it }
             if (cachedIndex != index) {
                 cachedBitmap?.recycle()
-                cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor, preset)
+                cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor, preset, appearance)
                 cachedIndex = index
             }
             return cachedBitmap ?: (empty ?: makeCaptionOverlay(hook, "").also { empty = it })
@@ -321,6 +322,7 @@ class MainActivity : ComponentActivity() {
         var subtitlePage by remember { mutableIntStateOf(0) }
         var subtitleSize by remember { mutableFloatStateOf(39f) }
         var captionPreset by remember { mutableStateOf(CaptionPreset.BOLD) }
+        var captionAppearance by remember { mutableStateOf(CaptionAppearance()) }
         var subtitleYellow by remember { mutableStateOf(false) }
         val batchProgress = speechJob?.results?.size ?: 0
         val batchTotal = speechJob?.units()?.size ?: 0
@@ -567,6 +569,7 @@ class MainActivity : ComponentActivity() {
                     subtitleSize = saved.subtitleSize
                     subtitleYellow = saved.subtitleYellow
                     captionPreset = CaptionPreset.valueOf(saved.captionPreset)
+                    captionAppearance = saved.captionAppearance
                     subtitleDraftIndex = saved.subtitleDraftIndex
                     transcriptSegments = saved.currentSegments
                     sourceTranscriptSegments = saved.sourceSegments
@@ -820,7 +823,8 @@ class MainActivity : ComponentActivity() {
             currentSegments = transcriptSegments, sourceSegments = sourceTranscriptSegments,
             draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits, timelineClips = timeline.clips, timelineMode = timelineMode, selectedTimelineId = selectedTimelineId,
             currentTimelineId = timelineSubtitleTarget.takeIf { id -> timeline.clips.any { it.id == id } }.orEmpty(), music = music, captionPreset = captionPreset.name,
-            projectId = projectId, projectName = projectName.ifBlank { sourceName }.filterNot(Char::isISOControl).take(80)
+            projectId = projectId, projectName = projectName.ifBlank { sourceName }.filterNot(Char::isISOControl).take(80),
+            captionAppearance = captionAppearance
         ) else null
         SideEffect { latestBackupProject.set(projectSnapshot) }
         LaunchedEffect(projectSnapshot, projectLoading, metadataBusy) {
@@ -1031,9 +1035,9 @@ class MainActivity : ComponentActivity() {
                         val fallback = if (cues.isNotEmpty()) "" else if (until <= from || previewPosition in from until until) caption else ""
                         val displayedCaption = activeSegment?.text ?: fallback
                         if (hook.isNotBlank() || displayedCaption.isNotBlank()) {
-                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow, captionPreset) {
+                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow, captionPreset, captionAppearance) {
                                 makeCaptionOverlay(hook, displayedCaption, subtitleSize,
-                                    if (subtitleYellow) Color.YELLOW else Color.WHITE, captionPreset).asImageBitmap()
+                                    if (subtitleYellow) Color.YELLOW else Color.WHITE, captionPreset, captionAppearance, bitmapScale = .5f).asImageBitmap()
                             }
                             Image(
                                 bitmap = previewBitmap,
@@ -1062,6 +1066,10 @@ class MainActivity : ComponentActivity() {
                     }) { Text("Reload preview") }
                 }
             }
+        }
+        val revokeCaptionApproval: () -> Unit = {
+            approved = false
+            drafts = drafts.map { it.copy(approved = false) }
         }
         val simpleEditor = selectedTab == StudioTab.STUDIO && studioEditing && video != null && !advancedEditor
         LaunchedEffect(simpleEditor) {
@@ -1114,8 +1122,8 @@ class MainActivity : ComponentActivity() {
                     },
                     bottomBar = {
                         Column {
-                            if (!simpleEditor || busy || playbackError.isNotBlank()) StudioActivity(
-                                message = if (modelDownloading) "Downloading speech model · $modelProgress%" else if (transcribing || batchRunning) "$speechPhase · ${speechElapsedSeconds}s elapsed" else status,
+                            if (!simpleEditor || busy || playbackError.isNotBlank() || projectMessage.startsWith("Project save failed:")) StudioActivity(
+                                message = if (modelDownloading) "Downloading speech model · $modelProgress%" else if (transcribing || batchRunning) "$speechPhase · ${speechElapsedSeconds}s elapsed" else if (projectMessage.startsWith("Project save failed:")) projectMessage else status,
                                 active = busy || modelDownloading,
                                 percent = if (modelDownloading) modelProgress else if (exporting) exportPercent else if (transcribing || batchRunning) speechPercent else -1)
                             if (simpleEditor) EditorToolBar(editorTool, !busy) { editorTool = it }
@@ -1154,11 +1162,11 @@ class MainActivity : ComponentActivity() {
                                                 if (!modelReady) { selectedTab = StudioTab.CAPTIONS; status = "Download the speech model once, then return to the editor." }
                                                 else if (clip != null) launchSpeech(SpeechJobMode.TIMELINE, listOf(SpeechRange(0, clip.startMs, clip.endMs)), clip.id)
                                             }) { Text(if (modelReady) "Generate captions" else "Set up auto captions") }
-                                            CaptionPresetPicker(captionPreset, !busy) { captionPreset = it; approved = false }
-                                            Text("Bold highlight emphasizes each line’s last word. Prefix a word with # to choose it.", style = MaterialTheme.typography.bodySmall)
-                                            Text("Text size · ${subtitleSize.toInt()}")
-                                            Slider(value = subtitleSize, enabled = !busy, valueRange = 28f..55f, onValueChange = { subtitleSize = it; approved = false })
-                                            FilterChip(selected = subtitleYellow, enabled = !busy, onClick = { subtitleYellow = !subtitleYellow; approved = false }, label = { Text(if (subtitleYellow) "Yellow text" else "White text") })
+                                            CaptionStyleControls(captionPreset, subtitleSize, captionAppearance,
+                                                if (subtitleYellow) Color.YELLOW else Color.WHITE, !busy,
+                                                onPreset = { captionPreset = it; revokeCaptionApproval() },
+                                                onSize = { subtitleSize = it; revokeCaptionApproval() },
+                                                onAppearance = { captionAppearance = it; revokeCaptionApproval() })
                                             clip?.subtitles?.take(10)?.forEachIndexed { index, cue ->
                                                 OutlinedTextField(cue.text, { text ->
                                                     val changed = clip.copy(subtitles = clip.subtitles.mapIndexed { i, item -> if (i == index) item.copy(text = text) else item })
@@ -1593,12 +1601,11 @@ class MainActivity : ComponentActivity() {
                 }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe selected clip") }
                 if (transcriptSegments.isNotEmpty()) {
                     Text("Timed subtitle editor", style = MaterialTheme.typography.titleMedium)
-                    Text("Subtitle size: ${subtitleSize.toInt()}", style = MaterialTheme.typography.bodySmall)
-                    Slider(enabled = !busy, value = subtitleSize, onValueChange = { subtitleSize = it; approved = false; drafts = drafts.map { d -> d.copy(approved = false) } }, valueRange = 28f..55f)
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(enabled = !busy, checked = subtitleYellow, onCheckedChange = { subtitleYellow = it; approved = false; drafts = drafts.map { d -> d.copy(approved = false) } })
-                        Text("Yellow subtitles (otherwise white)")
-                    }
+                    CaptionStyleControls(captionPreset, subtitleSize, captionAppearance,
+                        if (subtitleYellow) Color.YELLOW else Color.WHITE, !busy,
+                        onPreset = { captionPreset = it; revokeCaptionApproval() },
+                        onSize = { subtitleSize = it; revokeCaptionApproval() },
+                        onAppearance = { captionAppearance = it; revokeCaptionApproval() })
 
                     val pageCount = (transcriptSegments.size + 24) / 25
                     val currentPage = subtitlePage.coerceIn(0, pageCount - 1)
@@ -1841,7 +1848,7 @@ class MainActivity : ComponentActivity() {
                         }
                         if (activeExportToken !== requestToken) return@launch
                         transformer.start(TimelineExport.composition(source, exportClips, vertical, fillFrame, mute,
-                            subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE, exportMusic, captionPreset), output.absolutePath)
+                            subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE, exportMusic, captionPreset, captionAppearance), output.absolutePath)
                     }
                     catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                     catch (e: Exception) { activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; approved = false; status = "Export failed: ${e.message}" }

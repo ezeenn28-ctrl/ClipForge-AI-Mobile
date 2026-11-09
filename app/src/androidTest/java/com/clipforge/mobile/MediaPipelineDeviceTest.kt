@@ -143,4 +143,61 @@ class MediaPipelineDeviceTest {
             } finally { retriever.release() }
         } finally { InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }; output.delete() }
     }
+
+    @Test fun savedCaptionAppearanceIsRenderedAtThePreviewPosition() {
+        val source = fixture("caption-canvas.mp4")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val snapshot = File(context.cacheDir, "caption-appearance.properties")
+        val appearance = CaptionAppearance(CaptionFont.MONO, .45f, CaptionColor.PINK, CaptionColor.CYAN, CaptionAlignment.LEFT)
+        ProjectStore.write(snapshot, EditorProject(Uri.fromFile(source).toString(), 3000, 0, 3000, captionAppearance = appearance))
+        val saved = ProjectStore.read(snapshot)!!
+        val clip = TimelineClip("caption", 0, 3000, caption = "HELLO #WORLD", captionEndMs = 3000)
+        val composition = TimelineExport.composition(Uri.fromFile(source), listOf(clip), true, false, false,
+            39f, Color.WHITE, appearance = saved.captionAppearance)
+        val output = File(context.cacheDir, "caption-appearance.mp4").apply { delete() }
+        val done = CountDownLatch(1); val failure = AtomicReference<Throwable?>(null)
+        lateinit var transformer: Transformer
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
+                override fun onCompleted(c: Composition, result: ExportResult) { done.countDown() }
+                override fun onError(c: Composition, result: ExportResult, error: ExportException) { failure.set(error); done.countDown() }
+            }).build()
+            transformer.start(composition, output.absolutePath)
+        }
+        try {
+            assertTrue("Caption export timed out", done.await(180, TimeUnit.SECONDS))
+            failure.get()?.let { throw AssertionError("Caption export failed", it) }
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(output.absolutePath)
+                val raw = retriever.getFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST)!!
+                val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt() ?: 0
+                val frame = if (raw.width > raw.height && rotation in listOf(90, 270)) {
+                    Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height,
+                        android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }, true).also { if (it !== raw) raw.recycle() }
+                } else raw
+                try {
+                    assertTrue("Portrait display frame expected", frame.height > frame.width)
+                    var pink = 0; var cyan = 0; var minX = frame.width; var maxY = -1
+                    for (y in 0 until frame.height step 2) for (x in 0 until frame.width step 2) {
+                        val c = frame.getPixel(x, y)
+                        val isPink = Color.red(c) > 170 && Color.blue(c) > 110 && Color.green(c) in 30..160
+                        val isCyan = Color.red(c) < 100 && Color.green(c) > 150 && Color.blue(c) > 170
+                        if (isPink) pink++
+                        if (isCyan) cyan++
+                        if (isPink || isCyan) { minX = minOf(minX, x); maxY = maxOf(maxY, y) }
+                    }
+                    assertTrue("Text color missing from encoded video", pink > 20)
+                    assertTrue("Highlight color missing from encoded video", cyan > 20)
+                    val left = minX.toFloat() / frame.width
+                    val bottom = maxY.toFloat() / frame.height
+                    assertTrue("Caption left alignment differs from preview: $left", left in .045f.. .12f)
+                    assertTrue("Caption position differs from preview: $bottom", bottom in .43f.. .48f)
+                } finally { frame.recycle() }
+            } finally { retriever.release() }
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }
+            output.delete(); snapshot.delete()
+        }
+    }
 }
