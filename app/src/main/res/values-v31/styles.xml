@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.ClipForge" parent="Theme.ClipForge.Base">
+        <item name="android:windowSplashScreenBackground">@color/ic_launcher_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_clipforge_mark</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@color/ic_launcher_background</item>
+    </style>
+</resources>

@@ -5,6 +5,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -35,11 +36,11 @@ enum class StudioTab(val label: String, val title: String, val description: Stri
 private val studioColors = darkColorScheme(
     primary = Color(0xFF00DDE5), onPrimary = Color(0xFF002E31),
     primaryContainer = Color(0xFF07383D), onPrimaryContainer = Color(0xFFA6F8FB),
-    secondary = Color(0xFFB6BFFF), onSecondary = Color(0xFF202548),
+    secondary = Color(0xFF9AC9CE), onSecondary = Color(0xFF112F34),
     secondaryContainer = Color(0xFF223148), onSecondaryContainer = Color(0xFFD5DFFF),
-    background = Color(0xFF0D1014), onBackground = Color(0xFFEDF2F8),
-    surface = Color(0xFF181C22), onSurface = Color(0xFFEDF2F8),
-    surfaceVariant = Color(0xFF222830), onSurfaceVariant = Color(0xFFAAB9CB),
+    background = Color(0xFF0B0F15), onBackground = Color(0xFFEDF2F8),
+    surface = Color(0xFF151C25), onSurface = Color(0xFFEDF2F8),
+    surfaceVariant = Color(0xFF202B38), onSurfaceVariant = Color(0xFFAAB9CB),
     outline = Color(0xFF42516A), outlineVariant = Color(0xFF303740),
     error = Color(0xFFFFB4B0)
 )
@@ -52,27 +53,20 @@ fun ClipForgeTheme(content: @Composable () -> Unit) {
             headlineMedium = MaterialTheme.typography.headlineMedium.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold, letterSpacing = (-0.6).sp),
             titleLarge = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
             titleMedium = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            bodySmall = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 18.sp)
+            bodySmall = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 19.sp)
         ), content = content)
 }
 
 @Composable
 fun StudioHeader(version: String) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-        Canvas(Modifier.size(40.dp)) {
-            drawRoundRect(Color(0xFF00DDE5), cornerRadius = CornerRadius(12.dp.toPx()))
-            val triangle = Path().apply {
-                moveTo(size.width * .40f, size.height * .28f)
-                lineTo(size.width * .72f, size.height * .50f)
-                lineTo(size.width * .40f, size.height * .72f); close()
-            }
-            drawPath(triangle, Color(0xFF0D1014))
-            drawLine(Color(0xFF0D1014), Offset(size.width * .26f, size.height * .28f), Offset(size.width * .26f, size.height * .72f), 2.dp.toPx())
+        Surface(Modifier.size(44.dp), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+            Image(painterResource(R.drawable.ic_clipforge_mark), contentDescription = null, Modifier.fillMaxSize())
         }
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text("ClipForge AI", fontWeight = FontWeight.Bold, fontSize = 20.sp, letterSpacing = (-.5).sp)
-            Text("PERSONAL STUDIO  /  $version", fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
+            Text("PERSONAL STUDIO  /  $version", fontSize = 8.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, letterSpacing = 1.sp)
         }
         StudioBadge("ON DEVICE")
     }
@@ -130,7 +124,7 @@ private fun StudioNavIcon(tab: StudioTab, selected: Boolean) {
 
 @Composable
 fun StudioIntro(tab: StudioTab) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(tab.label.uppercase(), color = MaterialTheme.colorScheme.primary, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.8.sp)
         Text(tab.title, style = MaterialTheme.typography.headlineMedium)
         Text(tab.description, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)

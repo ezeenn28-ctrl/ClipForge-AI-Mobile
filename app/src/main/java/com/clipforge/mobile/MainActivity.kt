@@ -18,6 +18,7 @@ import android.text.format.Formatter
 import java.net.URL
 import java.net.HttpURLConnection
 import java.security.MessageDigest
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -261,6 +262,10 @@ class MainActivity : ComponentActivity() {
         var recentProjects by remember { mutableStateOf(ProjectCatalog.Listing()) }
         var catalogRevision by remember { mutableIntStateOf(0) }
         var studioEditing by remember { mutableStateOf(false) }
+        var showDiscovery by remember { mutableStateOf(false) }
+        var homeSettings by remember { mutableStateOf(false) }
+        var pendingHomeAction by remember { mutableStateOf("") }
+        var autoFindRequested by remember { mutableStateOf(false) }
         var advancedEditor by remember { mutableStateOf(false) }
         var editorTool by remember { mutableStateOf(EditorTool.EDIT) }
         var showProjectTools by remember { mutableStateOf(false) }
@@ -704,6 +709,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri == null) pendingHomeAction = ""
             if (uri != null) {
                 try {
                     contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -752,9 +758,13 @@ class MainActivity : ComponentActivity() {
                         previewPlayback.play(restart = true)
                         playbackError = ""
                         status = "Video loaded"
+                        when (pendingHomeAction) {
+                            "edit" -> { editingMode = "Manual Editor"; advancedEditor = false; studioEditing = true; showDiscovery = false; editorTool = EditorTool.EDIT }
+                            "discover" -> { studioEditing = false; showDiscovery = true; autoFindRequested = true }
+                        }
                     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                     catch (error: Exception) { status = "Import failed: ${error.message}" }
-                    finally { projectLoading = false; catalogRevision++ }
+                    finally { projectLoading = false; catalogRevision++; pendingHomeAction = "" }
                 }
             }
         }
@@ -843,8 +853,8 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        LaunchedEffect(studioEditing, projectLoading, catalogRevision) {
-            if (!projectLoading && !studioEditing) {
+        LaunchedEffect(studioEditing, showDiscovery, projectLoading, catalogRevision) {
+            if (!projectLoading && !studioEditing && !showDiscovery) {
                 recentProjects = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                     MetadataGate.lock.withLock { ProjectCatalog.list(filesDir) }
                 }
@@ -867,7 +877,7 @@ class MainActivity : ComponentActivity() {
                         }
                         applySavedProject(saved, Uri.parse(saved.source))
                         selectedTab = StudioTab.STUDIO
-                        advancedEditor = false; studioEditing = true; editorTool = EditorTool.EDIT
+                        advancedEditor = false; studioEditing = true; showDiscovery = false; editorTool = EditorTool.EDIT
                     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                     catch (error: Exception) { status = "Could not open project: ${error.message}" }
                     finally { projectLoading = false; catalogRevision++ }
@@ -907,12 +917,13 @@ class MainActivity : ComponentActivity() {
         val wideWorkspace = screen.screenWidthDp >= 700
         val workspaceState = rememberSaveableStateHolder()
         val highlightsScroll = rememberScrollState()
+        val homeScroll = rememberScrollState()
         val styleScroll = rememberScrollState()
         val captionsScroll = rememberScrollState()
         val campaignScroll = rememberScrollState()
         val exportScroll = rememberScrollState()
         val activeWorkspaceScroll = when (selectedTab) {
-            StudioTab.STUDIO -> if (studioEditing) styleScroll else highlightsScroll
+            StudioTab.STUDIO -> if (studioEditing) styleScroll else if (showDiscovery) highlightsScroll else homeScroll
             StudioTab.CAPTIONS -> captionsScroll
             StudioTab.CAMPAIGN -> campaignScroll
             StudioTab.EXPORT -> exportScroll
@@ -968,7 +979,7 @@ class MainActivity : ComponentActivity() {
                                 batchResults = drafts.mapIndexed { index, clip -> index to speech.filter { it.endMs > clip.startMs && it.startMs < clip.endMs } }.toMap()
                                 selectedDraft = -1; subtitleDraftIndex = -1; subtitleSegments = emptyList()
                                 timelineSubtitleTarget = ""; transcriptSegments = speech; approved = false
-                                studioEditing = false; selectedTab = StudioTab.STUDIO
+                                studioEditing = false; showDiscovery = true; selectedTab = StudioTab.STUDIO
                                 status = "${drafts.size} speech-ranked clips from sampled moments. Tap a clip to review it."
                             } else {
                             batchResults = grouped.filterKeys { matches(it) }.mapValues { (index, segments) ->
@@ -1010,7 +1021,7 @@ class MainActivity : ComponentActivity() {
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text(if (timelineActive) "CLIP ${(timelinePlaybackIndex + 1).toString().padStart(2, '0')}" else if (selectedDraft >= 0) "CLIP ${(selectedDraft + 1).toString().padStart(2, '0')}" else "SOURCE PREVIEW", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         StudioBadge(if (vertical) if (fillFrame) "9:16 · CROP" else "9:16 · FIT" else if (fillFrame) "16:9 · CROP" else "16:9 · FIT", false)
-                        if (!expanded) TextButton(onClick = { fullScreenPreview = true }) { Text("Full screen", fontSize = 11.sp) }
+                        if (!expanded) IconButton(onClick = { fullScreenPreview = true }) { StudioGlyph(StudioGlyph.EXPAND, description = "Full screen") }
                     }
                 Box(modifier = Modifier.fillMaxWidth().height(canvasHeight).clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp)).background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
                     Box(Modifier.fillMaxHeight().aspectRatio(if (vertical) 9f / 16f else 16f / 9f, matchHeightConstraintsFirst = true), contentAlignment = Alignment.Center) {
@@ -1050,15 +1061,13 @@ class MainActivity : ComponentActivity() {
                 }
                 }
 
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        FilledTonalButton(enabled = !busy, onClick = {
+                    PreviewTransport(previewPlaying, if (timelineActive) timelinePosition else previewPosition,
+                        if (timelineActive) TimelineModel.duration(timeline.clips) else duration, !busy,
+                        onToggle = {
                             if (player.isPlaying) player.pause()
                             else { playbackError = ""; previewPlayback.play((duration * start).toLong(), (duration * end).toLong()) }
-                        }) { Text(if (previewPlaying) "Pause" else "Play") }
-                        TextButton(enabled = !busy, onClick = { playbackError = ""; previewPlayback.play((duration * start).toLong(), (duration * end).toLong(), restart = true) }) { Text(if (timelineActive) "Restart sequence" else "Restart clip") }
-                        Spacer(Modifier.weight(1f))
-                        Text("${Timecode.format(if (timelineActive) timelinePosition else previewPosition)} / ${Timecode.format(if (timelineActive) TimelineModel.duration(timeline.clips) else duration)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
+                        },
+                        onRestart = { playbackError = ""; previewPlayback.play((duration * start).toLong(), (duration * end).toLong(), restart = true) })
                     if (playbackError.isNotBlank()) Text(playbackError, maxLines = 3, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     if (playbackError.isNotBlank() || !studioEditing) TextButton(enabled = !busy, onClick = {
                         musicPlayer.pause(); previewPlayback.recover(); playbackError = ""
@@ -1066,6 +1075,49 @@ class MainActivity : ComponentActivity() {
                     }) { Text("Reload preview") }
                 }
             }
+        }
+        val beginFindClips: (Boolean) -> Unit = { duplicateProject ->
+            if (!busy && video != null && duration > 0) {
+                player.pause(); musicPlayer.pause()
+                showDiscovery = true; studioEditing = false; advancedEditor = false
+                if (!modelReady) {
+                    selectedTab = StudioTab.CAPTIONS
+                    status = "Set up the speech model, then return to Find clips."
+                } else {
+                    val snapshot = latestBackupProject.get()
+                    val needsCopy = duplicateProject || timeline.clips.isNotEmpty()
+                    projectLoading = true
+                    exportScope.launch {
+                        try {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                MetadataGate.lock.withLock { snapshot?.let { ProjectCatalog.save(filesDir, it) } }
+                            }
+                            val previous = snapshot ?: error("Source is still loading")
+                            val next = previous.forHighlights(if (needsCopy) ProjectCatalog.newId() else previous.projectId, sourceName.take(60) + " highlights")
+                            applySavedProject(next, Uri.parse(next.source))
+                            val candidates = generateQualityCandidates(duration)
+                            drafts = candidates; selectedDraft = -1
+                            launchSpeech(SpeechJobMode.HIGHLIGHTS, candidates.mapIndexed { index, clip -> SpeechRange(index, clip.startMs, clip.endMs) }, "quick-find")
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (error: Exception) { status = "Could not start highlights: ${error.message}" }
+                        finally { projectLoading = false; catalogRevision++ }
+                    }
+                }
+            }
+        }
+        LaunchedEffect(autoFindRequested, projectLoading) {
+            if (autoFindRequested && !projectLoading) {
+                autoFindRequested = false
+                beginFindClips(false)
+            }
+        }
+        val showProjectHome = selectedTab == StudioTab.STUDIO && !studioEditing && !showDiscovery
+        LaunchedEffect(showProjectHome) {
+            if (showProjectHome) { player.pause(); musicPlayer.pause() }
+        }
+        BackHandler(enabled = !fullScreenPreview && (selectedTab != StudioTab.STUDIO || studioEditing || showDiscovery)) {
+            if (selectedTab != StudioTab.STUDIO) selectedTab = StudioTab.STUDIO
+            else { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause() }
         }
         val revokeCaptionApproval: () -> Unit = {
             approved = false
@@ -1116,8 +1168,8 @@ class MainActivity : ComponentActivity() {
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     topBar = {
                         if (simpleEditor) EditorTopBar(!busy, timeline.past.isNotEmpty(), timeline.future.isNotEmpty(),
-                            onBack = { studioEditing = false }, onUndo = { updateTimeline(timeline.undo()) }, onRedo = { updateTimeline(timeline.redo()) },
-                            onExport = { selectedTab = StudioTab.EXPORT })
+                            onBack = { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause() }, onUndo = { updateTimeline(timeline.undo()) }, onRedo = { updateTimeline(timeline.redo()) },
+                            onExport = { selectedTab = StudioTab.EXPORT }, projectName = projectName.ifBlank { sourceName })
                         else StudioHeader(BuildConfig.VERSION_NAME)
                     },
                     bottomBar = {
@@ -1142,7 +1194,7 @@ class MainActivity : ComponentActivity() {
                                             timelineSubtitleTarget = id; transcriptSegments = clip.subtitles
                                             transcript = clip.subtitles.joinToString("\n") { it.text }; subtitleDraftIndex = -1; subtitleSegments = emptyList()
                                         }
-                                    }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it }, compact = true, tool = editorTool)
+                                    }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it }, compact = true, tool = editorTool, music = music)
                                 when (editorTool) {
                                     EditorTool.EDIT -> {
                                         OutlinedButton(enabled = !busy, onClick = { timelinePicker.launch(arrayOf("video/*")) }) { Text("Add video") }
@@ -1221,17 +1273,40 @@ class MainActivity : ComponentActivity() {
                         }
                     } else {
                     StudioWorkspaceLayout(modifier = Modifier.fillMaxSize().padding(innerPadding),
-                        showPreview = selectedTab != StudioTab.CAMPAIGN && !fullScreenPreview && (video != null || selectedTab == StudioTab.STUDIO),
+                        showPreview = selectedTab != StudioTab.CAMPAIGN && !fullScreenPreview && !showProjectHome && video != null,
                         wide = wideWorkspace, preview = { previewPanel(false) }) {
-                        workspaceState.SaveableStateProvider(selectedTab.name + if (selectedTab == StudioTab.STUDIO) studioEditing.toString() else "") {
+                        workspaceState.SaveableStateProvider(selectedTab.name + if (selectedTab == StudioTab.STUDIO) if (showProjectHome) "home" else if (showDiscovery) "discovery" else "source" else "") {
                             Column(Modifier.fillMaxSize().verticalScroll(activeWorkspaceScroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                                if (selectedTab != StudioTab.STUDIO || !studioEditing || video == null) StudioIntro(selectedTab)
+                                if (selectedTab != StudioTab.STUDIO) StudioIntro(selectedTab)
                                 when (selectedTab) {
                                     StudioTab.STUDIO -> {
-                                        if (!studioEditing) RecentProjects(recentProjects, projectId, !busy, openSavedProject)
+                                        if (showProjectHome) {
+                                            ProjectHome(!busy, modelReady, video != null && duration > 0, pendingRelink != null,
+                                                projectName.ifBlank { sourceName }, if (timeline.clips.isNotEmpty()) TimelineModel.duration(timeline.clips) else deliveryDuration,
+                                                recentProjects, projectId,
+                                                onNewProject = { pendingHomeAction = if (pendingRelink == null) "edit" else ""; picker.launch(arrayOf("video/*")) },
+                                                onFindClips = { if (video == null) { pendingHomeAction = "discover"; picker.launch(arrayOf("video/*")) } else beginFindClips(true) },
+                                                onContinue = { advancedEditor = false; studioEditing = true; showDiscovery = false; editorTool = EditorTool.EDIT },
+                                                onOpen = openSavedProject,
+                                                onImportLink = { showDiscovery = true; advancedImport = true },
+                                                onProjectTools = { homeSettings = !homeSettings })
+                                            if (homeSettings) StudioCard("Project tools", projectMessage) {
+                                                TextButton(enabled = !busy, onClick = { backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
+                                                TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore metadata backup") }
+                                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                                    Switch(compatiblePreview, onCheckedChange = { player.pause(); compatiblePreview = it; playbackPrefs.edit().putBoolean("software-preview", it).apply() }, enabled = !busy)
+                                                    Text("Compatible preview decoder", modifier = Modifier.weight(1f))
+                                                }
+                                                Text("ClipForge AI · " + BuildConfig.VERSION_NAME, style = MaterialTheme.typography.bodySmall)
+                                            }
+                                        } else {
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(onClick = { showDiscovery = false; studioEditing = false; player.pause(); musicPlayer.pause() }) { StudioGlyph(StudioGlyph.BACK, description = "Back to projects") }
+                                            Text(if (studioEditing) "Source tools" else "AI Highlights", style = MaterialTheme.typography.titleLarge)
+                                        }
 
                                         if (!studioEditing || video == null) StudioCard(if (video == null) "Your workflow" else "Source footage", if (video == null) "" else "$sourceName · ${Timecode.format(duration)}") {
-                if (video == null) StudioWorkflowSteps()
+                if (video == null) OutlinedButton(enabled = !busy, onClick = { pendingHomeAction = "discover"; picker.launch(arrayOf("video/*")) }) { Text("Choose a video") }
                 if (video != null) Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }) { Text("New project") }
                 TextButton(enabled = !busy, onClick = { advancedImport = !advancedImport }) { Text(if (advancedImport) "Hide direct-link import" else "Import from a direct link") }
                 if (advancedImport) {
@@ -1290,15 +1365,7 @@ class MainActivity : ComponentActivity() {
                                             }
                                             if (!studioEditing) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(enabled = !busy && duration > 0, onClick = {
-                        editingMode = "AI Draft"
-                        if (!modelReady) { selectedTab = StudioTab.CAPTIONS; status = "Set up the speech model, then return to Find clips." }
-                        else {
-                            val candidates = generateQualityCandidates(duration)
-                            drafts = candidates; selectedDraft = -1; approved = false
-                            launchSpeech(SpeechJobMode.HIGHLIGHTS, candidates.mapIndexed { index, clip -> SpeechRange(index, clip.startMs, clip.endMs) }, "quick-find")
-                        }
-                    }) { Text("Find clips") }
+                    Button(enabled = !busy && duration > 0, onClick = { beginFindClips(false) }) { Text("Find clips") }
                     OutlinedButton(enabled = !busy && duration > 0, onClick = { advancedEditor = false; studioEditing = true; editorTool = EditorTool.EDIT }) { Text("Edit video") }
                 }
                 Text("Find clips samples moments across your video using local speech analysis. Review every result before exporting.", style = MaterialTheme.typography.bodySmall)
@@ -1514,6 +1581,7 @@ class MainActivity : ComponentActivity() {
                                         StudioCard("Project backup", "Save your edits, submissions and last speech checkpoint. Media and model files stay separate.") {
                                             OutlinedButton(enabled = !busy, onClick = { backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
                                             TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore metadata backup") }
+                                        }
                                         }
                                         }
                                     }
@@ -1733,7 +1801,7 @@ class MainActivity : ComponentActivity() {
                                 video?.let { previewPlayback.load(listOf(PreviewPlayback.Source(it.toString())), positionMs = (duration * start).toLong()) }
                                 player.pause()
                                 selectedTab = StudioTab.STUDIO
-                                studioEditing = false
+                                studioEditing = false; showDiscovery = true
                                 analyzing = false
                                 status = "${detected.size} speech-ranked candidates. Review context and subtitles before approving."
                             }
@@ -1775,12 +1843,10 @@ class MainActivity : ComponentActivity() {
                                                 OutlinedButton(enabled = false, onClick = {}) { Text("Export approved MP4") }
                                             }
                                         } else {
-                                        StudioCard("Delivery details") {
-                                            Text(if (timelineMode) "Sequence · ${timeline.clips.size} cuts · ${Timecode.precise(deliveryDuration)}" else "Range · ${Timecode.precise((duration * start).toLong())} — ${Timecode.precise((duration * end).toLong())}")
-                                            Text("Frame · ${if (vertical) if (fillFrame) "9:16 crop" else "9:16 fit" else if (fillFrame) "16:9 crop" else "16:9 fit"}   /   Audio · ${if (mute) "Muted" else "Original"}")
-                                            if (timelineMode) Text("Music · ${music?.name ?: "None"} · Canvas ${if (vertical) "1080 × 1920" else "1920 × 1080"}")
-                                            Text("Captions · ${if (timelineMode) TimelineModel.subtitles(timeline.clips).size else if (subtitleDraftIndex == selectedDraft) subtitleSegments.size else 0} timed cues")
-                                        }
+                                        ExportSummary(projectName.ifBlank { sourceName }, deliveryDuration, vertical,
+                                            if (timelineMode) timeline.clips.size else 1,
+                                            if (timelineMode) TimelineModel.subtitles(timeline.clips).size else if (subtitleDraftIndex == selectedDraft) subtitleSegments.size else 0,
+                                            mute, if (timelineMode) music?.name else null, approved)
                                         StudioCard("Ready when you are") {
                 Text("Export review", style = MaterialTheme.typography.titleMedium)
                 Text("Check framing, audio and subtitle timing in the preview. Approval applies to this edit and is cleared when you change it.", style = MaterialTheme.typography.bodySmall)

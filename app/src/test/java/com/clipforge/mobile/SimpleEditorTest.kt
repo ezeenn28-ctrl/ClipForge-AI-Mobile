@@ -36,16 +36,17 @@ class SimpleEditorTest {
                     Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = androidx.compose.ui.unit.Dp(12f))) {
                         Surface(Modifier.fillMaxWidth().height(androidx.compose.ui.unit.Dp(200f))) { Box { Text("Video preview · layout fixture") } }
                         TimelineEditor(LocalContext.current, null, 60_000, history, "a", 10_000, true,
-                            { history = it }, {}, {}, {}, { throw AssertionError(it) }, compact = true, tool = tool)
+                            { history = it }, {}, {}, {}, { throw AssertionError(it) }, compact = true, tool = tool, music = MusicTrack("content://fixture/music", "Music fixture", 30_000, timelineStartMs = 2000))
                     }
                 }
             }
         }
+        compose.onNodeWithContentDescription("Music track").assertIsDisplayed()
         compose.onNodeWithText("Clip hook").assertDoesNotExist()
         compose.onNodeWithText("Volume · 100%").assertDoesNotExist()
         compose.onNodeWithText("Split").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(2, history.clips.size) }
-        compose.onNodeWithText("Undo").performClick()
+        compose.onNodeWithContentDescription("Undo").performClick()
         compose.runOnIdle { assertEquals(1, history.clips.size) }
         val file = File("build/outputs/studio-previews/simple-editor-fixture.png").apply { parentFile.mkdirs() }
         compose.onRoot().captureRoboImage(file.absolutePath)
@@ -59,3 +60,4 @@ class SimpleEditorTest {
         compose.runOnIdle { assertTrue(reviewRequested) }
     }
 }
+

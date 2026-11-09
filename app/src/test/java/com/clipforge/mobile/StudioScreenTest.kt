@@ -20,7 +20,7 @@ class StudioScreenTest {
 
     @Test fun emptyStudioKeepsImportAndNavigationVisible() {
         waitForProjectLoad()
-        compose.onNodeWithText("Choose a video").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("New project").assertIsDisplayed().assertIsEnabled()
         compose.onNodeWithText("Studio").assertIsDisplayed()
         compose.onNodeWithText("Captions").assertIsDisplayed()
         compose.onNodeWithText("Campaign").assertIsDisplayed()
@@ -40,14 +40,14 @@ class StudioScreenTest {
         screenshot("export")
         compose.onNodeWithText("Export approved MP4").performScrollTo().assertIsNotEnabled()
         compose.onNodeWithText("Studio").performClick()
-        compose.onNodeWithText("Choose a video").assertIsDisplayed()
+        compose.onNodeWithText("New project").assertIsDisplayed()
     }
 
     @Test
     @Config(qualifiers = "w360dp-h640dp-mdpi")
     fun compactPhoneKeepsPrimaryActionAndTabsVisible() {
         waitForProjectLoad()
-        compose.onNodeWithText("Choose a video").assertIsDisplayed()
+        compose.onNodeWithText("New project").assertIsDisplayed()
         compose.onNodeWithText("Export").assertIsDisplayed()
         screenshot("studio-compact")
     }
@@ -56,8 +56,8 @@ class StudioScreenTest {
     @Config(qualifiers = "w800dp-h360dp-mdpi")
     fun landscapeKeepsSourceToolsAndNavigationReachable() {
         waitForProjectLoad()
-        compose.onNodeWithText("Your workflow").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Choose a video").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("AI Highlights").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("New project").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Export").assertIsDisplayed()
         screenshot("studio-landscape")
     }
@@ -75,9 +75,26 @@ class StudioScreenTest {
         compose.onNodeWithText("Campaign name").performScrollTo().assertTextContains("My campaign")
     }
 
+    @Test fun linkImportReturnsHomeAndKeepsTheTypedLink() {
+        waitForProjectLoad()
+        compose.onNodeWithText("Import a link").performScrollTo().performClick()
+        compose.onNodeWithText("Direct HTTPS MP4 link (optional)").performScrollTo().performTextInput("https://example.com/source.mp4")
+        compose.onNodeWithContentDescription("Back to projects").performScrollTo().performClick()
+        compose.onNodeWithText("New project").assertIsDisplayed()
+        compose.onNodeWithText("Import a link").performScrollTo().performClick()
+        compose.onNodeWithText("Direct HTTPS MP4 link (optional)").performScrollTo().assertTextContains("https://example.com/source.mp4")
+    }
+
+    @Test fun systemBackFromExportReturnsToTheProjectHome() {
+        waitForProjectLoad()
+        compose.onNodeWithText("Export").performClick()
+        compose.runOnIdle { compose.activity.onBackPressedDispatcher.onBackPressed() }
+        compose.onNodeWithText("New project").assertIsDisplayed()
+    }
+
     private fun waitForProjectLoad() {
         compose.waitUntil(timeoutMillis = 15_000) {
-            runCatching { compose.onNodeWithText("Choose a video").assertIsEnabled(); true }.getOrDefault(false)
+            runCatching { compose.onNodeWithText("New project").assertIsEnabled(); true }.getOrDefault(false)
         }
     }
 
@@ -88,3 +105,4 @@ class StudioScreenTest {
         assertTrue("Rendered preview was not written", output.isFile && output.length() > 1_000)
     }
 }
+

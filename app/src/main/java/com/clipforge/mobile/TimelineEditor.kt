@@ -17,9 +17,12 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 
 /** A real sequence editor: clip, caption and original-audio rows share one clock. */
 @Composable
@@ -37,7 +40,8 @@ fun TimelineEditor(
     onAddSelection: () -> Unit,
     onMessage: (String) -> Unit,
     compact: Boolean = false,
-    tool: EditorTool = EditorTool.EDIT
+    tool: EditorTool = EditorTool.EDIT,
+    music: MusicTrack? = null
 ) {
     val seekRequests = remember { kotlinx.coroutines.channels.Channel<Long>(kotlinx.coroutines.channels.Channel.CONFLATED) }
     val latestSeek by rememberUpdatedState(onSeek)
@@ -51,8 +55,10 @@ fun TimelineEditor(
     val selected = clips.getOrNull(selectedIndex)
     var zoom by remember { mutableFloatStateOf(12f) }
     val density = LocalDensity.current
-    val scale = minOf(zoom, if (total > 0) 8_000_000f / total else zoom) / 1000f // dp per millisecond
-    val trackWidth = (total * scale).coerceAtLeast(300f).dp
+    var viewportDp by remember { mutableFloatStateOf(300f) }
+    val fitZoom = if (total > 0) viewportDp * 1000f / total else zoom
+    val scale = minOf(maxOf(zoom, fitZoom), if (total > 0) 8_000_000f / total else zoom) / 1000f
+    val trackWidth = (total * scale).coerceAtLeast(viewportDp).dp
     val trackScroll = rememberScrollState()
     val accent = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
@@ -66,11 +72,16 @@ fun TimelineEditor(
     }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Timeline · ${Timecode.precise(total)}", style = MaterialTheme.typography.titleMedium)
-            Text("${clips.size} cuts", style = MaterialTheme.typography.bodySmall)
+            Text("Timeline", style = MaterialTheme.typography.titleMedium)
+            Text("${Timecode.precise(total)} · ${clips.size} cuts", style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = snapping, onClick = { snapping = !snapping }, enabled = enabled, label = { Text("Snap") })
+            TextButton(enabled = enabled, onClick = { zoom = (zoom / 1.5f).coerceAtLeast(4f) },
+                modifier = Modifier.semantics { contentDescription = "Zoom out" }) { Text("−") }
+            TextButton(enabled = enabled, onClick = { zoom = (zoom * 1.5f).coerceAtMost(40f) },
+                modifier = Modifier.semantics { contentDescription = "Zoom in" }) { Text("+") }
             if (!compact) OutlinedButton(enabled = enabled, onClick = onAddSelection) { Text("Add selection") }
             if (!compact) OutlinedButton(enabled = enabled && history.past.isNotEmpty(), onClick = { onHistory(history.undo()) }) { Text("Undo") }
             if (!compact) OutlinedButton(enabled = enabled && history.future.isNotEmpty(), onClick = { onHistory(history.redo()) }) { Text("Redo") }
@@ -79,7 +90,15 @@ fun TimelineEditor(
             Text("Add the current source selection to start a sequence. Your originals remain unchanged.")
             return@Column
         }
-        Box(Modifier.fillMaxWidth().background(surface, RoundedCornerShape(14.dp)).horizontalScroll(trackScroll)) {
+        Row(Modifier.fillMaxWidth()) {
+            Column(Modifier.width(28.dp).padding(top = 36.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                Box(Modifier.height(64.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { StudioGlyph(StudioGlyph.FORMAT, Modifier.size(16.dp), accent, "Video track") }
+                Box(Modifier.height(32.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { StudioGlyph(StudioGlyph.CAPTIONS, Modifier.size(16.dp), Color(0xFFFFD76A), "Captions track") }
+                Box(Modifier.height(28.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { StudioGlyph(StudioGlyph.AUDIO, Modifier.size(16.dp), accent, "Original audio track") }
+                if (music != null) Box(Modifier.height(28.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { StudioGlyph(StudioGlyph.AUDIO, Modifier.size(16.dp), MaterialTheme.colorScheme.secondary, "Music track") }
+            }
+        Box(Modifier.weight(1f).onSizeChanged { viewportDp = it.width / density.density }
+            .background(surface, RoundedCornerShape(14.dp)).horizontalScroll(trackScroll)) {
             Column(Modifier.width(trackWidth).padding(vertical = 6.dp)) {
                 Canvas(Modifier.fillMaxWidth().height(30.dp)
                     .pointerInput(total, scale, enabled, snapping, clips) {
@@ -90,25 +109,40 @@ fun TimelineEditor(
                             if (enabled) { change.consume(); scrub((change.position.x / density.density / scale).toLong().coerceIn(0, total)) }
                         }
                     }) {
-                    val tickSeconds = when { scale * 1000 < 1 -> 60; scale * 1000 < 4 -> 30; scale * 1000 < 12 -> 5; else -> 1 }
+                    val intervals = listOf(1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 1800, 3600)
+                    val tickSeconds = intervals.firstOrNull { it * scale * 1000 >= 12 } ?: 3600
+                    val labelSeconds = intervals.firstOrNull { it >= tickSeconds && it % tickSeconds == 0 && it * scale * 1000 >= 64 } ?: 3600
                     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.LTGRAY; textSize = 9.sp.toPx() }
                     var second = 0L
                     while (second * 1000 <= total) {
                         val x = second * 1000 * scale * density.density
                         drawLine(outline, Offset(x, size.height - 7.dp.toPx()), Offset(x, size.height), 1.dp.toPx())
-                        if (second % (tickSeconds * 2) == 0L) drawContext.canvas.nativeCanvas.drawText(Timecode.format(second * 1000), x + 3.dp.toPx(), 12.dp.toPx(), paint)
+                        if (second % labelSeconds == 0L) drawContext.canvas.nativeCanvas.drawText(Timecode.format(second * 1000), x + 3.dp.toPx(), 12.dp.toPx(), paint)
                         second += tickSeconds
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
                     clips.forEachIndexed { index, clip ->
-                        val thumbnail = rememberClipThumbnail(context, clip.source.takeIf { it.isNotBlank() }?.let(Uri::parse) ?: source, clip.startMs, enabled)
+                        val clipOffset = TimelineModel.offset(clips, index)
+                        val leftDp = trackScroll.value / density.density
+                        val visible = clipOffset * scale < leftDp + viewportDp && (clipOffset + clip.durationMs) * scale > leftDp
+                        val tiles = if (clip.durationMs * scale > 140f) 3 else 1
+                        val frames = (0 until tiles).map { tile ->
+                            rememberClipThumbnail(context, clip.source.takeIf { it.isNotBlank() }?.let(Uri::parse) ?: source,
+                                clip.startMs + clip.durationMs * tile / tiles, enabled && visible)
+                        }
                         Surface(onClick = { onSelect(clip.id); onSeek(TimelineModel.offset(clips, index)) }, enabled = enabled,
                             modifier = Modifier.width((clip.durationMs * scale).dp).height(64.dp), shape = RoundedCornerShape(8.dp),
                             color = if (clip.id == selected?.id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                             border = BorderStroke(if (clip.id == selected?.id) 2.dp else 1.dp, if (clip.id == selected?.id) accent else outline)) {
                             Box {
-                                if (thumbnail != null) Image(thumbnail.asImageBitmap(), "Timeline clip ${index + 1} source frame", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                Row(Modifier.fillMaxSize()) {
+                                    frames.forEach { thumbnail ->
+                                        Box(Modifier.weight(1f).fillMaxHeight()) {
+                                            if (thumbnail != null) Image(thumbnail.asImageBitmap(), "Timeline clip ${index + 1} source frame", Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+                                        }
+                                    }
+                                }
                                 Text("${index + 1} · ${Timecode.format(clip.durationMs)}", Modifier.background(Color.Black.copy(alpha = .7f)).padding(5.dp), fontSize = 10.sp, color = Color.White, maxLines = 1)
                             }
                         }
@@ -117,25 +151,43 @@ fun TimelineEditor(
                 Canvas(Modifier.fillMaxWidth().height(32.dp)) {
                     drawRect(outline.copy(alpha = .4f))
                     TimelineModel.subtitles(clips).forEach { cue ->
-                        drawRoundRect(accent.copy(alpha = .7f), Offset(cue.startMs * scale * density.density, 7.dp.toPx()),
+                        drawRoundRect(Color(0xFFFFD76A).copy(alpha = .85f), Offset(cue.startMs * scale * density.density, 7.dp.toPx()),
                             androidx.compose.ui.geometry.Size(((cue.endMs - cue.startMs) * scale * density.density).coerceAtLeast(1f), 18.dp.toPx()), androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()))
                     }
                 }
                 Row {
                     clips.forEach { clip ->
-                        Box(Modifier.width((clip.durationMs * scale).dp).height(28.dp).background(Color(0xFF243950)).border(1.dp, outline)) {
+                        Box(Modifier.width((clip.durationMs * scale).dp).height(28.dp).background(Color(0xFF0D414A)).border(1.dp, outline)) {
                             Text(if (clip.volume == 0f) "Muted" else "Original audio", Modifier.padding(5.dp), fontSize = 9.sp, maxLines = 1)
                         }
                     }
                 }
+                music?.let { track ->
+                    Canvas(Modifier.fillMaxWidth().height(28.dp).semantics { contentDescription = "Music track: " + track.name }) {
+                        drawRect(outline.copy(alpha = .25f))
+                        val active = track.activeDuration(total)
+                        if (active > 0) {
+                            val x = track.timelineStartMs * scale * density.density
+                            val width = active * scale * density.density
+                            drawRoundRect(Color(0xFF577B91), Offset(x, 3.dp.toPx()),
+                                androidx.compose.ui.geometry.Size(width, 22.dp.toPx()), androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()))
+                            val label = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.WHITE; textSize = 9.sp.toPx() }
+                            drawContext.canvas.nativeCanvas.save()
+                            drawContext.canvas.nativeCanvas.clipRect(x, 0f, x + width, size.height)
+                            drawContext.canvas.nativeCanvas.drawText(track.name, x + 5.dp.toPx(), 18.dp.toPx(), label)
+                            drawContext.canvas.nativeCanvas.restore()
+                        }
+                    }
+                }
             }
-            Canvas(Modifier.width(trackWidth).height(166.dp)) {
+            Canvas(Modifier.width(trackWidth).height(if (music != null) 194.dp else 166.dp)) {
                 val x = playheadMs.coerceIn(0, total) * scale * density.density
                 drawLine(Color.White, Offset(x, 0f), Offset(x, size.height), 2.dp.toPx())
             }
         }
-        Text("Video / captions / original audio · Drag the ruler to scrub", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Slider(value = playheadMs.coerceIn(0, total).toFloat(), onValueChange = { scrub(it.toLong()) }, valueRange = 0f..total.coerceAtLeast(1).toFloat(), enabled = enabled)
+        }
+        Text("Drag the ruler to scrub · Use + / − to zoom", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (!compact) Slider(value = playheadMs.coerceIn(0, total).toFloat(), onValueChange = { scrub(it.toLong()) }, valueRange = 0f..total.coerceAtLeast(1).toFloat(), enabled = enabled)
         if (!compact || tool == EditorTool.MORE) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("Zoom", style = MaterialTheme.typography.bodySmall)
             Slider(value = zoom, onValueChange = { zoom = it }, valueRange = 4f..40f, modifier = Modifier.weight(1f), enabled = enabled)
@@ -197,3 +249,4 @@ fun TimelineEditor(
         }
     }
 }
+

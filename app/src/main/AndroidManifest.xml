@@ -6,7 +6,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROCESSING"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
-    <application android:label="ClipForge AI" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="false">
+    <application android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="ClipForge AI" android:theme="@style/Theme.ClipForge" android:usesCleartextTraffic="false">
         <service android:name=".SpeechProcessingService" android:exported="false" android:foregroundServiceType="mediaProcessing|dataSync" />
         <provider
             android:name=".ClipFileProvider"

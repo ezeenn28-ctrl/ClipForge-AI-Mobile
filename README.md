@@ -109,3 +109,12 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Export now scales the caption bitmap to the same centered, full-height 9:16 text canvas used by preview, including inside landscape output. This corrects the previous use of native bitmap dimensions in export.
 - Automated checks cover glyph/color/position rendering, legacy project recovery, UI interaction and a synthetic Android MP4 with saved custom caption settings.
 - Build 87 device feedback confirmed 26 checklist items. Music import and volume controls remain unconfirmed; see docs/VERIFICATION.md.
+
+## Studio design upgrade
+- Original adaptive launcher icon, Android themed monochrome icon, matching in-app brand mark, dark system bars and platform splash branding.
+- Home prioritizes New project, Continue editing, AI Highlights and recent drafts. Link import and backup/decoder settings remain accessible through secondary actions.
+- New project opens the editor after a valid import. AI analysis preserves the current saved edit before preparing a separate highlights project when needed; it never exports automatically.
+- Dedicated editor uses consistent drawn icons, accessible action labels, compact playback transport and selected-tool styling.
+- Timeline fits the viewport, exposes zoom controls, spaces ruler labels and separates video, caption, original-audio and optional music tracks. Visible clips load at most three sampled thumbnail frames through the existing serialized, bounded cache. Audio tracks do not claim analyzed waveform data.
+- Caption, campaign and export workspaces share the updated surfaces, typography and spacing. Export has a structured delivery summary; explicit approval is still required.
+- Layout and navigation checks cover the home, small/landscape screens, editor actions, launcher resources and saved-project preservation. Physical-device acceptance of the design upgrade remains a consolidated milestone.

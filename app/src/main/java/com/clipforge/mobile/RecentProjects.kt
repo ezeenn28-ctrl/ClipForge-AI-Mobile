@@ -29,7 +29,7 @@ fun RecentProjects(listing: ProjectCatalog.Listing, currentId: String, enabled: 
                     Surface(Modifier.width(56.dp).height(64.dp), shape = RoundedCornerShape(8.dp),
                         color = MaterialTheme.colorScheme.background) {
                         if (thumbnail != null) Image(thumbnail.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                        else Box(contentAlignment = Alignment.Center) { Text("▶", color = MaterialTheme.colorScheme.primary) }
+                        else Box(contentAlignment = Alignment.Center) { StudioGlyph(StudioGlyph.PLAY, color = MaterialTheme.colorScheme.primary) }
                     }
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(entry.name, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.SemiBold)
