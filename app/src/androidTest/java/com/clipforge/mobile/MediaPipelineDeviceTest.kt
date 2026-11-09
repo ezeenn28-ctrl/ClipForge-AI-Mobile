@@ -118,8 +118,17 @@ class MediaPipelineDeviceTest {
             val retriever = MediaMetadataRetriever()
             try {
                 retriever.setDataSource(output.absolutePath)
-                assertEquals("1080", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH))
-                assertEquals("1920", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT))
+                val encodedWidth = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)!!.toInt()
+                val encodedHeight = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)!!.toInt()
+                val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt() ?: 0
+                assertTrue("Unexpected rotation: $rotation", rotation in listOf(0, 90, 180, 270))
+                // Transformer may encode portrait output sideways for encoder compatibility.
+                // Validate the display canvas after MP4 rotation, not just the encoded frame.
+                val swapsAxes = rotation == 90 || rotation == 270
+                val displayWidth = if (swapsAxes) encodedHeight else encodedWidth
+                val displayHeight = if (swapsAxes) encodedWidth else encodedHeight
+                assertEquals("Display width ($encodedWidth x $encodedHeight, rotation=$rotation)", 1080, displayWidth)
+                assertEquals("Display height ($encodedWidth x $encodedHeight, rotation=$rotation)", 1920, displayHeight)
                 assertEquals("yes", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO))
                 val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
                 assertTrue("Unexpected duration: $duration", duration in 2700..3400)
