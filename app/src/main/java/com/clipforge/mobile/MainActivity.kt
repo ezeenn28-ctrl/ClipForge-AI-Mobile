@@ -225,6 +225,7 @@ fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, 
             val index = SubtitleTimeline.activeSegmentIndex(segments, absoluteMs)
             if (index < 0) return empty ?: makeCaptionOverlay(hook, "").also { empty = it }
             if (cachedIndex != index) {
+                cachedBitmap?.recycle()
                 cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor)
                 cachedIndex = index
             }
@@ -432,6 +433,9 @@ class MainActivity : ComponentActivity() {
             }
         }
         val player = remember { ExoPlayer.Builder(this).build() }
+        val previewPlayback = remember(player) { PreviewPlayback(player) }
+        val previewBinding = remember(player) { PreviewSurfaceBinding(player) }
+        var playbackError by remember { mutableStateOf("") }
         val musicPlayer = remember { ExoPlayer.Builder(this).build() }
         DisposableEffect(musicPlayer) {
             val listener = object : Player.Listener {
@@ -503,7 +507,10 @@ class MainActivity : ComponentActivity() {
                 timelinePosition = time.coerceIn(0, TimelineModel.duration(timeline.clips))
                 timelinePlaybackIndex = position.index
                 previewPosition = position.sourceMs
-                if (player.mediaItemCount == timeline.clips.size && timelineActive) player.seekTo(position.index, position.localMs)
+                if (timelineActive && video != null) {
+                    previewPlayback.load(timeline.clips.map { PreviewPlayback.Source(it.resolvedSource(video.toString()), it.startMs, it.endMs) }, position.index, position.localMs)
+                    player.seekTo(position.index, position.localMs)
+                }
             }
         }
         val updateTimeline: (TimelineHistory) -> Unit = { changed ->
@@ -536,17 +543,10 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(video, timelineActive, timeline.clips.map { listOf(it.id, it.startMs, it.endMs, it.source) }) {
             val source = video ?: return@LaunchedEffect
-            player.pause()
             if (timelineActive) {
-                val items = timeline.clips.map { clip -> MediaItem.Builder().setUri(Uri.parse(clip.resolvedSource(source.toString())))
-                    .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(clip.startMs).setEndPositionMs(clip.endMs).build()).build() }
                 val position = TimelineModel.position(timeline.clips, timelinePosition)!!
-                player.setMediaItems(items, position.index, position.localMs)
-            } else {
-                player.setMediaItem(MediaItem.fromUri(source))
-                player.seekTo((duration * start).toLong())
-            }
-            player.prepare()
+                previewPlayback.load(timeline.clips.map { PreviewPlayback.Source(it.resolvedSource(source.toString()), it.startMs, it.endMs) }, position.index, position.localMs)
+            } else previewPlayback.load(listOf(PreviewPlayback.Source(source.toString())), positionMs = (duration * start).toLong())
         }
         LaunchedEffect(start, end, duration) {
             trimInText = Timecode.precise((duration * start).toLong())
@@ -608,10 +608,10 @@ class MainActivity : ComponentActivity() {
                     sourceVerified = false
                     rightsVerified = false
                     player.setVideoEffects(creativeEffects(saved.effect))
-                    player.setMediaItem(MediaItem.fromUri(source))
+                    previewPlayback.load(listOf(PreviewPlayback.Source(source.toString())), positionMs = saved.startMs)
                     player.seekTo(saved.startMs)
-                    player.playWhenReady = false
-                    player.prepare()
+                    player.pause()
+                    playbackError = ""
                     projectMessage = "Local project restored. Review again before export."
                     status = "Restored project; export approval and campaign confirmations were cleared"
         }
@@ -763,9 +763,9 @@ class MainActivity : ComponentActivity() {
                 start = 0f
                 end = 1f
                 duration = 0L
-                player.setMediaItem(MediaItem.fromUri(uri))
-                player.prepare()
-                player.playWhenReady = true
+                previewPlayback.load(listOf(PreviewPlayback.Source(uri.toString())), play = true)
+                previewPlayback.play(restart = true)
+                playbackError = ""
                 status = "Video loaded"
             }
         }
@@ -794,7 +794,8 @@ class MainActivity : ComponentActivity() {
                 }
                 override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                     approved = false
-                    status = "Unable to read video. Reimport it if it was moved or access permission expired: ${error.message}"
+                    playbackError = "${error.errorCodeName}: ${error.message}"
+                    status = "Preview error. Use Reload preview, or relink the source if access expired."
                 }
             }
             player.addListener(listener)
@@ -974,12 +975,7 @@ class MainActivity : ComponentActivity() {
                     }
                 Box(modifier = Modifier.fillMaxWidth().height(canvasHeight).clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp)).background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
                     Box(Modifier.fillMaxHeight().aspectRatio(if (vertical) 9f / 16f else 16f / 9f, matchHeightConstraintsFirst = true), contentAlignment = Alignment.Center) {
-                    AndroidView(
-                        factory = { PlayerView(it).apply { this.player = player; useController = false; resizeMode = androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT } },
-                        modifier = Modifier.fillMaxSize(),
-                        onReset = null,
-                        onRelease = { it.player = null }
-                    )
+                    PreviewVideo(previewBinding, Modifier.fillMaxSize())
                     if (timelineActive || (editingMode == "AI Draft" && selectedDraft in drafts.indices)) {
                         val playing = if (timelineActive) timeline.clips.getOrNull(timelinePlaybackIndex) else null
                         val hook = playing?.hook ?: hookText
@@ -1007,11 +1003,19 @@ class MainActivity : ComponentActivity() {
                 }
 
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        FilledTonalButton(enabled = !busy, onClick = { if (player.isPlaying) player.pause() else player.play() }) { Text(if (previewPlaying) "Pause" else "Play") }
-                        TextButton(enabled = !busy, onClick = { if (timelineActive) seekTimeline(0) else player.seekTo((duration * start).toLong()); player.play() }) { Text(if (timelineActive) "Restart sequence" else "Restart clip") }
+                        FilledTonalButton(enabled = !busy, onClick = {
+                            if (player.isPlaying) player.pause()
+                            else { playbackError = ""; previewPlayback.play((duration * start).toLong(), (duration * end).toLong()) }
+                        }) { Text(if (previewPlaying) "Pause" else "Play") }
+                        TextButton(enabled = !busy, onClick = { playbackError = ""; previewPlayback.play((duration * start).toLong(), (duration * end).toLong(), restart = true) }) { Text(if (timelineActive) "Restart sequence" else "Restart clip") }
                         Spacer(Modifier.weight(1f))
                         Text("${Timecode.format(if (timelineActive) timelinePosition else previewPosition)} / ${Timecode.format(if (timelineActive) TimelineModel.duration(timeline.clips) else duration)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
+                    if (playbackError.isNotBlank()) Text(playbackError, maxLines = 3, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    TextButton(enabled = !busy, onClick = {
+                        musicPlayer.pause(); previewPlayback.recover(); playbackError = ""
+                        status = "Preview reloaded and paused. Press Play to retry."
+                    }) { Text("Reload preview") }
                 }
             }
         }
@@ -1105,8 +1109,8 @@ class MainActivity : ComponentActivity() {
                                 start = 0f
                                 end = 1f
                                 duration = 0L
-                                player.setMediaItem(MediaItem.fromUri(Uri.fromFile(output)))
-                                player.prepare()
+                                previewPlayback.load(listOf(PreviewPlayback.Source(Uri.fromFile(output).toString())), play = true)
+                                playbackError = ""
                                 status = "Downloaded video ready"
                                 downloading = false
                             }
@@ -1137,6 +1141,8 @@ class MainActivity : ComponentActivity() {
                         batchResults = emptyMap()
                         subtitleSegments = emptyList()
                         subtitleDraftIndex = -1
+                        timelineMode = false; timelineSubtitleTarget = ""
+                        video?.let { previewPlayback.load(listOf(PreviewPlayback.Source(it.toString()))) }
                         drafts = generateQualityCandidates(duration)
                         selectedDraft = 0
                         hookText = ""
@@ -1199,8 +1205,10 @@ class MainActivity : ComponentActivity() {
                                 effectChoice = draft.effect
                                 captionFrom = (draft.captionStartMs / 1000L).toString()
                                 captionTo = (draft.captionEndMs / 1000L).toString()
+                                video?.let { previewPlayback.load(listOf(PreviewPlayback.Source(it.toString())), positionMs = draft.startMs) }
                                 player.seekTo(draft.startMs)
-                                player.play()
+                                playbackError = ""
+                                previewPlayback.play(draft.startMs, draft.endMs)
                             }
                         )
                     }
@@ -1509,6 +1517,7 @@ class MainActivity : ComponentActivity() {
                             transcript = segments.joinToString(" ") { it.text }
                             captionText = transcript
                             approved = false
+                            video?.let { previewPlayback.load(listOf(PreviewPlayback.Source(it.toString())), positionMs = chosen.startMs) }
                             player.seekTo(chosen.startMs)
                             status = "Review subtitles for clip ${index + 1}, then approve before export"
                         }, modifier = Modifier.fillMaxWidth()) { Text("Review clip ${index + 1} • ${segments.size} subtitles") }
@@ -1520,8 +1529,8 @@ class MainActivity : ComponentActivity() {
                     launchSpeech(SpeechJobMode.FULL_VIDEO, listOf(SpeechRange(0, 0, duration)), "")
                 }) { Text(if (batchRunning) "Processing offline…" else "Transcribe full video (optional)") }
                 }
-                Button(enabled = !busy && (sourceTranscriptSegments.isNotEmpty() || transcriptSegments.isNotEmpty()) && duration > 0, onClick = {
-                    val speech = sourceTranscriptSegments.ifEmpty { transcriptSegments }.toList()
+                Button(enabled = !busy && sourceTranscriptSegments.isNotEmpty() && duration > 0, onClick = {
+                    val speech = sourceTranscriptSegments.toList()
                     val sourceDuration = duration
                     approved = false
                     analyzing = true
@@ -1536,6 +1545,10 @@ class MainActivity : ComponentActivity() {
                                 subtitleDraftIndex = -1
                                 subtitleSegments = emptyList()
                                 editingMode = "AI Draft"
+                                timelineMode = false; timelineSubtitleTarget = ""
+                                transcriptSegments = sourceTranscriptSegments
+                                video?.let { previewPlayback.load(listOf(PreviewPlayback.Source(it.toString())), positionMs = (duration * start).toLong()) }
+                                player.pause()
                                 selectedTab = StudioTab.STUDIO
                                 studioEditing = false
                                 analyzing = false

@@ -66,3 +66,10 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Preview synchronizes a second local audio player to the video clock; export mixes a clipped audio sequence using the same saved settings. Host tests verify composition structure and gain math, not physical audio/video sync or hardware codec compatibility.
 - Timeline output uses a consistent 1080 × 1920 or 1920 × 1080 canvas with fit/crop framing. Different videos can be combined on that canvas.
 - Imports, music edits, relinking and restoration revoke export approval. Nothing is exported or uploaded automatically.
+
+## Playback repair after Build 78 device feedback
+- Preview playlist changes have one owner. Recomposition no longer reloads the same source and cancels a user's Play request. Highlight selection reconciles the source before seeking; timeline seeking checks exact source/range identity rather than only item count.
+- Play restarts completed clips/sequences and handles source trim boundaries. Reload preview rebuilds the current playlist at its position while paused; errors remain visible independently of processing status.
+- Preview uses a TextureView and explicitly transfers ownership between inline/fullscreen views. Releasing a stale view cannot detach the active preview. Host tests exercise ownership and playback command ordering, not real decoder output.
+- Speech highlight ranking now uses the primary source transcript only, preventing another video's timeline captions from being ranked against the wrong duration. Subtitle bitmap replacement recycles the prior cached bitmap.
+- The user-provided screen recording showed source playback followed by a black timeline preview with captions. Physical verification of this repair is still required; automated checks alone do not establish that the device freeze is resolved.
