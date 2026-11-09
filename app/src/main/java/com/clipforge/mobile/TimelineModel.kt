@@ -18,7 +18,8 @@ data class TimelineClip(
     val subtitles: List<WhisperNative.Segment> = emptyList(),
     val source: String = "",
     val sourceDurationMs: Long = 0,
-    val sourceName: String = ""
+    val sourceName: String = "",
+    val visuals: ClipVisuals = ClipVisuals()
 ) {
     val durationMs: Long get() = endMs - startMs
     fun resolvedSource(primary: String): String = source.ifBlank { primary }
@@ -27,6 +28,7 @@ data class TimelineClip(
         val sourceDurationMs = resolvedDuration(primaryDurationMs)
         require(source.isEmpty() || source.startsWith("content://") || source.startsWith("file://")) { "Timeline source must be local" }
         require(sourceDurationMs in 1..86_400_000) { "Invalid timeline source duration" }
+        visuals.validate()
         require(id.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "Invalid timeline clip ID" }
         require(startMs >= 0 && endMs > startMs && endMs <= sourceDurationMs) { "Invalid timeline trim" }
         require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown timeline effect" }
@@ -58,8 +60,9 @@ object TimelineModel {
         val position = position(clips, compositionMs) ?: error("Add a clip before splitting")
         val clip = clips[position.index]
         require(position.localMs >= 100 && clip.durationMs - position.localMs >= 100) { "Place the playhead at least 0.1s inside a clip" }
-        val left = clip.copy(endMs = position.sourceMs, fadeInMs = minOf(clip.fadeInMs, position.localMs), fadeOutMs = 0)
-        val right = clip.copy(id = newId, startMs = position.sourceMs, fadeInMs = 0, fadeOutMs = minOf(clip.fadeOutMs, clip.durationMs - position.localMs))
+        val visualSplit = clip.visuals.split(position.localMs, clip.durationMs)
+        val left = clip.copy(endMs = position.sourceMs, visuals = visualSplit.first, fadeInMs = minOf(clip.fadeInMs, position.localMs), fadeOutMs = 0)
+        val right = clip.copy(id = newId, startMs = position.sourceMs, visuals = visualSplit.second, fadeInMs = 0, fadeOutMs = minOf(clip.fadeOutMs, clip.durationMs - position.localMs))
         return clips.take(position.index) + listOf(left, right) + clips.drop(position.index + 1)
     }
     fun move(clips: List<TimelineClip>, index: Int, delta: Int): List<TimelineClip> {

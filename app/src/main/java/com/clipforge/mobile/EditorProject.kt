@@ -27,7 +27,8 @@ data class EditorProject(
     val timelineMode: Boolean = false,
     val selectedTimelineId: String = "",
     val currentTimelineId: String = "",
-    val music: MusicTrack? = null
+    val music: MusicTrack? = null,
+    val captionPreset: String = "BOLD"
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 
@@ -39,6 +40,7 @@ data class EditorProject(
         require(subtitleSize.isFinite() && subtitleSize in 28f..55f) { "Invalid subtitle size" }
         TimelineModel.validate(timelineClips, durationMs)
         music?.validate()
+        require(captionPreset in CaptionPreset.entries.map { it.name }) { "Invalid caption preset" }
         require(currentTimelineId.isEmpty() || timelineClips.any { it.id == currentTimelineId }) { "Invalid subtitle source association" }
         require(selectedTimelineId.isEmpty() || timelineClips.any { it.id == selectedTimelineId }) { "Invalid selected timeline clip" }
         require(lastSpeechUnits in 0..2880) { "Invalid applied speech checkpoint" }

@@ -81,3 +81,9 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - The default editor is a dedicated timeline workspace: persistent preview, top Back/Undo/Redo/Export actions and a bottom Edit/Audio/Text/Captions/Effects/Format/More tool bar. Export opens the review page and never bypasses approval.
 - Clip controls are contextual. Edit shows split/reorder/trim; Audio shows original sound and music; Text shows hook/manual caption; Captions provides generation/correction/style; Format controls fit/crop. Exact trim fields and source tools remain available without filling the default panel.
 - Campaign, backup, relinking and advanced source tools sit under More in the editor. Existing playback repair and multi-source project formats are retained. Host-rendered editor fixtures verify layout and interaction; phone testing remains necessary for real playback.
+
+## Motion and finishing controls
+- Effects includes two editable motion keyframes per cut: start/end zoom and normalized position, with linear or eased interpolation. Splitting preserves the motion position at the cut and keeps outer fades at the original clip ends. Eased curves are retimed within each resulting cut.
+- Fade-from/to-black controls keep durations unchanged and apply to the video and captions. They are not overlapping cross-dissolves. Fades clamp to half the cut duration on short cuts. Original audio fades remain separate.
+- Captions offers Bold clean, Minimal and Caption card presets, with existing size/color controls. Presets and per-cut motion/fades persist in autosave/backups, and old projects receive neutral defaults.
+- Preview uses the player clock sampled by the UI; export evaluates motion/fade effects per frame with each item's local presentation clock. Host tests verify values, matrices, persistence and controls, not hardware rendering or perceptual preview/export matching. Physical-device checking remains required.

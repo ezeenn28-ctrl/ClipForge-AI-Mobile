@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -148,12 +149,12 @@ fun baselineDraftScore(draft: HighlightDraft, totalMs: Long): DraftScore {
 
 /** Static, bold, high-contrast caption card. Keywords prefixed with # are yellow.
  * This is a persistent overlay, not speech-synchronized transcription. */
-fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f, subtitleColor: Int = Color.WHITE): Bitmap {
+fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f, subtitleColor: Int = Color.WHITE, preset: CaptionPreset = CaptionPreset.BOLD): Bitmap {
     val bitmap = Bitmap.createBitmap(720, 1280, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.CENTER
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+        typeface = Typeface.create(Typeface.DEFAULT, if (preset == CaptionPreset.CLEAN) Typeface.NORMAL else Typeface.BOLD)
         setShadowLayer(5f, 2f, 3f, Color.BLACK)
     }
     val lines = listOf(hook.take(65), caption.take(100))
@@ -172,9 +173,14 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
         chunks.take(3).forEachIndexed { row, text ->
             val y = (if (index == 0) 210 else 970) + row * 55
             val clean = text.replace("#", "")
+            if (preset == CaptionPreset.CARD && index == 1) {
+                paint.color = Color.argb(210, 0, 0, 0); paint.style = Paint.Style.FILL
+                val width = paint.measureText(clean) / 2 + 18f
+                canvas.drawRoundRect(360f - width, y - paint.textSize - 7f, 360f + width, y + 13f, 12f, 12f, paint)
+            }
             paint.color = Color.BLACK
             paint.style = Paint.Style.STROKE
-            paint.strokeWidth = 9f
+            paint.strokeWidth = if (preset == CaptionPreset.CLEAN) 5f else 9f
             canvas.drawText(clean, 360f, y.toFloat(), paint)
             paint.style = Paint.Style.FILL
             paint.color = if ('#' in text) Color.YELLOW else if (index == 0) Color.WHITE else subtitleColor
@@ -194,7 +200,8 @@ fun timedCaptionOverlay(
     trimStartMs: Long,
     calibrateClock: Boolean = false,
     subtitleSize: Float = 39f,
-    subtitleColor: Int = Color.WHITE
+    subtitleColor: Int = Color.WHITE,
+    preset: CaptionPreset = CaptionPreset.BOLD
 ): BitmapOverlay {
     var withCaption: Bitmap? = null
     var withoutCaption: Bitmap? = null
@@ -205,7 +212,7 @@ fun timedCaptionOverlay(
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val timeUs = if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs
             return if (untilUs <= fromUs || timeUs in fromUs until untilUs) {
-                withCaption ?: makeCaptionOverlay(hook, caption, subtitleSize, subtitleColor).also { withCaption = it }
+                withCaption ?: makeCaptionOverlay(hook, caption, subtitleSize, subtitleColor, preset).also { withCaption = it }
             } else withoutCaption ?: makeCaptionOverlay(hook, "").also { withoutCaption = it }
         }
         override fun release() {
@@ -216,7 +223,7 @@ fun timedCaptionOverlay(
     }
 }
 
-fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long, subtitleSize: Float, subtitleColor: Int, calibrateClock: Boolean = false): BitmapOverlay {
+fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long, subtitleSize: Float, subtitleColor: Int, calibrateClock: Boolean = false, preset: CaptionPreset = CaptionPreset.BOLD): BitmapOverlay {
     var empty: Bitmap? = null
     // Retain only the current subtitle bitmap, independent of transcript length.
     val clock = ClipPresentationClock()
@@ -229,7 +236,7 @@ fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, 
             if (index < 0) return empty ?: makeCaptionOverlay(hook, "").also { empty = it }
             if (cachedIndex != index) {
                 cachedBitmap?.recycle()
-                cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor)
+                cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor, preset)
                 cachedIndex = index
             }
             return cachedBitmap ?: (empty ?: makeCaptionOverlay(hook, "").also { empty = it })
@@ -352,6 +359,7 @@ class MainActivity : ComponentActivity() {
         var subtitleDraftIndex by remember { mutableIntStateOf(-1) }
         var subtitlePage by remember { mutableIntStateOf(0) }
         var subtitleSize by remember { mutableFloatStateOf(39f) }
+        var captionPreset by remember { mutableStateOf(CaptionPreset.BOLD) }
         var subtitleYellow by remember { mutableStateOf(false) }
         val batchProgress = speechJob?.results?.size ?: 0
         val batchTotal = speechJob?.units()?.size ?: 0
@@ -601,6 +609,7 @@ class MainActivity : ComponentActivity() {
                     effectChoice = saved.effect
                     subtitleSize = saved.subtitleSize
                     subtitleYellow = saved.subtitleYellow
+                    captionPreset = CaptionPreset.valueOf(saved.captionPreset)
                     subtitleDraftIndex = saved.subtitleDraftIndex
                     transcriptSegments = saved.currentSegments
                     sourceTranscriptSegments = saved.sourceSegments
@@ -835,7 +844,7 @@ class MainActivity : ComponentActivity() {
             subtitleSize = subtitleSize, subtitleYellow = subtitleYellow, subtitleDraftIndex = subtitleDraftIndex,
             currentSegments = transcriptSegments, sourceSegments = sourceTranscriptSegments,
             draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits, timelineClips = timeline.clips, timelineMode = timelineMode, selectedTimelineId = selectedTimelineId,
-            currentTimelineId = timelineSubtitleTarget.takeIf { id -> timeline.clips.any { it.id == id } }.orEmpty(), music = music
+            currentTimelineId = timelineSubtitleTarget.takeIf { id -> timeline.clips.any { it.id == id } }.orEmpty(), music = music, captionPreset = captionPreset.name
         ) else null
         SideEffect { latestBackupProject.set(projectSnapshot) }
         LaunchedEffect(projectSnapshot, projectLoading, metadataBusy) {
@@ -993,7 +1002,14 @@ class MainActivity : ComponentActivity() {
                     }
                 Box(modifier = Modifier.fillMaxWidth().height(canvasHeight).clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp)).background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
                     Box(Modifier.fillMaxHeight().aspectRatio(if (vertical) 9f / 16f else 16f / 9f, matchHeightConstraintsFirst = true), contentAlignment = Alignment.Center) {
-                    PreviewVideo(previewBinding, Modifier.fillMaxSize())
+                    val localVisualMs = if (timelineActive) (previewPosition - (playingTimelineClip?.startMs ?: 0)).coerceAtLeast(0) else 0L
+                    val visuals = playingTimelineClip?.visuals ?: ClipVisuals()
+                    val point = visuals.point(localVisualMs, playingTimelineClip?.durationMs ?: 1)
+                    val visualOpacity = visuals.opacity(localVisualMs, playingTimelineClip?.durationMs ?: 1)
+                    PreviewVideo(previewBinding, Modifier.fillMaxSize().graphicsLayer {
+                        scaleX = point.scale; scaleY = point.scale
+                        translationX = point.x * size.width; translationY = point.y * size.height; alpha = visualOpacity
+                    })
                     if (timelineActive || (editingMode == "AI Draft" && selectedDraft in drafts.indices)) {
                         val playing = if (timelineActive) timeline.clips.getOrNull(timelinePlaybackIndex) else null
                         val hook = playing?.hook ?: hookText
@@ -1005,14 +1021,14 @@ class MainActivity : ComponentActivity() {
                         val fallback = if (cues.isNotEmpty()) "" else if (until <= from || previewPosition in from until until) caption else ""
                         val displayedCaption = activeSegment?.text ?: fallback
                         if (hook.isNotBlank() || displayedCaption.isNotBlank()) {
-                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow) {
+                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow, captionPreset) {
                                 makeCaptionOverlay(hook, displayedCaption, subtitleSize,
-                                    if (subtitleYellow) Color.YELLOW else Color.WHITE).asImageBitmap()
+                                    if (subtitleYellow) Color.YELLOW else Color.WHITE, captionPreset).asImageBitmap()
                             }
                             Image(
                                 bitmap = previewBitmap,
                                 contentDescription = "Preview of time-synchronized subtitles",
-                                modifier = Modifier.fillMaxHeight().aspectRatio(9f / 16f),
+                                modifier = Modifier.fillMaxHeight().aspectRatio(9f / 16f).graphicsLayer { alpha = visualOpacity },
                                 contentScale = ContentScale.FillBounds
                             )
                         }
@@ -1128,6 +1144,7 @@ class MainActivity : ComponentActivity() {
                                                 if (!modelReady) { selectedTab = StudioTab.CAPTIONS; status = "Download the speech model once, then return to the editor." }
                                                 else if (clip != null) launchSpeech(SpeechJobMode.TIMELINE, listOf(SpeechRange(0, clip.startMs, clip.endMs)), clip.id)
                                             }) { Text(if (modelReady) "Generate captions" else "Set up auto captions") }
+                                            CaptionPresetPicker(captionPreset, !busy) { captionPreset = it; approved = false }
                                             Text("Text size · ${subtitleSize.toInt()}")
                                             Slider(value = subtitleSize, enabled = !busy, valueRange = 28f..55f, onValueChange = { subtitleSize = it; approved = false })
                                             FilterChip(selected = subtitleYellow, enabled = !busy, onClick = { subtitleYellow = !subtitleYellow; approved = false }, label = { Text(if (subtitleYellow) "Yellow text" else "White text") })
@@ -1149,6 +1166,17 @@ class MainActivity : ComponentActivity() {
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             FilterChip(selected = !fillFrame, enabled = !busy, onClick = { fillFrame = false; approved = false }, label = { Text("Fit") })
                                             FilterChip(selected = fillFrame, enabled = !busy, onClick = { fillFrame = true; approved = false }, label = { Text("Fill & crop") })
+                                        }
+                                    }
+                                    EditorTool.EFFECTS -> {
+                                        timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
+                                            MotionControls(clip, !busy, onChange = { changed ->
+                                                updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) changed else it }))
+                                            }, onSeek = { endFrame ->
+                                                player.pause()
+                                                val index = timeline.clips.indexOfFirst { it.id == clip.id }
+                                                seekTimeline(TimelineModel.offset(timeline.clips, index) + if (endFrame) clip.durationMs - 1 else 0)
+                                            })
                                         }
                                     }
                                     EditorTool.MORE -> StudioCard("Project tools") {
@@ -1743,9 +1771,9 @@ class MainActivity : ComponentActivity() {
                         val draft = drafts.getOrNull(selectedDraft)
                         val trimStartMs = (duration * start).toLong()
                         val overlay = if (draft != null && subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()) {
-                            segmentSubtitleOverlay(hookText, subtitleSegments, trimStartMs, subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE)
+                            segmentSubtitleOverlay(hookText, subtitleSegments, trimStartMs, subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE, preset = captionPreset)
                         } else if (draft != null) {
-                            timedCaptionOverlay(hookText, captionText, draft.captionStartMs, draft.captionEndMs, trimStartMs, subtitleSize = subtitleSize, subtitleColor = if (subtitleYellow) Color.YELLOW else Color.WHITE)
+                            timedCaptionOverlay(hookText, captionText, draft.captionStartMs, draft.captionEndMs, trimStartMs, subtitleSize = subtitleSize, subtitleColor = if (subtitleYellow) Color.YELLOW else Color.WHITE, preset = captionPreset)
                         } else BitmapOverlay.createStaticBitmapOverlay(makeCaptionOverlay(hookText, captionText))
                         effects.add(OverlayEffect(listOf(overlay)))
                     }
@@ -1794,7 +1822,7 @@ class MainActivity : ComponentActivity() {
                             MediaAssets.checkTimeline(this@MainActivity, source.toString(), duration, timeline.clips, music)
                         }
                         if (activeExportToken !== requestToken) return@launch
-                        if (timelineMode) transformer.start(TimelineExport.composition(source, timeline.clips, vertical, fillFrame, mute, subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE, music), output.absolutePath)
+                        if (timelineMode) transformer.start(TimelineExport.composition(source, timeline.clips, vertical, fillFrame, mute, subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE, music, captionPreset), output.absolutePath)
                         else transformer.start(edited, output.absolutePath)
                     }
                     catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
