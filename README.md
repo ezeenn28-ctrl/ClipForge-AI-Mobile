@@ -73,3 +73,5 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Preview uses a TextureView and explicitly transfers ownership between inline/fullscreen views. Releasing a stale view cannot detach the active preview. Host tests exercise ownership and playback command ordering, not real decoder output.
 - Speech highlight ranking now uses the primary source transcript only, preventing another video's timeline captions from being ranked against the wrong duration. Subtitle bitmap replacement recycles the prior cached bitmap.
 - The user-provided screen recording showed source playback followed by a black timeline preview with captions. Physical verification of this repair is still required; automated checks alone do not establish that the device freeze is resolved.
+
+- Caption repair: an empty opening hook no longer moves subtitle text into the top hook position. Manual-caption export now retains selected subtitle size/color. Primary-source selected-clip cues remain eligible for speech ranking while unrelated video cues are excluded.

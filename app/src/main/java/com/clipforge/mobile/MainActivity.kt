@@ -156,8 +156,9 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
         setShadowLayer(5f, 2f, 3f, Color.BLACK)
     }
-    val lines = listOf(hook.take(65), caption.take(100)).filter { it.isNotBlank() }
+    val lines = listOf(hook.take(65), caption.take(100))
     lines.forEachIndexed { index, line ->
+        if (line.isBlank()) return@forEachIndexed
         val words = line.split(Regex("\\s+"))
         val chunks = mutableListOf<String>()
         var current = ""
@@ -191,7 +192,9 @@ fun timedCaptionOverlay(
     startMs: Long,
     endMs: Long,
     trimStartMs: Long,
-    calibrateClock: Boolean = false
+    calibrateClock: Boolean = false,
+    subtitleSize: Float = 39f,
+    subtitleColor: Int = Color.WHITE
 ): BitmapOverlay {
     var withCaption: Bitmap? = null
     var withoutCaption: Bitmap? = null
@@ -202,7 +205,7 @@ fun timedCaptionOverlay(
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val timeUs = if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs
             return if (untilUs <= fromUs || timeUs in fromUs until untilUs) {
-                withCaption ?: makeCaptionOverlay(hook, caption).also { withCaption = it }
+                withCaption ?: makeCaptionOverlay(hook, caption, subtitleSize, subtitleColor).also { withCaption = it }
             } else withoutCaption ?: makeCaptionOverlay(hook, "").also { withoutCaption = it }
         }
         override fun release() {
@@ -1529,8 +1532,14 @@ class MainActivity : ComponentActivity() {
                     launchSpeech(SpeechJobMode.FULL_VIDEO, listOf(SpeechRange(0, 0, duration)), "")
                 }) { Text(if (batchRunning) "Processing offline…" else "Transcribe full video (optional)") }
                 }
-                Button(enabled = !busy && sourceTranscriptSegments.isNotEmpty() && duration > 0, onClick = {
-                    val speech = sourceTranscriptSegments.toList()
+                val primarySpeech = sourceTranscriptSegments.ifEmpty {
+                    batchResults.values.flatten().distinctBy { it.startMs to it.endMs }.sortedBy { it.startMs }
+                }.ifEmpty {
+                    val targetSource = timeline.clips.firstOrNull { it.id == timelineSubtitleTarget }?.resolvedSource(video.toString())
+                    if (timelineSubtitleTarget.isBlank() || targetSource == video.toString()) transcriptSegments else emptyList()
+                }
+                Button(enabled = !busy && primarySpeech.isNotEmpty() && duration > 0, onClick = {
+                    val speech = primarySpeech.toList()
                     val sourceDuration = duration
                     approved = false
                     analyzing = true
@@ -1540,6 +1549,7 @@ class MainActivity : ComponentActivity() {
                             val detected = TranscriptHighlights.detect(speech, sourceDuration)
                             runOnUiThread {
                                 drafts = detected
+                                sourceTranscriptSegments = speech
                                 batchResults = emptyMap()
                                 selectedDraft = -1
                                 subtitleDraftIndex = -1
@@ -1624,7 +1634,7 @@ class MainActivity : ComponentActivity() {
                         val overlay = if (draft != null && subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()) {
                             segmentSubtitleOverlay(hookText, subtitleSegments, trimStartMs, subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE)
                         } else if (draft != null) {
-                            timedCaptionOverlay(hookText, captionText, draft.captionStartMs, draft.captionEndMs, trimStartMs)
+                            timedCaptionOverlay(hookText, captionText, draft.captionStartMs, draft.captionEndMs, trimStartMs, subtitleSize = subtitleSize, subtitleColor = if (subtitleYellow) Color.YELLOW else Color.WHITE)
                         } else BitmapOverlay.createStaticBitmapOverlay(makeCaptionOverlay(hookText, captionText))
                         effects.add(OverlayEffect(listOf(overlay)))
                     }
