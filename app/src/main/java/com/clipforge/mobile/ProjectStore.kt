@@ -41,7 +41,15 @@ object ProjectStore {
         segments("sourceSpeech", safe.sourceSegments)
         put("timeline.mode", safe.timelineMode); put("timeline.selected", safe.selectedTimelineId)
         put("timeline.count", safe.timelineClips.size)
+        put("timeline.current", safe.currentTimelineId)
+        put("music.present", safe.music != null)
+        safe.music?.let { music ->
+            put("music.source", music.source); put("music.name", music.name); put("music.duration", music.durationMs)
+            put("music.start", music.startMs); put("music.end", music.endMs); put("music.offset", music.timelineStartMs)
+            put("music.volume", music.volume); put("music.fadeIn", music.fadeInMs); put("music.fadeOut", music.fadeOutMs)
+        }
         safe.timelineClips.forEachIndexed { i, clip ->
+            put("timeline.$i.source", clip.source); put("timeline.$i.duration", clip.sourceDurationMs); put("timeline.$i.name", clip.sourceName)
             put("timeline.$i.id", clip.id); put("timeline.$i.start", clip.startMs); put("timeline.$i.end", clip.endMs)
             put("timeline.$i.hook", clip.hook); put("timeline.$i.caption", clip.caption)
             put("timeline.$i.captionStart", clip.captionStartMs); put("timeline.$i.captionEnd", clip.captionEndMs)
@@ -91,14 +99,19 @@ object ProjectStore {
         val timeline = (0 until timelineCount).map { i ->
             TimelineClip(text("timeline.$i.id"), number("timeline.$i.start"), number("timeline.$i.end"),
                 text("timeline.$i.hook"), text("timeline.$i.caption"), number("timeline.$i.captionStart"), number("timeline.$i.captionEnd"),
-                text("timeline.$i.effect"), text("timeline.$i.volume").toFloat(), number("timeline.$i.fadeIn"), number("timeline.$i.fadeOut"), segments("timeline.$i.cues"))
+                text("timeline.$i.effect"), text("timeline.$i.volume").toFloat(), number("timeline.$i.fadeIn"), number("timeline.$i.fadeOut"), segments("timeline.$i.cues"),
+                source = data.getProperty("timeline.$i.source", ""), sourceDurationMs = data.getProperty("timeline.$i.duration", "0").toLong(), sourceName = data.getProperty("timeline.$i.name", ""))
         }
+        val music = if (data.getProperty("music.present", "false").toBooleanStrict()) MusicTrack(
+            text("music.source"), text("music.name"), number("music.duration"), number("music.start"), number("music.end"),
+            number("music.offset"), text("music.volume").toFloat(), number("music.fadeIn"), number("music.fadeOut")) else null
         return EditorProject(text("source"), number("duration"), number("start"), number("end"),
             text("mode"), bool("vertical"), bool("mute"), drafts, integer("selected"), text("hook"), text("caption"),
             text("effect"), text("subtitleSize").toFloat(), bool("subtitleYellow"), integer("subtitleDraft"),
             segments("current"), segments("sourceSpeech"), draftSegments,
             fillFrame = data.getProperty("fillFrame", "false").toBooleanStrict(),
             lastSpeechJobId = data.getProperty("speechJob", ""), lastSpeechUnits = data.getProperty("speechUnits", "0").toInt(),
-            timelineClips = timeline, timelineMode = data.getProperty("timeline.mode", "false").toBooleanStrict(), selectedTimelineId = data.getProperty("timeline.selected", "")).also { it.validate() }
+            timelineClips = timeline, timelineMode = data.getProperty("timeline.mode", "false").toBooleanStrict(), selectedTimelineId = data.getProperty("timeline.selected", ""),
+            currentTimelineId = data.getProperty("timeline.current", ""), music = music).also { it.validate() }
     }
 }

@@ -100,7 +100,7 @@ fun TimelineEditor(
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
                     clips.forEachIndexed { index, clip ->
-                        val thumbnail = rememberClipThumbnail(context, source, clip.startMs, enabled)
+                        val thumbnail = rememberClipThumbnail(context, clip.source.takeIf { it.isNotBlank() }?.let(Uri::parse) ?: source, clip.startMs, enabled)
                         Surface(onClick = { onSelect(clip.id); onSeek(TimelineModel.offset(clips, index)) }, enabled = enabled,
                             modifier = Modifier.width((clip.durationMs * scale).dp).height(64.dp), shape = RoundedCornerShape(8.dp),
                             color = if (clip.id == selected?.id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
@@ -154,9 +154,11 @@ fun TimelineEditor(
             var from by remember(clip.id, clip.startMs) { mutableStateOf(Timecode.precise(clip.startMs)) }
             var until by remember(clip.id, clip.endMs) { mutableStateOf(Timecode.precise(clip.endMs)) }
             fun update(changed: TimelineClip) = edit(clips.map { if (it.id == clip.id) changed else it })
+            val clipDuration = clip.resolvedDuration(sourceDurationMs)
             StudioCard("Clip ${selectedIndex + 1} · source range") {
-                SourceTrimHandles(clip, sourceDurationMs,
-                    clips.flatMap { listOf(it.startMs, it.endMs) } + clip.subtitles.flatMap { listOf(it.startMs, it.endMs) } + listOf(0L, sourceDurationMs),
+                if (clip.sourceName.isNotBlank()) Text(clip.sourceName, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                SourceTrimHandles(clip, clipDuration,
+                    clips.filter { it.resolvedSource(source?.toString().orEmpty()) == clip.resolvedSource(source?.toString().orEmpty()) }.flatMap { listOf(it.startMs, it.endMs) } + clip.subtitles.flatMap { listOf(it.startMs, it.endMs) } + listOf(0L, clipDuration),
                     snapping, enabled, onCommit = { update(it) })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = from, onValueChange = { from = it.take(16) }, label = { Text("Source in") }, enabled = enabled, modifier = Modifier.weight(1f))
@@ -164,7 +166,7 @@ fun TimelineEditor(
                 }
                 OutlinedButton(enabled = enabled, onClick = {
                     val a = Timecode.parse(from); val b = Timecode.parse(until)
-                    if (a == null || b == null || !Timecode.validTrim(a, b, sourceDurationMs)) onMessage("Enter a valid source range")
+                    if (a == null || b == null || !Timecode.validTrim(a, b, clipDuration)) onMessage("Enter a valid source range")
                     else update(clip.copy(startMs = a, endMs = b, fadeInMs = minOf(clip.fadeInMs, b - a), fadeOutMs = minOf(clip.fadeOutMs, b - a)))
                 }) { Text("Apply clip trim") }
                 OutlinedTextField(value = clip.hook, onValueChange = { update(clip.copy(hook = it.take(65))) }, label = { Text("Clip hook") }, enabled = enabled, modifier = Modifier.fillMaxWidth())

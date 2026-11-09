@@ -58,3 +58,11 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Selected cuts have 44 dp touch targets for dragging source in/out points. Release commits one undoable edit; gesture cancellation discards the draft. Exact timecode fields remain available.
 - Optional snapping uses nearby sequence boundaries while scrubbing and source cut/subtitle boundaries while trimming, with a bounded 150 ms tolerance. Trim bounds preserve at least 100 ms and clamp fade lengths.
 - Scrub requests are conflated and limited to about 30 updates per second, retaining the latest requested position. This reduces seek pressure; device responsiveness still needs physical verification.
+
+## Multiple videos and local music
+- Add up to 12 local videos per import to the existing timeline (60 cuts / six hours total). Each cut retains its own source URI, duration, subtitles and name through split, reorder, undo and restore. The primary source remains available for AI shortlist work.
+- A selected source can be relinked to the original media; local access and durations are checked before timeline export. Media and music are referenced with persisted document grants rather than copied into backups. Metadata backups do not include media or grants.
+- One local music track supports source in/out timecodes, timeline placement, volume and fades. It plays once, with silence outside its placement, and stops at the sequence end. Original sound keeps per-cut volume/fades and an independent mute control.
+- Preview synchronizes a second local audio player to the video clock; export mixes a clipped audio sequence using the same saved settings. Host tests verify composition structure and gain math, not physical audio/video sync or hardware codec compatibility.
+- Timeline output uses a consistent 1080 × 1920 or 1920 × 1080 canvas with fit/crop framing. Different videos can be combined on that canvas.
+- Imports, music edits, relinking and restoration revoke export approval. Nothing is exported or uploaded automatically.

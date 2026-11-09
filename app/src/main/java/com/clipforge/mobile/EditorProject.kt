@@ -25,7 +25,9 @@ data class EditorProject(
     val lastSpeechUnits: Int = 0,
     val timelineClips: List<TimelineClip> = emptyList(),
     val timelineMode: Boolean = false,
-    val selectedTimelineId: String = ""
+    val selectedTimelineId: String = "",
+    val currentTimelineId: String = "",
+    val music: MusicTrack? = null
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 
@@ -36,6 +38,8 @@ data class EditorProject(
         require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown visual effect" }
         require(subtitleSize.isFinite() && subtitleSize in 28f..55f) { "Invalid subtitle size" }
         TimelineModel.validate(timelineClips, durationMs)
+        music?.validate()
+        require(currentTimelineId.isEmpty() || timelineClips.any { it.id == currentTimelineId }) { "Invalid subtitle source association" }
         require(selectedTimelineId.isEmpty() || timelineClips.any { it.id == selectedTimelineId }) { "Invalid selected timeline clip" }
         require(lastSpeechUnits in 0..2880) { "Invalid applied speech checkpoint" }
         require(drafts.size <= 15) { "Too many drafts" }
@@ -46,10 +50,11 @@ data class EditorProject(
             require(it.effect in listOf("None", "Zoom", "Monochrome")) { "Invalid draft effect" }
         }
         require(draftSegments.size <= 15 && draftSegments.keys.all { it in drafts.indices }) { "Invalid draft subtitles" }
-        (listOf(currentSegments, sourceSegments) + draftSegments.values).forEach { segments ->
+        val currentDuration = timelineClips.firstOrNull { it.id == currentTimelineId }?.resolvedDuration(durationMs) ?: durationMs
+        (listOf(currentSegments to currentDuration, sourceSegments to durationMs) + draftSegments.values.map { it to durationMs }).forEach { (segments, segmentDuration) ->
             require(segments.size <= 20_000) { "Transcript exceeds project limit" }
             segments.forEach {
-                require(it.startMs >= 0 && it.endMs > it.startMs && it.endMs <= durationMs) { "Invalid subtitle timing" }
+                require(it.startMs >= 0 && it.endMs > it.startMs && it.endMs <= segmentDuration) { "Invalid subtitle timing" }
             }
         }
     }

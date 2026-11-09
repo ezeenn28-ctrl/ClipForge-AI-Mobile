@@ -15,10 +15,18 @@ data class TimelineClip(
     val volume: Float = 1f,
     val fadeInMs: Long = 0,
     val fadeOutMs: Long = 0,
-    val subtitles: List<WhisperNative.Segment> = emptyList()
+    val subtitles: List<WhisperNative.Segment> = emptyList(),
+    val source: String = "",
+    val sourceDurationMs: Long = 0,
+    val sourceName: String = ""
 ) {
     val durationMs: Long get() = endMs - startMs
-    fun validate(sourceDurationMs: Long) {
+    fun resolvedSource(primary: String): String = source.ifBlank { primary }
+    fun resolvedDuration(primaryDurationMs: Long): Long = if (source.isBlank()) primaryDurationMs else sourceDurationMs
+    fun validate(primaryDurationMs: Long) {
+        val sourceDurationMs = resolvedDuration(primaryDurationMs)
+        require(source.isEmpty() || source.startsWith("content://") || source.startsWith("file://")) { "Timeline source must be local" }
+        require(sourceDurationMs in 1..86_400_000) { "Invalid timeline source duration" }
         require(id.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "Invalid timeline clip ID" }
         require(startMs >= 0 && endMs > startMs && endMs <= sourceDurationMs) { "Invalid timeline trim" }
         require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown timeline effect" }

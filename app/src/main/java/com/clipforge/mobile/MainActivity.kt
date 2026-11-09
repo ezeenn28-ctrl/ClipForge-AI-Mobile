@@ -307,6 +307,9 @@ class MainActivity : ComponentActivity() {
         var captionFrom by remember { mutableStateOf("0") }
         var captionTo by remember { mutableStateOf("5") }
         var timeline by remember { mutableStateOf(TimelineHistory()) }
+        var music by remember { mutableStateOf<MusicTrack?>(null) }
+        var assetImporting by remember { mutableStateOf(false) }
+        var relinkTimelineId by remember { mutableStateOf("") }
         var timelineMode by remember { mutableStateOf(false) }
         var selectedTimelineId by remember { mutableStateOf("") }
         var timelinePlaybackIndex by remember { mutableIntStateOf(0) }
@@ -378,7 +381,7 @@ class MainActivity : ComponentActivity() {
         var projectLoading by remember { mutableStateOf(true) }
         var projectMessage by remember { mutableStateOf("Checking saved project…") }
         var expectedRestoredDuration by remember { mutableLongStateOf(0L) }
-        val busy = projectLoading || metadataBusy || speechStarting || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
+        val busy = assetImporting || projectLoading || metadataBusy || speechStarting || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
         val deliveryDuration = if (timelineMode) TimelineModel.duration(timeline.clips) else (duration * end).toLong() - (duration * start).toLong()
         val exportReady = video != null && duration > 0 && if (timelineMode) timeline.clips.isNotEmpty() else (editingMode != "AI Draft" || selectedDraft >= 0)
         val campaignIssues = if (campaignEnabled) CampaignRules(campaignTags,
@@ -413,9 +416,11 @@ class MainActivity : ComponentActivity() {
             pendingSpeechRequest = null
         }
         val launchSpeech: (SpeechJobMode, List<SpeechRange>, String) -> Unit = { mode, ranges, target ->
-            val source = video
-            if (source != null && duration > 0) {
-                val request = SpeechJob(java.util.UUID.randomUUID().toString(), source.toString(), duration, mode, ranges, target)
+            val selected = if (mode == SpeechJobMode.TIMELINE) timeline.clips.firstOrNull { it.id == target } else null
+            val source = selected?.resolvedSource(video?.toString().orEmpty())?.let(Uri::parse) ?: video
+            val speechDuration = selected?.resolvedDuration(duration) ?: duration
+            if (source != null && speechDuration > 0) {
+                val request = SpeechJob(java.util.UUID.randomUUID().toString(), source.toString(), speechDuration, mode, ranges, target)
                 val preferences = getSharedPreferences("processing", MODE_PRIVATE)
                 if (android.os.Build.VERSION.SDK_INT >= 33 &&
                     androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
@@ -427,6 +432,34 @@ class MainActivity : ComponentActivity() {
             }
         }
         val player = remember { ExoPlayer.Builder(this).build() }
+        val musicPlayer = remember { ExoPlayer.Builder(this).build() }
+        DisposableEffect(musicPlayer) {
+            val listener = object : Player.Listener {
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    approved = false
+                    status = "Music unavailable: replace or relink the local music file. ${error.message}"
+                }
+            }
+            musicPlayer.addListener(listener)
+            onDispose { musicPlayer.release() }
+        }
+        LaunchedEffect(music?.source, music?.startMs, music?.endMs, timelineActive, TimelineModel.duration(timeline.clips)) {
+            musicPlayer.pause()
+            val track = music
+            val length = track?.activeDuration(TimelineModel.duration(timeline.clips)) ?: 0
+            if (track != null && timelineActive && length > 0) {
+                musicPlayer.setMediaItem(MediaItem.Builder().setUri(Uri.parse(track.source)).setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder().setStartPositionMs(track.startMs).setEndPositionMs(track.startMs + length).build()).build())
+                musicPlayer.prepare()
+            } else musicPlayer.clearMediaItems()
+        }
+        DisposableEffect(Unit) {
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) { player.pause(); musicPlayer.pause() }
+            }
+            lifecycle.addObserver(observer)
+            onDispose { lifecycle.removeObserver(observer) }
+        }
         LaunchedEffect(video) {
             val source = video
             if (source == null) sourceName = "Imported video"
@@ -461,6 +494,8 @@ class MainActivity : ComponentActivity() {
             val previewEffects = creativeEffects(if (timelineActive) playingTimelineClip?.effect ?: "None" else effectChoice).toMutableList()
             if (vertical) previewEffects.add(Presentation.createForAspectRatio(9f / 16f,
                 if (fillFrame) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT))
+            if (timelineActive && !vertical) previewEffects.add(Presentation.createForAspectRatio(16f / 9f,
+                if (fillFrame) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT))
             player.setVideoEffects(previewEffects)
         }
         val seekTimeline: (Long) -> Unit = { time ->
@@ -475,6 +510,9 @@ class MainActivity : ComponentActivity() {
             try {
                 TimelineModel.validate(changed.clips, duration)
                 timeline = changed
+                if (timelineSubtitleTarget.isNotBlank() && changed.clips.none { it.id == timelineSubtitleTarget }) {
+                    timelineSubtitleTarget = ""; transcriptSegments = emptyList(); transcript = ""
+                }
                 if (changed.clips.none { it.id == selectedTimelineId }) selectedTimelineId = changed.clips.firstOrNull()?.id.orEmpty()
                 timelinePosition = timelinePosition.coerceIn(0, TimelineModel.duration(changed.clips))
                 approved = false
@@ -488,7 +526,7 @@ class MainActivity : ComponentActivity() {
                 val cues = if (subtitleDraftIndex == selectedDraft && subtitleSegments.isNotEmpty()) subtitleSegments else sourceTranscriptSegments.filter { it.endMs > from && it.startMs < until }
                 val draft = drafts.getOrNull(selectedDraft)
                 val clip = TimelineClip(java.util.UUID.randomUUID().toString(), from, until, hookText, captionText,
-                    draft?.captionStartMs ?: from, draft?.captionEndMs ?: until, effectChoice, subtitles = cues)
+                    draft?.captionStartMs ?: from, draft?.captionEndMs ?: until, effectChoice, subtitles = cues, source = video.toString(), sourceDurationMs = duration, sourceName = sourceName)
                 updateTimeline(timeline.edit(timeline.clips + clip))
                 if (timeline.clips.any { it.id == clip.id }) {
                     selectedTimelineId = clip.id; timelineMode = true
@@ -496,11 +534,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        LaunchedEffect(video, timelineActive, timeline.clips.map { Triple(it.id, it.startMs, it.endMs) }) {
+        LaunchedEffect(video, timelineActive, timeline.clips.map { listOf(it.id, it.startMs, it.endMs, it.source) }) {
             val source = video ?: return@LaunchedEffect
             player.pause()
             if (timelineActive) {
-                val items = timeline.clips.map { clip -> MediaItem.Builder().setUri(source)
+                val items = timeline.clips.map { clip -> MediaItem.Builder().setUri(Uri.parse(clip.resolvedSource(source.toString())))
                     .setClippingConfiguration(MediaItem.ClippingConfiguration.Builder().setStartPositionMs(clip.startMs).setEndPositionMs(clip.endMs).build()).build() }
                 val position = TimelineModel.position(timeline.clips, timelinePosition)!!
                 player.setMediaItems(items, position.index, position.localMs)
@@ -536,6 +574,8 @@ class MainActivity : ComponentActivity() {
                     appliedSpeechId = saved.lastSpeechJobId
                     appliedSpeechUnits = saved.lastSpeechUnits
                     timeline = TimelineHistory(saved.timelineClips)
+                    music = saved.music
+                    timelineSubtitleTarget = saved.currentTimelineId
                     timelineMode = saved.timelineMode
                     selectedTimelineId = saved.selectedTimelineId.ifEmpty { saved.timelineClips.firstOrNull()?.id.orEmpty() }
                     timelinePosition = 0; timelinePlaybackIndex = 0
@@ -618,6 +658,77 @@ class MainActivity : ComponentActivity() {
             }
             pendingSrt = ""
         }
+        val timelinePicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
+            if (uris.isNotEmpty() && !busy && video != null) {
+                assetImporting = true; approved = false
+                exportScope.launch {
+                    try {
+                        require(uris.size <= 12 && timeline.clips.size + uris.size <= 60) { "Import up to 12 videos at once, with at most 60 cuts" }
+                        val infos = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            uris.map { uri ->
+                                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                MediaAssets.inspect(this@MainActivity, uri, true)
+                            }
+                        }
+                        val added = infos.map { info -> TimelineClip(java.util.UUID.randomUUID().toString(), 0, info.durationMs,
+                            source = info.uri, sourceDurationMs = info.durationMs, sourceName = info.name) }
+                        val next = timeline.edit(timeline.clips + added)
+                        TimelineModel.validate(next.clips, duration)
+                        updateTimeline(next)
+                        selectedTimelineId = added.first().id; timelineMode = true
+                        timelineSubtitleTarget = selectedTimelineId; transcriptSegments = emptyList(); transcript = ""
+                        subtitleDraftIndex = -1; subtitleSegments = emptyList()
+                        timelinePosition = TimelineModel.offset(next.clips, next.clips.size - added.size)
+                        status = "Added ${added.size} local videos. Trim and review each source before export."
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) { status = "Video import failed: ${error.message}" }
+                    finally { assetImporting = false }
+                }
+            }
+        }
+        val timelineRelinker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            val selected = timeline.clips.firstOrNull { it.id == relinkTimelineId }
+            relinkTimelineId = ""
+            if (uri != null && selected != null && !busy) {
+                assetImporting = true; approved = false
+                exportScope.launch {
+                    try {
+                        val info = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            MediaAssets.inspect(this@MainActivity, uri, true)
+                        }
+                        require(kotlin.math.abs(info.durationMs - selected.resolvedDuration(duration)) <= 1000) { "Choose the same original video duration" }
+                        val previousSource = selected.resolvedSource(video.toString())
+                        val next = timeline.clips.map { clip -> if (clip.resolvedSource(video.toString()) == previousSource)
+                            clip.copy(source = info.uri, sourceDurationMs = info.durationMs, sourceName = info.name) else clip }
+                        TimelineModel.validate(next, duration)
+                        updateTimeline(timeline.edit(next))
+                        status = "Source relinked. Verify this is the original footage and review subtitles again."
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) { status = "Relink failed: ${error.message}" }
+                    finally { assetImporting = false }
+                }
+            }
+        }
+        val musicPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            if (uri != null && !busy) {
+                assetImporting = true; approved = false
+                exportScope.launch {
+                    try {
+                        val info = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            MediaAssets.inspect(this@MainActivity, uri, false)
+                        }
+                        val previous = music
+                        music = if (previous != null && previous.durationMs == info.durationMs) previous.copy(source = info.uri, name = info.name)
+                            else MusicTrack(info.uri, info.name, info.durationMs)
+                        status = "Local music added. Review the balance with original audio."
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) { status = "Music import failed: ${error.message}" }
+                    finally { assetImporting = false }
+                }
+            }
+        }
         val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (uri != null) {
                 try {
@@ -632,7 +743,7 @@ class MainActivity : ComponentActivity() {
                     return@rememberLauncherForActivityResult
                 }
                 appliedSpeechId = ""; appliedSpeechUnits = 0
-                timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""; timelinePosition = 0
+                timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""; timelinePosition = 0; music = null; timelineSubtitleTarget = ""
                 batchResults = emptyMap()
                 sourceVerified = false
                 rightsVerified = false
@@ -716,7 +827,8 @@ class MainActivity : ComponentActivity() {
             hook = hookText, caption = captionText, effect = effectChoice,
             subtitleSize = subtitleSize, subtitleYellow = subtitleYellow, subtitleDraftIndex = subtitleDraftIndex,
             currentSegments = transcriptSegments, sourceSegments = sourceTranscriptSegments,
-            draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits, timelineClips = timeline.clips, timelineMode = timelineMode, selectedTimelineId = selectedTimelineId
+            draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits, timelineClips = timeline.clips, timelineMode = timelineMode, selectedTimelineId = selectedTimelineId,
+            currentTimelineId = timelineSubtitleTarget.takeIf { id -> timeline.clips.any { it.id == id } }.orEmpty(), music = music
         ) else null
         SideEffect { latestBackupProject.set(projectSnapshot) }
         LaunchedEffect(projectSnapshot, projectLoading, metadataBusy) {
@@ -751,6 +863,14 @@ class MainActivity : ComponentActivity() {
                     previewPosition = player.currentPosition.coerceAtLeast(0L)
                     player.volume = if (mute) 0f else 1f
                 }
+                val track = music
+                val localMusic = timelinePosition - (track?.timelineStartMs ?: 0)
+                val musicLength = track?.activeDuration(TimelineModel.duration(timeline.clips)) ?: 0
+                if (timelineActive && track != null && localMusic >= 0 && localMusic < musicLength && musicPlayer.mediaItemCount > 0) {
+                    if (kotlin.math.abs(musicPlayer.currentPosition - localMusic) > 120) musicPlayer.seekTo(localMusic)
+                    musicPlayer.volume = track.gain(timelinePosition, TimelineModel.duration(timeline.clips))
+                    musicPlayer.playWhenReady = player.isPlaying
+                } else musicPlayer.pause()
                 previewPlaying = player.isPlaying
                 delay(50)
             }
@@ -771,7 +891,11 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(speechJob?.id, speechJob?.results?.size, speechJob?.status, video, duration) {
             val job = speechJob
-            if (job != null && job.source == video?.toString() && job.durationMs == duration) {
+            val target = timeline.clips.firstOrNull { it.id == job?.targetId }
+            val jobMatches = job != null && if (job.mode == SpeechJobMode.TIMELINE)
+                target != null && target.resolvedSource(video?.toString().orEmpty()) == job.source && target.resolvedDuration(duration) == job.durationMs
+                else job.source == video?.toString() && job.durationMs == duration
+            if (job != null && jobMatches) {
                 if (!job.active) status = job.message
                 if (job.results.isNotEmpty() && (appliedSpeechId != job.id || appliedSpeechUnits != job.results.size)) {
                     val sameJob = appliedSpeechId == job.id
@@ -788,7 +912,7 @@ class MainActivity : ComponentActivity() {
                                 val merged = segments.map { existing[it.startMs to it.endMs] ?: it }
                                 sourceTranscriptSegments = merged
                                 timelineSubtitleTarget = ""
-                                timeline = timeline.copy(clips = timeline.clips.map { clip -> if (clip.subtitles.isEmpty()) clip.copy(subtitles = merged.filter { it.endMs > clip.startMs && it.startMs < clip.endMs }) else clip })
+                                timeline = timeline.copy(clips = timeline.clips.map { clip -> if (clip.resolvedSource(video.toString()) == video.toString() && clip.subtitles.isEmpty()) clip.copy(subtitles = merged.filter { it.endMs > clip.startMs && it.startMs < clip.endMs }) else clip })
                                 transcriptSegments = merged
                                 transcript = merged.joinToString("\n") { it.text }
                                 subtitleDraftIndex = -1
@@ -801,6 +925,7 @@ class MainActivity : ComponentActivity() {
                             grouped[index]?.takeIf { matches(index) }?.let { segments ->
                                 batchResults = batchResults + (index to segments)
                                 if (selectedDraft == index) {
+                                    timelineSubtitleTarget = ""
                                     transcriptSegments = segments; subtitleSegments = segments; subtitleDraftIndex = index
                                     transcript = segments.joinToString("\n") { it.text }; approved = false
                                 }
@@ -816,10 +941,13 @@ class MainActivity : ComponentActivity() {
                         SpeechJobMode.TIMELINE -> {
                             val clip = timeline.clips.firstOrNull { it.id == job.targetId }
                             val range = job.ranges.first()
-                            grouped[0]?.takeIf { clip != null && clip.startMs == range.startMs && clip.endMs == range.endMs }?.let { cues ->
+                            grouped[0]?.takeIf { clip != null && clip.startMs == range.startMs && clip.endMs == range.endMs }?.let { segments ->
+                                val existing = if (sameJob) clip!!.subtitles.associateBy { it.startMs to it.endMs } else emptyMap()
+                                val cues = segments.map { existing[it.startMs to it.endMs] ?: it }
                                 timeline = timeline.copy(clips = timeline.clips.map { if (it.id == job.targetId) it.copy(subtitles = cues) else it })
                                 if (selectedTimelineId == job.targetId) {
                                     timelineSubtitleTarget = job.targetId; transcriptSegments = cues; transcript = cues.joinToString("\n") { it.text }
+                                    subtitleDraftIndex = -1; subtitleSegments = emptyList()
                                 }
                                 approved = false
                             }
@@ -969,7 +1097,7 @@ class MainActivity : ComponentActivity() {
                                 hookText = ""
                                 captionText = ""
                                 expectedRestoredDuration = 0
-                                timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""; timelinePosition = 0
+                                timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""; timelinePosition = 0; music = null; timelineSubtitleTarget = ""
                                 video = Uri.fromFile(output)
                                 drafts = emptyList()
                                 selectedDraft = -1
@@ -1060,7 +1188,8 @@ class MainActivity : ComponentActivity() {
                                 timelineMode = false
                                 start = draft.startMs.toFloat() / duration.toFloat()
                                 end = draft.endMs.toFloat() / duration.toFloat()
-                                val matching = batchResults[index] ?: (sourceTranscriptSegments.ifEmpty { transcriptSegments }).filter { it.startMs >= draft.startMs && it.startMs < draft.endMs }
+                                timelineSubtitleTarget = ""
+                                val matching = batchResults[index] ?: sourceTranscriptSegments.filter { it.startMs >= draft.startMs && it.startMs < draft.endMs }
                                 transcriptSegments = matching
                                 subtitleSegments = matching
                                 subtitleDraftIndex = if (matching.isNotEmpty()) index else -1
@@ -1085,15 +1214,27 @@ class MainActivity : ComponentActivity() {
                                                     FilterChip(selected = timelineMode, onClick = { timelineMode = true; approved = false }, label = { Text("Timeline editor") }, enabled = !busy)
                                                 }
                                                 if (timelineMode) {
+                                                    OutlinedButton(enabled = !busy, onClick = { timelinePicker.launch(arrayOf("video/*")) }) { Text("Add videos to timeline") }
+                                                    OutlinedButton(enabled = !busy && timeline.clips.any { it.id == selectedTimelineId }, onClick = {
+                                                        relinkTimelineId = selectedTimelineId; timelineRelinker.launch(arrayOf("video/*"))
+                                                    }) { Text("Relink selected source") }
                                                     TimelineEditor(this@MainActivity, video, duration, timeline, selectedTimelineId, timelinePosition, !busy,
                                                         onHistory = updateTimeline,
                                                         onSelect = { id ->
                                                             selectedTimelineId = id
                                                             timeline.clips.firstOrNull { it.id == id }?.let { clip ->
                                                                 timelineSubtitleTarget = id; transcriptSegments = clip.subtitles; transcript = clip.subtitles.joinToString("\n") { it.text }
+                                                                subtitleDraftIndex = -1; subtitleSegments = emptyList()
                                                             }
                                                         }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it })
                                                     Row(verticalAlignment = Alignment.CenterVertically) { Switch(enabled = !busy, checked = mute, onCheckedChange = { mute = it; approved = false }); Spacer(Modifier.width(8.dp)); Text("Mute all source audio") }
+                                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                        FilterChip(selected = vertical, enabled = !busy, onClick = { vertical = !vertical; approved = false }, label = { Text(if (vertical) "9:16 canvas" else "16:9 canvas") })
+                                                        FilterChip(selected = fillFrame, enabled = !busy, onClick = { fillFrame = !fillFrame; approved = false }, label = { Text(if (fillFrame) "Crop to fill" else "Fit in frame") })
+                                                    }
+                                                    MusicTrackEditor(music, TimelineModel.duration(timeline.clips), !busy && timeline.clips.isNotEmpty(),
+                                                        onPick = { musicPicker.launch(arrayOf("audio/*")) },
+                                                        onChange = { music = it; approved = false }, onMessage = { status = it })
                                                     Button(enabled = !busy && timeline.clips.isNotEmpty(), onClick = { selectedTab = StudioTab.EXPORT }) { Text("Review sequence export") }
                                                 } else {
                                                 StudioCard("Trim & framing", "Set an exact range, then choose how the frame fills the canvas.") {
@@ -1197,7 +1338,8 @@ class MainActivity : ComponentActivity() {
                                         if (speechJob != null && !speechJob.active && speechJob.status != SpeechJobStatus.COMPLETED) {
                                             StudioCard("Saved processing task", speechJob.message) {
                                                 Text("${speechJob.results.size}/${speechJob.units().size} audio windows saved")
-                                                Button(enabled = !busy && modelReady && speechJob.source == video?.toString() && speechJob.durationMs == duration,
+                                                Button(enabled = !busy && modelReady && ((speechJob.source == video?.toString() && speechJob.durationMs == duration) ||
+                                                    (speechJob.mode == SpeechJobMode.TIMELINE && timeline.clips.any { it.id == speechJob.targetId && it.resolvedSource(video.toString()) == speechJob.source && it.resolvedDuration(duration) == speechJob.durationMs })),
                                                     onClick = { enqueueSpeech(speechJob.copy(status = SpeechJobStatus.QUEUED)) }) { Text("Resume saved transcription") }
                                             }
                                         }
@@ -1297,14 +1439,16 @@ class MainActivity : ComponentActivity() {
                             transcriptSegments = changed
                             subtitleSegments = changed
                             val corrected = changed[segmentIndex]
+                            val cueSource = timeline.clips.firstOrNull { it.id == timelineSubtitleTarget }?.resolvedSource(video.toString()) ?: video.toString()
                             timeline = timeline.copy(clips = timeline.clips.map { clip ->
-                                if (timelineSubtitleTarget == clip.id) clip.copy(subtitles = changed)
+                                if (clip.resolvedSource(video.toString()) != cueSource) clip
+                                else if (timelineSubtitleTarget == clip.id) clip.copy(subtitles = changed)
                                 else clip.copy(subtitles = clip.subtitles.map { cue -> if (cue.startMs == corrected.startMs && cue.endMs == corrected.endMs) corrected else cue })
                             })
-                            sourceTranscriptSegments = sourceTranscriptSegments.map { original ->
+                            if (cueSource == video.toString()) sourceTranscriptSegments = sourceTranscriptSegments.map { original ->
                                 if (original.startMs == corrected.startMs && original.endMs == corrected.endMs) corrected else original
                             }
-                            if (selectedDraft >= 0 && subtitleDraftIndex == selectedDraft) batchResults = batchResults + (selectedDraft to changed)
+                            if (cueSource == video.toString() && selectedDraft >= 0 && subtitleDraftIndex == selectedDraft) batchResults = batchResults + (selectedDraft to changed)
                             transcript = changed.joinToString("\n") { it.text }
                             approved = false
                         }, label = { Text("Subtitle ${segmentIndex + 1}") }, modifier = Modifier.fillMaxWidth())
@@ -1359,6 +1503,7 @@ class MainActivity : ComponentActivity() {
                             start = chosen.startMs.toFloat() / duration
                             end = chosen.endMs.toFloat() / duration
                             subtitleDraftIndex = index
+                            timelineSubtitleTarget = ""; timelineMode = false
                             transcriptSegments = segments
                             subtitleSegments = segments
                             transcript = segments.joinToString(" ") { it.text }
@@ -1437,6 +1582,7 @@ class MainActivity : ComponentActivity() {
                                         StudioCard("Delivery details") {
                                             Text(if (timelineMode) "Sequence · ${timeline.clips.size} cuts · ${Timecode.precise(deliveryDuration)}" else "Range · ${Timecode.precise((duration * start).toLong())} — ${Timecode.precise((duration * end).toLong())}")
                                             Text("Frame · ${if (vertical) if (fillFrame) "9:16 crop" else "9:16 fit" else "Source aspect"}   /   Audio · ${if (mute) "Muted" else "Original"}")
+                                            if (timelineMode) Text("Music · ${music?.name ?: "None"} · Canvas ${if (vertical) "1080 × 1920" else "1920 × 1080"}")
                                             Text("Captions · ${if (timelineMode) TimelineModel.subtitles(timeline.clips).size else if (subtitleDraftIndex == selectedDraft) subtitleSegments.size else 0} timed cues")
                                         }
                                         StudioCard("Ready when you are") {
@@ -1507,11 +1653,19 @@ class MainActivity : ComponentActivity() {
                         }).build()
                     exportFile = output
                     activeTransformer = transformer
+                    player.pause(); musicPlayer.pause()
+                    exportScope.launch {
                     try {
-                        if (timelineMode) transformer.start(TimelineExport.composition(source, timeline.clips, vertical, fillFrame, mute, subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE), output.absolutePath)
+                        if (timelineMode) kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            MediaAssets.checkTimeline(this@MainActivity, source.toString(), duration, timeline.clips, music)
+                        }
+                        if (activeExportToken !== requestToken) return@launch
+                        if (timelineMode) transformer.start(TimelineExport.composition(source, timeline.clips, vertical, fillFrame, mute, subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE, music), output.absolutePath)
                         else transformer.start(edited, output.absolutePath)
                     }
-                    catch (e: Exception) { activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; status = "Export failed: ${e.message}" }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (e: Exception) { activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; approved = false; status = "Export failed: ${e.message}" }
+                    }
                 }) { Text(if (exporting) "Exporting approved clip…" else "Export approved MP4") }
                 OutlinedButton(enabled = !busy && approved && campaignIssues.isEmpty() && (if (timelineMode) TimelineModel.subtitles(timeline.clips).isNotEmpty() else subtitleDraftIndex == selectedDraft && selectedDraft >= 0 && subtitleSegments.isNotEmpty()), onClick = {
                     pendingSrt = if (timelineMode) SubtitleSrt.render(TimelineModel.subtitles(timeline.clips), 0, TimelineModel.duration(timeline.clips))
