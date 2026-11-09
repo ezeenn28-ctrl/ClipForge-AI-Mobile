@@ -593,8 +593,8 @@ class MainActivity : ComponentActivity() {
                     try {
                         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             MetadataGate.lock.withLock {
-                                val stream = contentResolver.openOutputStream(destination) ?: error("Unable to open backup destination")
                                 latestBackupProject.get()?.let { ProjectCatalog.save(filesDir, it) }
+                                val stream = contentResolver.openOutputStream(destination) ?: error("Unable to open backup destination")
                                 MetadataBackup.create(filesDir, stream)
                             }
                         }
@@ -1224,7 +1224,7 @@ class MainActivity : ComponentActivity() {
 
                                         if (!studioEditing || video == null) StudioCard(if (video == null) "Your workflow" else "Source footage", if (video == null) "" else "$sourceName · ${Timecode.format(duration)}") {
                 if (video == null) StudioWorkflowSteps()
-                if (video != null) Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }) { Text(if (video == null) "Import video" else "Replace source video") }
+                if (video != null) Button(enabled = !busy, onClick = { picker.launch(arrayOf("video/*")) }) { Text("New project") }
                 TextButton(enabled = !busy, onClick = { advancedImport = !advancedImport }) { Text(if (advancedImport) "Hide direct-link import" else "Import from a direct link") }
                 if (advancedImport) {
                 OutlinedTextField(enabled = !busy, value = link, onValueChange = { link = it }, label = { Text("Direct HTTPS MP4 link (optional)") }, modifier = Modifier.fillMaxWidth(), singleLine = true)

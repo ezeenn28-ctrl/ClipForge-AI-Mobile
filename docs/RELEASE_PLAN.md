@@ -20,7 +20,7 @@ Approved by the owner on 10 November 2026 (Asia/Manila).
 At upstream fdc0848, Actions #84 built the arm64 development APK and passed JVM
 and native speech checks. Both Android playback tests passed. The export test
 failed because it compared encoded width directly against portrait display width.
-The rotation-aware assertion is tracked separately; it must pass on Android.
+Actions #86 passed rotation-aware export assertions and exact-frame decoding checks on Android.
 
 Existing code contains timeline editing, multiple videos, one local music track,
 subtitle generation/correction, sampled speech highlight ranking, autosave,
@@ -29,7 +29,7 @@ describe implementation, not physical-device acceptance.
 
 ## Ordered release gates
 
-1. [ ] Baseline tests and synthetic Android playback/export tests pass.
+1. [x] Baseline tests and synthetic Android playback/export tests pass (Actions #86).
 2. [ ] Named projects, autosave, reopen, legacy migration and metadata backup pass.
 3. [ ] Approved theme, readable caption styles and phone layout pass visual review.
 4. [ ] Import, trim, split, reorder, undo/redo, audio and framing pass end to end.
