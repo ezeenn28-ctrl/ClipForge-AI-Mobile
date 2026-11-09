@@ -213,6 +213,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
+      - name: Install synthetic fixture generator
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
       - name: Prepare test-only signing identity and fixtures
         run: |
           mkdir -p "$HOME/.android"
