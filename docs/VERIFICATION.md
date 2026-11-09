@@ -51,3 +51,26 @@ Reported directly through the interactive checklist on 10 November 2026
   were not part of this submitted checklist.
 
 Run 87: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42663064555
+
+## Actions #88 — a4b958c
+
+- 93 JVM/Android-host tests passed, with zero failures/errors/skips.
+- All four Android API 30 x86_64 media tests passed.
+- The new MP4 test saved/reloaded custom caption settings and verified pink text,
+  cyan emphasis, left alignment and normalized vertical position in decoded output.
+- Export bitmap scaling matches the preview's full-height centered 9:16 canvas.
+  Host tests check portrait and landscape scale values. The pixel-position MP4
+  assertion currently covers portrait output.
+- Font selection changes rasterized glyphs; color/position controls, reset,
+  legacy project defaults and invalid-position rejection passed host checks.
+- Preview uses a bounded 360 × 640 caption bitmap; MP4 retains the full text canvas.
+- Native Whisper integration and arm64 development APK build passed.
+- Cached development signing fingerprint and APK integrity checks passed.
+- The caption-controls layout fixture was rendered and inspected.
+
+Run: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42668895198
+
+These new caption appearance controls have automated verification. They have not
+yet been included in the owner's consolidated physical-device acceptance.
+Build 87 device results remain valid for the tested baseline; unconfirmed music
+controls, long-video/thermal behavior and release signing remain outstanding.
