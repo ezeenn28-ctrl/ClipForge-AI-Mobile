@@ -35,7 +35,9 @@ fun TimelineEditor(
     onSelect: (String) -> Unit,
     onSeek: (Long) -> Unit,
     onAddSelection: () -> Unit,
-    onMessage: (String) -> Unit
+    onMessage: (String) -> Unit,
+    compact: Boolean = false,
+    tool: EditorTool = EditorTool.EDIT
 ) {
     val seekRequests = remember { kotlinx.coroutines.channels.Channel<Long>(kotlinx.coroutines.channels.Channel.CONFLATED) }
     val latestSeek by rememberUpdatedState(onSeek)
@@ -69,9 +71,9 @@ fun TimelineEditor(
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             FilterChip(selected = snapping, onClick = { snapping = !snapping }, enabled = enabled, label = { Text("Snap") })
-            OutlinedButton(enabled = enabled, onClick = onAddSelection) { Text("Add selection") }
-            OutlinedButton(enabled = enabled && history.past.isNotEmpty(), onClick = { onHistory(history.undo()) }) { Text("Undo") }
-            OutlinedButton(enabled = enabled && history.future.isNotEmpty(), onClick = { onHistory(history.redo()) }) { Text("Redo") }
+            if (!compact) OutlinedButton(enabled = enabled, onClick = onAddSelection) { Text("Add selection") }
+            if (!compact) OutlinedButton(enabled = enabled && history.past.isNotEmpty(), onClick = { onHistory(history.undo()) }) { Text("Undo") }
+            if (!compact) OutlinedButton(enabled = enabled && history.future.isNotEmpty(), onClick = { onHistory(history.redo()) }) { Text("Redo") }
         }
         if (clips.isEmpty()) {
             Text("Add the current source selection to start a sequence. Your originals remain unchanged.")
@@ -134,11 +136,11 @@ fun TimelineEditor(
         }
         Text("Video / captions / original audio · Drag the ruler to scrub", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Slider(value = playheadMs.coerceIn(0, total).toFloat(), onValueChange = { scrub(it.toLong()) }, valueRange = 0f..total.coerceAtLeast(1).toFloat(), enabled = enabled)
-        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        if (!compact || tool == EditorTool.MORE) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("Zoom", style = MaterialTheme.typography.bodySmall)
             Slider(value = zoom, onValueChange = { zoom = it }, valueRange = 4f..40f, modifier = Modifier.weight(1f), enabled = enabled)
         }
-        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (!compact || tool == EditorTool.EDIT) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(enabled = enabled, onClick = {
                 try { edit(TimelineModel.split(clips, playheadMs)) }
                 catch (error: Exception) { onMessage(error.message ?: "Move the playhead inside a clip") }
@@ -150,16 +152,20 @@ fun TimelineEditor(
             OutlinedButton(enabled = enabled && selectedIndex > 0, onClick = { edit(TimelineModel.move(clips, selectedIndex, -1)) }) { Text("Earlier") }
             OutlinedButton(enabled = enabled && selectedIndex >= 0 && selectedIndex < clips.lastIndex, onClick = { edit(TimelineModel.move(clips, selectedIndex, 1)) }) { Text("Later") }
         }
-        selected?.let { clip ->
+        selected?.takeIf { !compact || tool in listOf(EditorTool.EDIT, EditorTool.AUDIO, EditorTool.TEXT, EditorTool.EFFECTS) }?.let { clip ->
             var from by remember(clip.id, clip.startMs) { mutableStateOf(Timecode.precise(clip.startMs)) }
             var until by remember(clip.id, clip.endMs) { mutableStateOf(Timecode.precise(clip.endMs)) }
             fun update(changed: TimelineClip) = edit(clips.map { if (it.id == clip.id) changed else it })
             val clipDuration = clip.resolvedDuration(sourceDurationMs)
-            StudioCard("Clip ${selectedIndex + 1} · source range") {
+            StudioCard(if (compact) "${tool.label} · clip ${selectedIndex + 1}" else "Clip ${selectedIndex + 1} · source range") {
                 if (clip.sourceName.isNotBlank()) Text(clip.sourceName, style = MaterialTheme.typography.bodySmall, maxLines = 2)
+                if (!compact || tool == EditorTool.EDIT) {
                 SourceTrimHandles(clip, clipDuration,
                     clips.filter { it.resolvedSource(source?.toString().orEmpty()) == clip.resolvedSource(source?.toString().orEmpty()) }.flatMap { listOf(it.startMs, it.endMs) } + clip.subtitles.flatMap { listOf(it.startMs, it.endMs) } + listOf(0L, clipDuration),
                     snapping, enabled, onCommit = { update(it) })
+                var exact by remember { mutableStateOf(false) }
+                if (compact) TextButton(onClick = { exact = !exact }) { Text(if (exact) "Hide exact trim" else "Exact trim") }
+                if (!compact || exact) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = from, onValueChange = { from = it.take(16) }, label = { Text("Source in") }, enabled = enabled, modifier = Modifier.weight(1f))
                     OutlinedTextField(value = until, onValueChange = { until = it.take(16) }, label = { Text("Source out") }, enabled = enabled, modifier = Modifier.weight(1f))
@@ -169,15 +175,23 @@ fun TimelineEditor(
                     if (a == null || b == null || !Timecode.validTrim(a, b, clipDuration)) onMessage("Enter a valid source range")
                     else update(clip.copy(startMs = a, endMs = b, fadeInMs = minOf(clip.fadeInMs, b - a), fadeOutMs = minOf(clip.fadeOutMs, b - a)))
                 }) { Text("Apply clip trim") }
+                }
+                }
+                if (!compact || tool == EditorTool.TEXT) {
                 OutlinedTextField(value = clip.hook, onValueChange = { update(clip.copy(hook = it.take(65))) }, label = { Text("Clip hook") }, enabled = enabled, modifier = Modifier.fillMaxWidth())
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                if (compact) OutlinedTextField(value = clip.caption, onValueChange = { update(clip.copy(caption = it.take(100), captionStartMs = clip.startMs, captionEndMs = clip.endMs)) },
+                    label = { Text("Manual caption") }, enabled = enabled, modifier = Modifier.fillMaxWidth())
+                }
+                if (!compact || tool == EditorTool.EFFECTS) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     listOf("None", "Zoom", "Monochrome").forEach { effect -> FilterChip(selected = clip.effect == effect, onClick = { update(clip.copy(effect = effect)) }, enabled = enabled, label = { Text(effect) }) }
                 }
+                if (!compact || tool == EditorTool.AUDIO) {
                 Text("Volume · ${(clip.volume * 100).toInt()}%")
                 Slider(value = clip.volume, onValueChange = { update(clip.copy(volume = it)) }, valueRange = 0f..1f, enabled = enabled)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterChip(selected = clip.fadeInMs > 0, onClick = { update(clip.copy(fadeInMs = if (clip.fadeInMs > 0) 0 else minOf(1000, clip.durationMs))) }, enabled = enabled, label = { Text("Fade in · 1s") })
                     FilterChip(selected = clip.fadeOutMs > 0, onClick = { update(clip.copy(fadeOutMs = if (clip.fadeOutMs > 0) 0 else minOf(1000, clip.durationMs))) }, enabled = enabled, label = { Text("Fade out · 1s") })
+                }
                 }
             }
         }

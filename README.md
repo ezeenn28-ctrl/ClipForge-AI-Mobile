@@ -75,3 +75,9 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - The user-provided screen recording showed source playback followed by a black timeline preview with captions. Physical verification of this repair is still required; automated checks alone do not establish that the device freeze is resolved.
 
 - Caption repair: an empty opening hook no longer moves subtitle text into the top hook position. Manual-caption export now retains selected subtitle size/color. Primary-source selected-clip cues remain eligible for speech ranking while unrelated video cues are excluded.
+
+## Simplified editing workflow
+- Home prioritizes Find clips, Edit video and Continue editing. Find clips transcribes sampled coverage windows locally and speech-ranks the results; this is sampled analysis, not an exhaustive semantic scan. First use links to the existing one-time speech-model setup.
+- The default editor is a dedicated timeline workspace: persistent preview, top Back/Undo/Redo/Export actions and a bottom Edit/Audio/Text/Captions/Effects/Format/More tool bar. Export opens the review page and never bypasses approval.
+- Clip controls are contextual. Edit shows split/reorder/trim; Audio shows original sound and music; Text shows hook/manual caption; Captions provides generation/correction/style; Format controls fit/crop. Exact trim fields and source tools remain available without filling the default panel.
+- Campaign, backup, relinking and advanced source tools sit under More in the editor. Existing playback repair and multi-source project formats are retained. Host-rendered editor fixtures verify layout and interaction; phone testing remains necessary for real playback.
