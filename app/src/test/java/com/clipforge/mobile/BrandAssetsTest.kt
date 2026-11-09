@@ -20,8 +20,11 @@ import java.io.File
 class BrandAssetsTest {
     @Test fun applicationHasAMaskedLauncherIconAndThemedMonochrome() {
         val context = ApplicationProvider.getApplicationContext<Context>()
-        assertTrue(context.applicationInfo.icon != 0)
-        val icon = context.packageManager.getApplicationIcon(context.applicationInfo)
+        assertEquals(R.mipmap.ic_launcher, context.applicationInfo.icon)
+        // Load the manifest-selected resource directly; this host's package-manager
+        // icon registry is not populated. The real package-manager path is covered
+        // separately by the Android device integration suite.
+        val icon = context.getDrawable(context.applicationInfo.icon)!!
         assertTrue("Adaptive launcher icon missing", icon is AdaptiveIconDrawable)
         assertNotNull((icon as AdaptiveIconDrawable).monochrome)
         val bitmap = Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888)

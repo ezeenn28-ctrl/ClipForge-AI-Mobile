@@ -71,4 +71,16 @@ class TimelineEditorTest {
         compose.runOnIdle { assertEquals(listOf(original), history.clips) }
     }
 
+
+    @Test fun emptyCompactTimelineOffersAnAddSourceAction() {
+        var additions = 0
+        compose.setContent {
+            ClipForgeTheme {
+                TimelineEditor(androidx.compose.ui.platform.LocalContext.current, null, 30_000,
+                    TimelineHistory(), "", 0, true, {}, {}, {}, { additions++ }, {}, compact = true)
+            }
+        }
+        compose.onNodeWithText("Add source clip").performClick()
+        compose.runOnIdle { org.junit.Assert.assertEquals(1, additions) }
+    }
 }

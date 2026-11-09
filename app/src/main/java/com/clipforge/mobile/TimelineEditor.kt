@@ -88,6 +88,7 @@ fun TimelineEditor(
         }
         if (clips.isEmpty()) {
             Text("Add the current source selection to start a sequence. Your originals remain unchanged.")
+            if (compact) Button(enabled = enabled, onClick = onAddSelection) { Text("Add source clip") }
             return@Column
         }
         Row(Modifier.fillMaxWidth()) {

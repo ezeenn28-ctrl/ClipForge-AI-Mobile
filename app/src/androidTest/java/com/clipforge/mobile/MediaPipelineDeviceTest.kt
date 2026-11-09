@@ -200,4 +200,20 @@ class MediaPipelineDeviceTest {
             output.delete(); snapshot.delete()
         }
     }
+
+    @Test fun installedApplicationExposesItsAdaptiveLauncherIcon() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val icon = context.packageManager.getApplicationIcon(context.applicationInfo)
+        assertTrue("Application launcher icon must be adaptive", icon is android.graphics.drawable.AdaptiveIconDrawable)
+        val bitmap = Bitmap.createBitmap(128, 128, Bitmap.Config.ARGB_8888)
+        try {
+            icon.setBounds(0, 0, 128, 128); icon.draw(android.graphics.Canvas(bitmap))
+            var cyan = 0
+            for (y in 0 until 128) for (x in 0 until 128) {
+                val c = bitmap.getPixel(x, y)
+                if (Color.green(c) > 150 && Color.blue(c) > 120 && Color.red(c) < 100) cyan++
+            }
+            assertTrue("Launcher mark is missing or clipped", cyan > 100)
+        } finally { bitmap.recycle() }
+    }
 }
