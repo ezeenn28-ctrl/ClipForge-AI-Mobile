@@ -74,3 +74,31 @@ These new caption appearance controls have automated verification. They have not
 yet been included in the owner's consolidated physical-device acceptance.
 Build 87 device results remain valid for the tested baseline; unconfirmed music
 controls, long-video/thermal behavior and release signing remain outstanding.
+
+## Studio design upgrade — Actions #90 — 6c34902
+
+- 99 JVM/Android-host tests passed: zero failures, errors or skipped tests.
+- Five Android API 30 x86_64 integration tests passed, including real application
+  launcher-icon loading, playback/restart/decoder recovery paths and MP4 rendering.
+- Native Whisper integration passed; arm64 development APK assembly, cached
+  signing fingerprint and APK integrity checks passed.
+- Adaptive/monochrome launcher resources, dark native theme and splash resources
+  compiled. The launcher icon was rendered and inspected on the host; the actual
+  Android package-manager icon path passed separately on the emulator.
+- Home navigation, direct-link draft retention, system Back, empty timeline
+  recovery, editor actions and original-project preservation passed regression tests.
+- Rendered home at regular and compact phone sizes, landscape home, editor
+  fixture, caption workspace, campaign workspace, export empty state and brand
+  icon were inspected. Fixtures are labeled and do not claim real user footage.
+- The music track visualization reflects actual placement and active duration;
+  it does not claim decoded waveform data.
+
+Run: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42710884850
+
+APK: ClipForge-AI-Mobile-0.2.90-dev.apk
+SHA-256: b1669a341b710eb5c92b38f28dcd8365d9db9687026eaba52cb8decf75d853a2
+
+This is a consolidated development milestone. Physical acceptance of the new UI,
+music import/volume checks, long-video/thermal behavior and production release
+signing remain outstanding. The prior owner-reported Build 87 results are retained
+as baseline evidence, not relabeled as tests of Build 90.

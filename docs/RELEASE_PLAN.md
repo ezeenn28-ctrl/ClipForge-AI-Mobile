@@ -31,7 +31,7 @@ describe implementation, not physical-device acceptance.
 
 1. [x] Baseline tests and synthetic Android playback/export tests pass (Actions #86).
 2. [x] Named projects, autosave, reopen and legacy migration passed automated checks; reopen/autosave also confirmed on phone. Metadata backup passed host tests; device restore remains pending.
-3. [ ] Approved theme, readable caption styles and phone layout pass visual review.
+3. [x] Dark/cyan theme, original icon, caption controls and regular/compact/landscape layouts passed automated checks and internal visual review in Builds 88–90. Consolidated device acceptance of the new UI remains pending.
 4. [ ] Import, trim, split, reorder, undo/redo, audio and framing pass end to end.
 5. [ ] Captions retain timing/style across preview, saves and MP4 export.
 6. [ ] Up to 15 editable highlight candidates; approval required for every render.
