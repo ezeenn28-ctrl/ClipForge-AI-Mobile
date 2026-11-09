@@ -37,6 +37,12 @@ fun TimelineEditor(
     onAddSelection: () -> Unit,
     onMessage: (String) -> Unit
 ) {
+    val seekRequests = remember { kotlinx.coroutines.channels.Channel<Long>(kotlinx.coroutines.channels.Channel.CONFLATED) }
+    val latestSeek by rememberUpdatedState(onSeek)
+    LaunchedEffect(seekRequests) {
+        for (position in seekRequests) { latestSeek(position); kotlinx.coroutines.delay(33) }
+    }
+    var snapping by remember { mutableStateOf(true) }
     val clips = history.clips
     val total = TimelineModel.duration(clips)
     val selectedIndex = clips.indexOfFirst { it.id == selectedId }.let { if (it < 0 && clips.isNotEmpty()) 0 else it }
@@ -49,6 +55,9 @@ fun TimelineEditor(
     val accent = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val outline = MaterialTheme.colorScheme.outlineVariant
+    fun scrub(time: Long) {
+        seekRequests.trySend(TimelineTouch.seek(clips, time, snapping, minOf(150L, (8 / scale).toLong())))
+    }
     fun edit(next: List<TimelineClip>) {
         try { TimelineModel.validate(next, sourceDurationMs); onHistory(history.edit(next)) }
         catch (error: Exception) { onMessage(error.message ?: "Timeline change failed") }
@@ -59,6 +68,7 @@ fun TimelineEditor(
             Text("${clips.size} cuts", style = MaterialTheme.typography.bodySmall)
         }
         Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilterChip(selected = snapping, onClick = { snapping = !snapping }, enabled = enabled, label = { Text("Snap") })
             OutlinedButton(enabled = enabled, onClick = onAddSelection) { Text("Add selection") }
             OutlinedButton(enabled = enabled && history.past.isNotEmpty(), onClick = { onHistory(history.undo()) }) { Text("Undo") }
             OutlinedButton(enabled = enabled && history.future.isNotEmpty(), onClick = { onHistory(history.redo()) }) { Text("Redo") }
@@ -70,12 +80,12 @@ fun TimelineEditor(
         Box(Modifier.fillMaxWidth().background(surface, RoundedCornerShape(14.dp)).horizontalScroll(trackScroll)) {
             Column(Modifier.width(trackWidth).padding(vertical = 6.dp)) {
                 Canvas(Modifier.fillMaxWidth().height(30.dp)
-                    .pointerInput(total, scale, enabled) {
-                        detectTapGestures { if (enabled) onSeek((it.x / density.density / scale).toLong().coerceIn(0, total)) }
+                    .pointerInput(total, scale, enabled, snapping, clips) {
+                        detectTapGestures { if (enabled) scrub((it.x / density.density / scale).toLong().coerceIn(0, total)) }
                     }
-                    .pointerInput(total, scale, enabled) {
-                        detectDragGestures(onDragStart = { if (enabled) onSeek((it.x / density.density / scale).toLong().coerceIn(0, total)) }) { change, _ ->
-                            if (enabled) { change.consume(); onSeek((change.position.x / density.density / scale).toLong().coerceIn(0, total)) }
+                    .pointerInput(total, scale, enabled, snapping, clips) {
+                        detectDragGestures(onDragStart = { if (enabled) scrub((it.x / density.density / scale).toLong().coerceIn(0, total)) }) { change, _ ->
+                            if (enabled) { change.consume(); scrub((change.position.x / density.density / scale).toLong().coerceIn(0, total)) }
                         }
                     }) {
                     val tickSeconds = when { scale * 1000 < 1 -> 60; scale * 1000 < 4 -> 30; scale * 1000 < 12 -> 5; else -> 1 }
@@ -123,7 +133,7 @@ fun TimelineEditor(
             }
         }
         Text("Video / captions / original audio · Drag the ruler to scrub", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Slider(value = playheadMs.coerceIn(0, total).toFloat(), onValueChange = { onSeek(it.toLong()) }, valueRange = 0f..total.coerceAtLeast(1).toFloat(), enabled = enabled)
+        Slider(value = playheadMs.coerceIn(0, total).toFloat(), onValueChange = { scrub(it.toLong()) }, valueRange = 0f..total.coerceAtLeast(1).toFloat(), enabled = enabled)
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("Zoom", style = MaterialTheme.typography.bodySmall)
             Slider(value = zoom, onValueChange = { zoom = it }, valueRange = 4f..40f, modifier = Modifier.weight(1f), enabled = enabled)
@@ -145,6 +155,9 @@ fun TimelineEditor(
             var until by remember(clip.id, clip.endMs) { mutableStateOf(Timecode.precise(clip.endMs)) }
             fun update(changed: TimelineClip) = edit(clips.map { if (it.id == clip.id) changed else it })
             StudioCard("Clip ${selectedIndex + 1} · source range") {
+                SourceTrimHandles(clip, sourceDurationMs,
+                    clips.flatMap { listOf(it.startMs, it.endMs) } + clip.subtitles.flatMap { listOf(it.startMs, it.endMs) } + listOf(0L, sourceDurationMs),
+                    snapping, enabled, onCommit = { update(it) })
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(value = from, onValueChange = { from = it.take(16) }, label = { Text("Source in") }, enabled = enabled, modifier = Modifier.weight(1f))
                     OutlinedTextField(value = until, onValueChange = { until = it.take(16) }, label = { Text("Source out") }, enabled = enabled, modifier = Modifier.weight(1f))

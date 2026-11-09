@@ -53,3 +53,8 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Per-cut original-audio volume and one-second fade controls are implemented for preview and PCM export. Global mute applies to the whole sequence.
 - Project autosave and metadata backups retain the sequence, corrected cues and audio settings; approval is always reviewed again after restore.
 - This milestone edits cuts from one source. Imported music, multiple source videos, transitions, keyframes, speed ramps and draggable trim handles remain future work. Timeline audio/video synchronization and hardware export still require consolidated physical-device verification.
+
+### Touch editing
+- Selected cuts have 44 dp touch targets for dragging source in/out points. Release commits one undoable edit; gesture cancellation discards the draft. Exact timecode fields remain available.
+- Optional snapping uses nearby sequence boundaries while scrubbing and source cut/subtitle boundaries while trimming, with a bounded 150 ms tolerance. Trim bounds preserve at least 100 ms and clamp fade lengths.
+- Scrub requests are conflated and limited to about 30 updates per second, retaining the latest requested position. This reduces seek pressure; device responsiveness still needs physical verification.

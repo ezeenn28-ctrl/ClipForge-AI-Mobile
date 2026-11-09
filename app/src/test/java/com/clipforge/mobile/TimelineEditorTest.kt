@@ -43,4 +43,32 @@ class TimelineEditorTest {
         val file = File("build/outputs/studio-previews/timeline-layout-fixture.png").apply { parentFile.mkdirs() }
         compose.onRoot().captureRoboImage(file.absolutePath)
     }
+    @Test fun trimDragCommitsOnceAndCanBeUndone() {
+        val original = TimelineClip("a", 30_000, 50_000)
+        var history by mutableStateOf(TimelineHistory(listOf(original)))
+        compose.setContent {
+            ClipForgeTheme {
+                Surface(Modifier.fillMaxSize()) {
+                    Column(Modifier.verticalScroll(rememberScrollState())) {
+                        TimelineEditor(LocalContext.current, null, 120_000, history, "a", 0, true,
+                            { history = it }, {}, {}, {}, { error -> throw AssertionError(error) })
+                    }
+                }
+            }
+        }
+        compose.onNodeWithTag("trim-end-handle").performScrollTo().performTouchInput {
+            down(center)
+            moveBy(androidx.compose.ui.geometry.Offset(-25f, 0f))
+            moveBy(androidx.compose.ui.geometry.Offset(-25f, 0f))
+            up()
+        }
+        compose.runOnIdle {
+            org.junit.Assert.assertTrue(history.clips.single().endMs < original.endMs)
+            assertEquals(1, history.past.size)
+            assertEquals(original.startMs, history.clips.single().startMs)
+        }
+        compose.onNodeWithText("Undo").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(listOf(original), history.clips) }
+    }
+
 }
