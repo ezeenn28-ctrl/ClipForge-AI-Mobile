@@ -54,7 +54,7 @@ fun SoundLibraryDialog(onDismiss: () -> Unit, onPreview: (SoundKind?, SoundAsset
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null && !working) runTask {
-            val asset = withContext(Dispatchers.IO) { SoundLibrary.import(context, uri) }
+            val asset = withContext(Dispatchers.IO) { SoundLibrary.importSound(context, uri) }
             library = listOf(asset) + library.filterNot { it.id == asset.id }
             tab = 1; query = ""; message = "Imported: " + asset.name
         }
@@ -137,10 +137,10 @@ fun SoundLibraryDialog(onDismiss: () -> Unit, onPreview: (SoundKind?, SoundAsset
                                     Button(enabled = !working, onClick = {
                                         runTask {
                                             val asset = withContext(Dispatchers.IO) {
-                                                val input = File(context.cacheDir, "myinstants-download.mp3")
+                                                val input = File.createTempFile("myinstants-", ".mp3", context.cacheDir)
                                                 try {
                                                     input.writeBytes(client.download(sound))
-                                                    SoundLibrary.import(context, Uri.fromFile(input), sound.name, "Myinstants", sound.page)
+                                                    SoundLibrary.importSound(context, Uri.fromFile(input), sound.name, "Myinstants", sound.page)
                                                 } finally { input.delete() }
                                             }
                                             library = listOf(asset) + library

@@ -44,7 +44,7 @@ object SoundLibrary {
             check(temp.renameTo(target)) { "Could not save sound library" }
         } finally { temp.delete() }
     }
-    fun import(context: Context, uri: Uri, name: String? = null, origin: String = "Imported", page: String = ""): SoundAsset {
+    fun importSound(context: Context, uri: Uri, name: String? = null, origin: String = "Imported", page: String = ""): SoundAsset {
         val directory = root(context.filesDir)
         require(list(context.filesDir).size < 200) { "Sound library is full (200 sounds)" }
         val id = UUID.randomUUID().toString()

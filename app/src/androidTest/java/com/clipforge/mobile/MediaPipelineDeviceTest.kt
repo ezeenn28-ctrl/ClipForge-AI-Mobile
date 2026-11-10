@@ -507,7 +507,7 @@ class MediaPipelineDeviceTest {
         val mp3 = fixture("sfx-import.mp3")
         val source = fixture("landscape.mp4")
         val music = fixture("music.wav")
-        val asset = SoundLibrary.import(context, Uri.fromFile(mp3), "Imported test pop")
+        val asset = SoundLibrary.importSound(context, Uri.fromFile(mp3), "Imported test pop")
         assertTrue(File(Uri.parse(asset.source).path!!).isFile)
         val clip = TimelineClip("imported-sfx", 0, 4000,
             sounds = listOf(ClipSound("custom", 1000, SoundKind.POP, .8f, asset)))

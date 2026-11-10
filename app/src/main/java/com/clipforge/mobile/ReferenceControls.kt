@@ -70,7 +70,7 @@ fun SoundControls(clip: TimelineClip, localMs: Long, projectCount: Int, enabled:
         }
         Text("Selected: " + (asset?.name ?: kind.label))
         Button(enabled = enabled && clip.sounds.size < 12 && projectCount < 120, onClick = {
-            onChange(clip.copy(sounds = clip.sounds + ClipSound(UUID.randomUUID().toString(), at, kind, asset = asset)))
+            onChange(clip.copy(sounds = clip.sounds.filterNot { it.sourceMs == at } + ClipSound(UUID.randomUUID().toString(), at, kind, asset = asset)))
         }) { Text("Add SFX at playhead") }
         OutlinedButton(enabled = enabled && projectCount - clip.sounds.size + 4 <= 120, onClick = {
             onChange(clip.copy(sounds = SoundTimeline.suggest(clip)))

@@ -446,8 +446,8 @@ class MainActivity : ComponentActivity() {
             }
         }
         var soundAssets by remember { mutableStateOf<Map<SoundKind, String>>(emptyMap()) }
-        LaunchedEffect(timeline.clips.any { it.sounds.isNotEmpty() }) {
-            if (timeline.clips.any { it.sounds.isNotEmpty() } && soundAssets.isEmpty()) {
+        LaunchedEffect(timeline.clips.any { clip -> clip.sounds.any { it.asset == null } }) {
+            if (timeline.clips.any { clip -> clip.sounds.any { it.asset == null } } && soundAssets.isEmpty()) {
                 try { soundAssets = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SoundAssets.ensure(filesDir) } }
                 catch (error: Exception) { status = "Could not prepare sound effects: ${error.message}"; approved = false }
             }
@@ -1998,7 +1998,7 @@ class MainActivity : ComponentActivity() {
                     try {
                         val exportSounds = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             MediaAssets.checkTimeline(this@MainActivity, source.toString(), duration, exportClips, exportMusic)
-                            if (SoundTimeline.events(exportClips).isNotEmpty()) SoundAssets.ensure(filesDir) else emptyMap()
+                            if (SoundTimeline.events(exportClips).any { it.asset == null }) SoundAssets.ensure(filesDir) else emptyMap()
                         }
                         if (activeExportToken !== requestToken) return@launch
                         transformer.start(TimelineExport.composition(source, exportClips, vertical, fillFrame, mute,

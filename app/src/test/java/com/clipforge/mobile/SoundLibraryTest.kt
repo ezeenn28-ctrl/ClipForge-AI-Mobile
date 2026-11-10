@@ -12,6 +12,23 @@ import java.nio.ByteOrder
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35])
 class SoundLibraryTest {
+    @Test fun customEffectPreviewUsesTheLocalAssetWithoutBuiltinFiles() {
+        var loaded = ""; var playing = false
+        val player = java.lang.reflect.Proxy.newProxyInstance(androidx.media3.common.Player::class.java.classLoader,
+            arrayOf(androidx.media3.common.Player::class.java)) { _, method, args ->
+            when (method.name) {
+                "setMediaItem" -> { loaded = (args!![0] as androidx.media3.common.MediaItem).localConfiguration!!.uri.toString(); null }
+                "getCurrentPosition" -> 0L
+                "setPlayWhenReady" -> { playing = args!![0] as Boolean; null }
+                "pause" -> { playing = false; null }
+                else -> null
+            }
+        } as androidx.media3.common.Player
+        val asset = SoundAsset("asset", "Local effect", "file:///private/effect.wav", 400)
+        val event = TimedSound("cue", 1000, 400, SoundKind.POP, .4f, asset)
+        SoundPreview(player).tick(listOf(event), 1100, true, emptyMap())
+        assertEquals(asset.source, loaded); assertTrue(playing)
+    }
     private val json = """{"next":"https://www.myinstants.com/api/v1/instants/?name=boom&page=2","results":[{"name":"VINE BOOM SOUND","slug":"vine-boom-sound-70972","sound":"https://www.myinstants.com/media/sounds/vine-boom.mp3"}]}"""
     private fun client(body: String = json, capture: (String) -> Unit = {}) =
         MyinstantsClient(SoundTransport { url, _ -> capture(url); SoundHttpResponse(200, body.toByteArray()) }, SoundRequestGate()) { 1000L }
