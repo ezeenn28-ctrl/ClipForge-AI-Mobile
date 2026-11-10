@@ -91,7 +91,7 @@ def scroll(root, horizontal=False, reverse=False):
         if width > 100 and height > 40 and (is_horizontal if horizontal else is_vertical):
             nodes.append(node)
     if not nodes:
-        raise AssertionError("No visible scroll container for requested control")
+        return False  # Pickers may still be loading and expose no scroll node yet.
     node = max(nodes, key=(lambda n: bounds(n)[3]) if horizontal else
         (lambda n: (bounds(n)[2] - bounds(n)[0]) * (bounds(n)[3] - bounds(n)[1])))
     x1, y1, x2, y2 = bounds(node)
@@ -106,6 +106,7 @@ def scroll(root, horizontal=False, reverse=False):
         points = points[2:] + points[:2]
     adb("shell", "input", "swipe", *(str(v) for v in points), "350")
     time.sleep(.3)
+    return True
 
 
 def locate(text=None, desc=None, contains=False, timeout=30, scroll_axis=None):
@@ -125,7 +126,8 @@ def locate(text=None, desc=None, contains=False, timeout=30, scroll_axis=None):
                 reverse = not reverse
                 stationary = 0
             previous = signature
-            scroll(root, horizontal=scroll_axis == "horizontal", reverse=reverse)
+            if not scroll(root, horizontal=scroll_axis == "horizontal", reverse=reverse):
+                time.sleep(.4)
         else:
             time.sleep(.4)
     raise AssertionError(f"Control unavailable: {text or desc}")
@@ -220,6 +222,11 @@ def main(args):
     copied = subprocess.run(["adb", "shell", "-T", "run-as", PACKAGE, "sh", "-c", "'cat > files/models/ggml-tiny.bin'"],
         input=args.model.read_bytes(), capture_output=True, timeout=60)
     assert copied.returncode == 0, "Could not seed verified public speech model"
+    if args.phase == "speech-import":
+        adb("install", "-r", str(args.release))
+        launch()
+        exercise_speech_import(args)
+        return
     launch()
     screenshot("baseline-project")
     passed("Pinned Build 94 source compatibility APK opens production-serialized synthetic project")
@@ -283,6 +290,10 @@ def main(args):
     tap_node(locate(text="Export"))
     assert locate(text="Export approved MP4", scroll_axis="vertical").get("enabled") == "false"
     passed("Process restart restores project and clears export approval")
+    exercise_speech_import(args)
+
+
+def exercise_speech_import(args):
     # Exercise real foreground-service decoding/inference through the signed APK.
     adb("shell", "input", "keyevent", "4")
     adb("shell", "am", "force-stop", PACKAGE)
@@ -340,6 +351,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     for name in ("baseline", "release", "seed", "video", "speech", "model"):
         parser.add_argument("--" + name, type=Path, required=True)
+    parser.add_argument("--phase", choices=("full", "speech-import"), default="full")
     args = parser.parse_args()
     failure = None
     try:

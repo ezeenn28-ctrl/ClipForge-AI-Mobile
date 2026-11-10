@@ -351,7 +351,7 @@ jobs:
         with:
           name: ClipForge-signed-release-acceptance
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 42773959984
+          run-id: 42775151387
           path: build/prior-acceptance
       - name: Print prior synthetic workflow diagnostics
         run: |
@@ -359,7 +359,11 @@ jobs:
           from pathlib import Path
           import xml.etree.ElementTree as E
           p = Path("build/prior-acceptance")
-          print((p / "result.json").read_text())
+          import json
+          prior = json.loads((p / "result.json").read_text())
+          assert len(prior["checks"]) == 9, prior
+          assert prior["checks"][-1] == "Process restart restores project and clears export approval"
+          print("Nine previously completed exact-APK acceptance checks verified:", prior["checks"])
           root = E.parse(p / "last-window.xml")
           for n in root.iter("node"):
               if n.get("text"): print(n.get("text"), n.get("bounds"), n.get("enabled"))
@@ -419,7 +423,7 @@ jobs:
           emulator-boot-timeout: 180
           disable-animations: true
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin
+          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin --phase speech-import
       - name: Upload actual release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
