@@ -346,6 +346,26 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v4
+      - name: Inspect prior isolated acceptance failure
+        uses: actions/download-artifact@v4
+        with:
+          name: ClipForge-signed-release-acceptance
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 42773959984
+          path: build/prior-acceptance
+      - name: Print prior synthetic workflow diagnostics
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as E
+          p = Path("build/prior-acceptance")
+          print((p / "result.json").read_text())
+          root = E.parse(p / "last-window.xml")
+          for n in root.iter("node"):
+              if n.get("text"): print(n.get("text"), n.get("bounds"), n.get("enabled"))
+          lines = (p / "logcat.txt").read_text().splitlines()
+          print("\n".join([line for line in lines if any(s in line for s in ("AndroidRuntime", "ExportException", "Transformer", "Saved to", "Gallery"))][-35:]))
+          PY
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

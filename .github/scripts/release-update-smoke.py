@@ -170,6 +170,7 @@ def await_export(timeout=180):
             root = hierarchy()
             if find(root, text="Open last MP4"):
                 return files[-1]
+            scroll(root)  # Completion actions may be below the short export viewport.
         time.sleep(.5)
     raise AssertionError("Approved release export did not complete")
 
@@ -297,10 +298,8 @@ def main(args):
             tap_node(nav[0]); tap_node(locate(text="Downloads"))
     tap_node(locate(text="ClipForgeSpeechFixture.mp4", timeout=35, scroll_axis="vertical"))
     locate(text="ClipForgeSpeechFixture", contains=True, timeout=40)
-    root = hierarchy()
-    add_source = find(root, text="Add source clip")
-    if add_source:
-        tap_node(add_source[0])
+    # New project intentionally starts with an empty, non-destructive sequence.
+    tap_node(locate(text="Add source clip", scroll_axis="vertical"))
     tap_node(locate(text="Captions", scroll_axis="horizontal"))
     tap_node(locate(text="Generate captions", scroll_axis="vertical"))
     locate(text="country", contains=True, timeout=150, scroll_axis="vertical")
@@ -347,9 +346,12 @@ if __name__ == "__main__":
         main(args)
     except Exception as error:
         failure = str(error)
+        print("ACCEPTANCE FAILURE:", failure, flush=True)
         try:
             screenshot("failure")
-            hierarchy()
+            root = hierarchy()
+            print("LAST UI:", [(n.get("text"), n.get("content-desc"), n.get("enabled"), n.get("bounds")) for n in root.iter("node") if n.get("text") or n.get("content-desc")], flush=True)
+            print("GALLERY FILES:", exports(), flush=True)
             (OUT / "logcat.txt").write_text(adb("logcat", "-d", "-v", "brief"))
         except Exception:
             pass
