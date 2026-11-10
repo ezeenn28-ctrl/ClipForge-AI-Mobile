@@ -1,8 +1,5 @@
 name: Deliver ClipForge 1.0.2
 on:
-  push:
-    branches: [delivery/v1.0.2]
-    paths: ['.github/workflows/deliver-v1.0.2.yml']
   workflow_dispatch:
 jobs:
   deliver:

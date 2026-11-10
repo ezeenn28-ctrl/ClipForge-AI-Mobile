@@ -1,6 +1,10 @@
 # ClipForge AI Mobile
 
 Private, offline-first Android video editor for a personal clipping workflow.
+
+Current installer: **v1.0.2, Build 116**. The import crash in v1.0.1 is fixed;
+all automated release gates passed. Fresh physical phone acceptance remains.
+Version 1.0.1 is withdrawn. See the release record below.
 The v1 scope, installation instructions and limits are in [Quick start](docs/QUICK_START.md).
 See [Release record](docs/FINAL_RELEASE.md), [verification history](docs/VERIFICATION.md)
 and [release gates](docs/RELEASE_PLAN.md) for actual evidence.

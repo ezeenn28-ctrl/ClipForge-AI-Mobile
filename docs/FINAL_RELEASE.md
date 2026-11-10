@@ -1,94 +1,107 @@
-> **WITHDRAWN on 10 November 2026:** v1.0.1 has a newly reproduced import-time crash from a stale playback tick. Do not use it for final acceptance. The fix is being verified in v1.0.2 (Build 115); see Actions run 42795431790. Earlier passed checks below remain historical evidence, not a clean bill of health.
+# ClipForge AI 1.0.2 — verified phone-test candidate
 
-# ClipForge AI 1.0.1 — final phone-test candidate
+Prepared 10 November 2026 (Asia/Manila). All automated gates passed.
+Fresh physical owner acceptance is the remaining release gate.
 
-Prepared 10 November 2026 (Asia/Manila). Physical owner acceptance is pending.
-
-- Installer: `ClipForge-AI-1.0.1-universal.apk`, 17,437,582 bytes.
-- App version **1.0.1**, version code **97**, ARM64 and x86_64.
-- Package `com.clipforge.mobile`; non-debuggable signed release variant.
-- APK source commit: `496792695211b64ab7e11ce3d82bd0d87306bf1b`.
-- APK SHA-256: `01d88ee76d8109c37ea3cda8462c594dfb873bda5e8fe18f8a1a35e606cdc69a`.
+- Installer: `ClipForge-AI-1.0.2-universal.apk`, 17,437,582 bytes.
+- Version **1.0.2**, version code **116**; ARM64 and x86_64.
+- Package `com.clipforge.mobile`; non-debuggable signed release.
+- APK source: `21ceeb0fe10bc55f380da064b67df7aabb0a5c6f`.
+- APK SHA-256: `d680accf98773c81ff98f108f81dc7c1d80d779eedd468f8b62b460de7b8614b`.
 - Certificate SHA-256: `ea9f20de77e24660999aaae941f66029c76ffe94170e33dfc4cfb03ce13d8ea6`.
-- [Download APK](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/releases/download/v1.0.1/ClipForge-AI-1.0.1-universal.apk) or [private release page](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/releases/tag/v1.0.1).
+- [Download APK](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/releases/download/v1.0.2/ClipForge-AI-1.0.2-universal.apk) or [private release page](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/releases/tag/v1.0.2).
 
-## Actual results
+## Fixed blocker
+
+**Version 1.0.1 is withdrawn.** Real system-picker import exposed an intermittent
+main-thread crash: a pending playback coroutine used an old active-timeline flag
+after importing a new source had cleared the clip list. Clamping against
+`lastIndex == -1` threw an empty-range exception. Related preview reconciliation
+also relied on a mutable list after deriving its position.
+
+Version 1.0.2 reads one current timeline snapshot per playback tick, tolerates an
+empty list and uses consistent snapshots for seek, preview reconciliation and
+music timing. Two new regression cases cover empty/replacement timelines,
+stale player indices and source/output clock mapping through speed.
+
+The test-only typed-finger injector made Android 11 DocumentsUI selection work,
+revealing the actual app crash. That helper is not packaged in the installer.
+The subsequent complete signed-APK workflow passed, including the import path
+and real packaged-engine captions.
+
+## Fresh actual results — Build 116
 
 | Check | Result |
 | --- | --- |
-| Host/unit tests, Build 97 | 116 passed; zero failures/errors/skips |
-| Android API 30 media tests, retry 100 | 9 passed; zero failures/errors/skips |
-| Native inference endurance, Build 97 | All 240 windows passed, including model reuse/reload and progress/timing checks |
-| Exact signed APK update/export phase 103 | Nine completed checks passed before later picker automation failed |
-| Packaged-engine captions and clean system-picker import | Pending: automation could not activate the synthetic file in DocumentsUI |
-| Fresh physical Nubia acceptance | Pending; earlier Build 94 owner results remain baseline evidence |
+| Host/JVM and Android-host unit tests | **118 passed**, zero failures/errors/skips |
+| Android API 30 x86_64 media tests | **9 passed**, zero failures/errors/skips |
+| Real native inference endurance | **240/240 windows passed**, model reuse/reload, timed cues and progress valid |
+| Exact signed APK complete acceptance | **12/12 recorded checks passed**, no Java/native ClipForge fatal exception |
+| Signature, release manifest, native flags and APK integrity | Passed; original certificate retained, non-debuggable, both ABIs present |
 
-The native workload used the public JFK sample padded/repeated into 240 consecutive
-30-second windows: 7,200 seconds of synthetic input, not unique two-hour footage.
-Linux x86_64 CI wall time was 765.529 seconds; warm RSS 308,980 KiB, final/peak
-RSS 346,988 KiB. This is not an Android-phone performance or accuracy benchmark.
+All four jobs in [Build 116](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42795867454)
+completed successfully. The published and direct-chat installers contain the
+same checksum-verified APK bytes.
 
-The nine exact-installer checks cover baseline launch, signed update with debugging
-disabled, both saved project names, changing preview frames, campaign record
-retention, export blocked before explicit approval, approved Gallery MP4 with
-expected speed/duration and 1080x1920 framing/caption/highlight/audio checks,
-share-sheet launch without sending, and restart with approval cleared.
-The overall phase-103 job **failed later**; it is not described as fully passed.
+The twelve actual-installer checks verify:
+1. Pinned Build 94 compatibility-baseline launch.
+2. Signed update and rejection of run-as debugging.
+3. Both independent named projects retained.
+4. Changing video frames in the non-debuggable release.
+5. Campaign record retained.
+6. Export blocked before explicit review approval.
+7. Approved Gallery MP4 with expected speed/duration, 1080x1920 framing,
+   caption/highlight pixels and audio.
+8. Android share sheet opened without sending to any recipient.
+9. Project restored and export approval cleared after process restart.
+10. Public English speech decoded and editable captions produced by the APK's
+    packaged JNI engine and foreground service.
+11. Clean signed install imported through the system picker and retained its
+    new project after restart.
+12. No ClipForge Java/native fatal exception in the complete workflow log.
 
-The compatibility baseline was rebuilt from pinned Build 94 source for x86 and
-signed with the original key; it was not the original ARM64 Build 94 binary.
-The owner APK itself was unchanged across all acceptance attempts. All footage
-and seeded records were synthetic/public; no owner media was exported.
+The update baseline was rebuilt from pinned Build 94 source for x86 compatibility
+and signed with the original key; it was not the original ARM64 Build 94 binary.
+The owner installer itself was tested unchanged. All footage and seeded records
+were synthetic/public; no owner media was used or automatically exported.
 
-- [Build/unit/native #97](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42769587936)
-- [All nine media tests #100](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42772568687)
-- [Completed exact-APK update/export checks #103](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42775151387)
-- [Latest unresolved picker attempt #110](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42778039367)
+Native endurance used the public JFK sample padded/repeated into 240 consecutive
+30-second windows, totaling 7,200 seconds. Linux x86_64 CI wall time was **472.486
+seconds**, with warm RSS 281,848 KiB and final/peak RSS 348,204 KiB. This is a
+two-hour-equivalent synthetic workload, not unique two-hour footage or a phone
+runtime/accuracy benchmark. Do not infer a phone speed improvement from CI timing.
 
-## Errors and limits
+## Delivery and installation
 
-Build 97's media attempt never executed tests: slow package downloads and insufficient
-emulator userdata disk exhausted its job time. Retry 100 used 2 GB userdata,
-no snapshots and a bounded boot timeout; all nine tests then passed.
+[Private delivery run](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42799054605)
+passed the four-job gate, APK checksum and production-app tree checks. GitHub
+reports the uploaded APK digest equal to the SHA-256 above. Version 1.0.1 is
+explicitly marked withdrawn in its release title and notes.
 
-Initial acceptance failures were harness scrolling, disabled TextView labels and
-completion actions below the viewport. Correcting these revealed a completed
-Gallery export; all media and approval assertions were retained. Later picker
-attempts waited for file loading, targeted its tile and tried list mode, but the
-system picker did not return the selected synthetic document. Packaged-JNI speech,
-clean import and the final speech/import crash-log check were therefore not run
-to completion. They remain explicit owner phone checks.
+Install 1.0.2 as an **update without uninstalling**. The certificate matches the
+existing app, including Build 94. Keep original videos/music accessible.
+See [Quick start](QUICK_START.md). The release remains marked prerelease pending
+physical owner acceptance.
 
-Signature, original update identity, optimized kernels, ZIP integrity, manifest
-and SHA-256 passed. Owner signing-key recovery/backup was already verified and
-remains private, separate from source, installer and project backups.
+The earlier local-workspace and direct-chat saving blocker is resolved; a direct
+chat installer is now available as well as the private GitHub download.
+Owner signing-key recovery/backup was already verified and stays separate and
+private; no key material is in the installer or source.
 
-The chat workspace became unavailable after the APK was downloaded and verified;
-saving a new direct chat file failed. Delivery therefore uses the private GitHub
-repository. The first release attempt received HTTP 403 for an older workflow
-target. The permitted default-branch target is used only after verifying the
-production app subtree is identical to the APK source; installer bytes are
-checked independently by the pinned SHA-256.
+## Remaining physical checks and scope
 
-## Install and final phone checks
+Check real Nubia media, Play/Pause/Seek, editing, speed/music, caption accuracy,
+saved/reopened edits, approved Gallery export and sharing. Also check metadata
+backup/restore and a longer transcription pause/reopen/explicit Resume.
+Fresh phone runtime, heat/battery use, device codecs and broad Taglish accuracy
+remain unmeasured. Earlier owner Build 94 checks remain baseline evidence.
 
-Install as an **update, without uninstalling**. The original certificate matches
-Build 94; existing projects and media grants should remain. Private GitHub login
-is required for download. See [Quick start](QUICK_START.md).
+The supported personal v1 scope is in QUICK_START.md. Public-store distribution
+is separate. Overlapping layers/cross-dissolves, speed ramps, subject tracking,
+background removal and advanced audio cleanup remain future additions.
+No cloud provider is included. SDR is tested; device-specific HDR matching is
+outside v1. Campaign records are manual and do not guarantee eligibility or income.
 
-Check existing projects, new video import, Play/Pause/Seek, split/reorder/undo,
-speed/music, actual auto captions, saved/reopened edits, approved Gallery export
-and sharing. Also check metadata backup/restore and a longer transcription
-pause/reopen/explicit Resume. Report any crash, freeze, black frame or mismatch.
-Fresh physical verification and broad Taglish accuracy are not inferred from CI.
-
-## Supported v1 scope
-
-The supported personal v1 feature scope is in QUICK_START.md. Public-store
-distribution is separate. Dip-to-black and zoom-cut boundaries preserve duration.
-Overlapping layers/cross-dissolves, speed ramps, subject tracking, background
-removal and advanced audio cleanup remain future additions; no cloud provider
-is included. SDR is tested; device-specific HDR matching is outside v1.
-Campaign records are manual and do not guarantee eligibility or income.
-
-Delivery succeeded in [private delivery run 5](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42778792327). GitHub reports the uploaded APK digest equal to the pinned SHA-256 above. The release is explicitly marked prerelease pending owner acceptance.
+Earlier failed and cancelled attempts remain in VERIFICATION.md and Actions.
+They are not counted as passing tests. Build 115 was superseded while related
+snapshot handling was completed; the fresh results above belong to Build 116.

@@ -87,11 +87,17 @@ identity checks, encrypted signing-key transport and an owner recovery backup.
 These passed Actions #96; CI outcomes and recovered-key verification are recorded in FINAL_RELEASE.md and VERIFICATION.md. Overlapping cross-dissolves and advanced follow-up
 features remain explicitly outside v1; no full CapCut feature parity is claimed.
 
-## v1.0.1 phone-test candidate
+## Current candidate — v1.0.2 Build 116
 
-Build 97 is the original-key, non-debuggable universal installer. Unit/native
-checks passed in 97, nine media tests in retry 100, and nine exact-APK update/export
-checks in phase 103. Whole acceptance jobs later failed in DocumentsUI; packaged
-speech and clean-import verification remain pending, not passed. See
-FINAL_RELEASE.md for real outcomes and errors. Physical owner testing is the
-next gate; do not call this installer fully accepted before that result.
+- [x] Fix the reproduced import-time playback race; consistent timeline snapshots.
+- [x] 118 host/unit tests and 9 Android media tests, zero failures/errors/skips.
+- [x] Full 240-window real native endurance workload.
+- [x] All 12 exact signed-APK workflow checks, including real auto captions,
+  clean picker import, persistence, approved Gallery MP4 and Share.
+- [x] Original-key, non-debuggable universal installer, checksum and durable delivery.
+- [x] Withdraw v1.0.1 after its actual import crash; retain failed-attempt evidence.
+- [ ] Fresh owner test of v1.0.2 on the Nubia Neo 2; real media, long-session
+  pause/resume, codec behavior, heat/battery and Taglish accuracy.
+
+All automated results are fresh from Actions 116. Earlier phone results remain
+baseline evidence. See FINAL_RELEASE.md for exact scope, source and checksum.

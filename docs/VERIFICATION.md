@@ -210,3 +210,39 @@ The default required acceptance job covers update/export; the unresolved
 DocumentsUI speech/import phase remains available through the driver for further
 diagnosis, and is an explicit physical-owner acceptance check. Existing owner
 Build 94 results are preserved as baseline evidence.
+
+## v1.0.2 Build 116 — full acceptance and import-crash fix
+
+Version 1.0.1 is withdrawn. Typed-finger DocumentsUI automation got past the
+old picker blocker and reproduced a real intermittent main-thread import crash:
+a pending playback tick read an empty timeline while using an old active flag.
+The `coerceIn(0, -1)` exception was at MainActivity.kt:890 in the old APK.
+
+The fix takes one current immutable timeline snapshot for the tick and consistent
+snapshots for seek and preview reconciliation. Empty lists return no player
+position. Two regression tests cover empty/replacement sequences, stale indices
+and speed conversion.
+
+Fresh [Build 116](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42795867454),
+source `21ceeb0fe10bc55f380da064b67df7aabb0a5c6f`, passed:
+- 118 host/unit tests and all 9 Android API 30 media tests, zero failures/errors/skips.
+- All 240 real native inference windows, including model reload and progress/cues.
+- All 12 exact signed-APK checks: legacy-source compatibility update, projects,
+  campaign, moving frames, review gate, Gallery MP4 media checks, Share,
+  approval clearing, actual packaged-JNI English captions, clean system-picker
+  import, saved-project restart and Java/native fatal-log checking.
+- Original signing identity, non-debuggable manifest, optimized native kernels,
+  both ABI libraries, ZIP integrity and pinned SHA-256.
+
+Linux native endurance used repeated/padded JFK speech totaling two hours;
+wall time 472.486 seconds, warm RSS 281,848 KiB, final/peak RSS 348,204 KiB.
+This is not a phone benchmark or unique two-hour source.
+
+APK SHA-256: `d680accf98773c81ff98f108f81dc7c1d80d779eedd468f8b62b460de7b8614b`.
+See FINAL_RELEASE.md for current delivery, exact test scope and physical limits.
+The previously pending packaged-engine and clean-import automated checks are
+now passed. Fresh physical Nubia acceptance remains pending.
+
+The test-only finger injector is outside the APK. The baseline update APK was
+rebuilt from pinned Build 94 source for x86 compatibility, not the original
+ARM64 binary. No owner media was used or automatically exported.
