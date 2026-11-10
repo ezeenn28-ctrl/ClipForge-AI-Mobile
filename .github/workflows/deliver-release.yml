@@ -101,4 +101,7 @@ jobs:
           if-no-files-found: error
       - name: Publish installer to the private owner repository
         run: |
-          gh release create v1.0.1 ClipForge-AI-1.0.1-universal.apk SHA256SUMS.txt --target 496792695211b64ab7e11ce3d82bd0d87306bf1b --prerelease --title "ClipForge AI 1.0.1 - final phone-test candidate" --notes-file release-notes.md
+          original_app=$(gh api "repos/$GH_REPO/git/trees/496792695211b64ab7e11ce3d82bd0d87306bf1b" --jq '.tree[] | select(.path == "app") | .sha')
+          current_app=$(gh api "repos/$GH_REPO/git/trees/main" --jq '.tree[] | select(.path == "app") | .sha')
+          test "$original_app" = "$current_app" || { echo "Production app tree changed; refusing delivery"; exit 1; }
+          gh release create v1.0.1 ClipForge-AI-1.0.1-universal.apk SHA256SUMS.txt --target main --prerelease --title "ClipForge AI 1.0.1 - final phone-test candidate" --notes-file release-notes.md
