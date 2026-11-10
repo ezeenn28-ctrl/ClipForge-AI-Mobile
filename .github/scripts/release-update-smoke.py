@@ -70,7 +70,7 @@ def tap_node(node):
     time.sleep(.25)
 
 
-def scroll(root, horizontal=False):
+def scroll(root, horizontal=False, reverse=False):
     nodes = []
     for node in root.iter("node"):
         if node.get("scrollable") != "true":
@@ -93,19 +93,30 @@ def scroll(root, horizontal=False):
         # left gutter so the enclosing vertical ScrollView receives the swipe.
         swipe_x = x1 + min(24, (x2 - x1) // 10)
         points = (swipe_x, y1 + (y2 - y1) * 4 // 5, swipe_x, y1 + (y2 - y1) // 5)
+    if reverse:
+        points = points[2:] + points[:2]
     adb("shell", "input", "swipe", *(str(v) for v in points), "350")
     time.sleep(.3)
 
 
 def locate(text=None, desc=None, contains=False, timeout=30, scroll_axis=None):
-    deadline = time.monotonic() + timeout
+    deadline = time.monotonic() + (max(timeout, 90) if scroll_axis else timeout)
+    previous = None
+    stationary = 0
+    reverse = False
     while time.monotonic() < deadline:
         root = hierarchy()
         nodes = find(root, text=text, desc=desc, contains=contains)
         if nodes:
             return nodes[0]
         if scroll_axis:
-            scroll(root, horizontal=scroll_axis == "horizontal")
+            signature = ET.tostring(root)
+            stationary = stationary + 1 if signature == previous else 0
+            if stationary >= 2:
+                reverse = not reverse
+                stationary = 0
+            previous = signature
+            scroll(root, horizontal=scroll_axis == "horizontal", reverse=reverse)
         else:
             time.sleep(.4)
     raise AssertionError(f"Control unavailable: {text or desc}")
