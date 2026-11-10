@@ -1,0 +1,35 @@
+name: Inspect synthetic acceptance picker
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/acceptance-inspect.yml']
+jobs:
+  inspect:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClipForge-signed-release-acceptance
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 42776234230
+          path: evidence
+      - name: Inspect only the public-fixture picker failure
+        run: |
+          python3 - <<'PY'
+          import xml.etree.ElementTree as E, base64
+          from pathlib import Path
+          p = Path("evidence")
+          root = E.parse(p / "last-window.xml").getroot()
+          parents = {c: n for n in root.iter() for c in n}
+          for n in root.iter("node"):
+              if "ClipForgeSpeechFixture" in (n.get("text", "") + n.get("content-desc", "")):
+                  for _ in range(5):
+                      print("NODE:", n.attrib)
+                      n = parents.get(n)
+                      if n is None: break
+          data = base64.b64encode((p / "failure.png").read_bytes()).decode()
+          for i in range(0, len(data), 6000): print("IMAGECHUNK:" + data[i:i+6000])
+          PY
