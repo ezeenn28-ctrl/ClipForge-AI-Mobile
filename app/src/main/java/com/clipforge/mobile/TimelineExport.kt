@@ -28,7 +28,9 @@ object TimelineExport {
                     mute: Boolean, subtitleSize: Float, subtitleColor: Int, music: MusicTrack? = null, preset: CaptionPreset = CaptionPreset.BOLD, appearance: CaptionAppearance = CaptionAppearance()): Composition {
         appearance.validate()
         require(clips.isNotEmpty()) { "Add a timeline clip before exporting" }
-        val items = clips.map { clip ->
+        val items = clips.mapIndexed { index, clip ->
+            val incoming = clips.getOrNull(index - 1)?.transition
+            val outgoing = clip.transition.takeIf { index < clips.lastIndex }
             val media = MediaItem.Builder().setUri(Uri.parse(clip.resolvedSource(source.toString()))).setClippingConfiguration(MediaItem.ClippingConfiguration.Builder()
                 .setStartPositionMs(clip.startMs).setEndPositionMs(clip.endMs).build()).build()
             val effects = mutableListOf<Effect>().apply {
@@ -39,6 +41,8 @@ object TimelineExport {
                 }
                 add(Presentation.createForWidthAndHeight(if (vertical) 1080 else 1920, if (vertical) 1920 else 1080,
                     if (fillFrame) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT))
+                if (incoming?.kind == CutTransitionKind.ZOOM_CUT || outgoing?.kind == CutTransitionKind.ZOOM_CUT)
+                    add(ClipVisualEffects.transitionMotion(clip, incoming, outgoing))
                 if (clip.visuals.start != MotionPoint() || clip.visuals.end != MotionPoint()) add(ClipVisualEffects.motion(clip))
                 if (clip.hook.isNotBlank() || clip.caption.isNotBlank() || clip.subtitles.isNotEmpty()) {
                     val overlay = if (clip.subtitles.isNotEmpty()) segmentSubtitleOverlay(clip.hook, clip.subtitles, clip.startMs, subtitleSize, subtitleColor, calibrateClock = true, preset = preset, appearance = appearance)
@@ -46,6 +50,8 @@ object TimelineExport {
                     add(OverlayEffect(listOf(overlay)))
                 }
                 if (clip.visuals.fadeInMs > 0 || clip.visuals.fadeOutMs > 0) add(ClipVisualEffects.fade(clip))
+                if (incoming?.kind == CutTransitionKind.DIP_BLACK || outgoing?.kind == CutTransitionKind.DIP_BLACK)
+                    add(ClipVisualEffects.transitionFade(clip, incoming, outgoing))
                 // Overlays evaluate source timestamps; retime the completed picture last.
                 if (clip.speed != 1f) add(SpeedChangeEffect(clip.speed))
             }

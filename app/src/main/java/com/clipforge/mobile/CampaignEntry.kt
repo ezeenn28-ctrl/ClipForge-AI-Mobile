@@ -21,9 +21,10 @@ data class CampaignEntry(
     val actualTierOnePercent: Int? = null,
     val rejectionReason: String = ""
 ) {
+    companion object { val PLATFORMS = listOf("TikTok", "Instagram", "YouTube", "Facebook", "X") }
     fun validate() {
         require(id.isNotBlank() && campaign.isNotBlank()) { "Enter a campaign name" }
-        require(platform in listOf("TikTok", "Instagram", "YouTube", "X")) { "Select a platform" }
+        require(platform in PLATFORMS) { "Select a platform" }
         require(postUrl.isBlank() || postUrl.startsWith("https://")) { "Use an HTTPS post URL" }
         require(views >= 0 && views <= 1_000_000_000_000) { "Enter a valid view count" }
         listOf(ratePerThousand, minimumPayout, maximumPayout, paid).forEach {

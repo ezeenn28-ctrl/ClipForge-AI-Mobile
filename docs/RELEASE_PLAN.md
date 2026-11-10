@@ -76,3 +76,14 @@ device performance evidence before being marked complete.
 Report commits, actual test outcomes, unresolved issues and whether an APK is a
 development build or signed release. Do not claim background work continues
 after the active session ends, or promise unlimited processing on the phone.
+
+## Version 1 release freeze
+
+The personal Android v1 scope is frozen at the supported functions listed in
+QUICK_START.md. This batch adds duration-preserving dip-to-black and zoom-cut
+boundaries, Facebook tracking, end-to-end campaign checks, two-hour checkpoint
+recovery and far-seek checks, a non-debuggable release variant, immutable signing
+identity checks, encrypted signing-key transport and an owner recovery backup.
+These are release-candidate changes until the CI outcomes and recovered key
+fingerprint are recorded. Overlapping cross-dissolves and advanced follow-up
+features remain explicitly outside v1; no full CapCut feature parity is claimed.

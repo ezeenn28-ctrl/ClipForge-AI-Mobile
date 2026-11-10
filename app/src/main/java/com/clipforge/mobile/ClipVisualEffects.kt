@@ -6,6 +6,20 @@ import androidx.media3.effect.RgbMatrix
 
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 object ClipVisualEffects {
+    fun transitionMotion(clip: TimelineClip, incoming: CutTransition?, outgoing: CutTransition?): MatrixTransformation {
+        val clock = ClipPresentationClock()
+        return MatrixTransformation { timestamp ->
+            val state = TimelineTransitions.frame(clip, incoming, outgoing, clip.outputOffsetMs(clock.relativeUs(timestamp) / 1000))
+            Matrix().apply { setScale(state.scale, state.scale) }
+        }
+    }
+    fun transitionFade(clip: TimelineClip, incoming: CutTransition?, outgoing: CutTransition?): RgbMatrix {
+        val clock = ClipPresentationClock()
+        return RgbMatrix { timestamp, _ ->
+            val opacity = TimelineTransitions.frame(clip, incoming, outgoing, clip.outputOffsetMs(clock.relativeUs(timestamp) / 1000)).opacity
+            floatArrayOf(opacity,0f,0f,0f,0f,opacity,0f,0f,0f,0f,opacity,0f,0f,0f,0f,1f)
+        }
+    }
     fun motion(clip: TimelineClip): MatrixTransformation {
         val clock = ClipPresentationClock()
         return MatrixTransformation { timestamp ->

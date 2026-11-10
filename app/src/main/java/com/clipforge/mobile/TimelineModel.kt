@@ -22,7 +22,8 @@ data class TimelineClip(
     val sourceName: String = "",
     val visuals: ClipVisuals = ClipVisuals(),
     val speed: Float = 1f,
-    val color: ColorAdjustments = ColorAdjustments()
+    val color: ColorAdjustments = ColorAdjustments(),
+    val transition: CutTransition = CutTransition()
 ) {
     val sourceSpanMs: Long get() = endMs - startMs
     val durationMs: Long get() = (sourceSpanMs / speed.toDouble()).roundToLong().coerceAtLeast(1)
@@ -46,6 +47,7 @@ data class TimelineClip(
         visuals.validate()
         require(speed.isFinite() && speed in .5f..2f) { "Invalid clip speed" }
         color.validate()
+        transition.validate()
         require(id.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "Invalid timeline clip ID" }
         require(startMs >= 0 && endMs > startMs && endMs <= sourceDurationMs) { "Invalid timeline trim" }
         require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown timeline effect" }
@@ -78,7 +80,7 @@ object TimelineModel {
         val clip = clips[position.index]
         require(position.localMs >= 100 && clip.durationMs - position.localMs >= 100) { "Place the playhead at least 0.1s inside a clip" }
         val visualSplit = clip.visuals.split(position.localMs, clip.durationMs)
-        val left = clip.copy(endMs = position.sourceMs, visuals = visualSplit.first, fadeInMs = minOf(clip.fadeInMs, clip.copy(endMs = position.sourceMs).durationMs), fadeOutMs = 0)
+        val left = clip.copy(endMs = position.sourceMs, visuals = visualSplit.first, transition = CutTransition(), fadeInMs = minOf(clip.fadeInMs, clip.copy(endMs = position.sourceMs).durationMs), fadeOutMs = 0)
         val right = clip.copy(id = newId, startMs = position.sourceMs, visuals = visualSplit.second, fadeInMs = 0, fadeOutMs = minOf(clip.fadeOutMs, clip.copy(startMs = position.sourceMs).durationMs))
         return clips.take(position.index) + listOf(left, right) + clips.drop(position.index + 1)
     }

@@ -10,6 +10,18 @@ import org.robolectric.annotation.Config
 @Config(sdk = [35])
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class ClipVisualEffectsTest {
+    @Test fun transitionZoomUsesTheSameRetimedClockAsPreview() {
+        val clip = TimelineClip("a", 1000, 3000, speed = 2f)
+        val incoming = CutTransition(CutTransitionKind.ZOOM_CUT, 400)
+        val effect = ClipVisualEffects.transitionMotion(clip, incoming, null)
+        val values = FloatArray(9)
+        effect.getMatrix(10_000_000).getValues(values)
+        assertEquals(1.12f, values[0], .0001f)
+        effect.getMatrix(10_200_000).getValues(values)
+        assertEquals(1.06f, values[0], .0001f)
+        effect.getMatrix(10_400_000).getValues(values)
+        assertEquals(1f, values[0], .0001f)
+    }
     @Test fun exportEffectsUseItemLocalTimeAndPreserveAlpha() {
         val clip = TimelineClip("a", 60_000, 70_000, visuals = ClipVisuals(end = MotionPoint(1.4f, .2f), ease = false, fadeInMs = 1000))
         val motion = ClipVisualEffects.motion(clip)

@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = ciBuildNumber
-        versionName = "0.2.$ciBuildNumber"
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += if (providers.gradleProperty("mediaDeviceTests").orNull == "true") listOf("x86_64") else listOf("arm64-v8a") }
     }
@@ -25,7 +25,15 @@ android {
             keyPassword = "android"
         }
     }
-    buildTypes { release { isMinifyEnabled = false } }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            isDebuggable = false
+            isJniDebuggable = false
+            // Keep the original installed identity. The key is owner-backed-up and never committed.
+            signingConfig = signingConfigs.getByName("debug")
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17

@@ -1,6 +1,8 @@
 package com.clipforge.mobile
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -85,8 +87,8 @@ fun CampaignTracker(directory: File, enabled: Boolean) {
     }) { Text("Add submission") }
     if (showEntryForm) {
     OutlinedTextField(enabled = editable, value = campaign, onValueChange = { campaign = it.take(200) }, label = { Text("Campaign name") }, modifier = Modifier.fillMaxWidth())
-    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-        listOf("TikTok", "Instagram", "YouTube", "X").forEach { option ->
+    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        CampaignEntry.PLATFORMS.forEach { option ->
             FilterChip(enabled = editable, selected = platform == option, onClick = { platform = option }, label = { Text(option) })
         }
     }

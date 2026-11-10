@@ -72,6 +72,21 @@ class TimelineEditorTest {
     }
 
 
+    @Test fun boundaryControlsApplyTransitionsThroughUndoHistory() {
+        var history by mutableStateOf(TimelineHistory(listOf(TimelineClip("a", 0, 2000), TimelineClip("b", 0, 2000))))
+        compose.setContent { ClipForgeTheme { Surface { Column(Modifier.verticalScroll(rememberScrollState())) {
+            TransitionControls(history.clips.first(), true, true) { changed ->
+                history = history.edit(listOf(changed, history.clips.last()))
+            }
+        } } } }
+        compose.onNodeWithText("Dip to black").performScrollTo().performClick()
+        compose.runOnIdle {
+            assertEquals(CutTransitionKind.DIP_BLACK, history.clips.first().transition.kind)
+            assertEquals(4000L, TimelineModel.duration(history.clips))
+            assertEquals(CutTransitionKind.CUT, history.undo().clips.first().transition.kind)
+        }
+    }
+
     @Test fun emptyCompactTimelineOffersAnAddSourceAction() {
         var additions = 0
         compose.setContent {

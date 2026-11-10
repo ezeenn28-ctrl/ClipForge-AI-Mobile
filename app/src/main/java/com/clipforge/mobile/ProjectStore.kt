@@ -56,6 +56,7 @@ object ProjectStore {
         safe.timelineClips.forEachIndexed { i, clip ->
             val v = clip.visuals
             put("timeline.$i.speed", clip.speed)
+            put("timeline.$i.transition.kind", clip.transition.kind.name); put("timeline.$i.transition.duration", clip.transition.durationMs)
             put("timeline.$i.color.brightness", clip.color.brightness); put("timeline.$i.color.contrast", clip.color.contrast)
             put("timeline.$i.color.saturation", clip.color.saturation); put("timeline.$i.color.warmth", clip.color.warmth)
             put("timeline.$i.visual.startScale", v.start.scale); put("timeline.$i.visual.startX", v.start.x); put("timeline.$i.visual.startY", v.start.y)
@@ -120,7 +121,9 @@ object ProjectStore {
                 color = ColorAdjustments(data.getProperty("timeline.$i.color.brightness", "0").toFloat(),
                     data.getProperty("timeline.$i.color.contrast", "1").toFloat(),
                     data.getProperty("timeline.$i.color.saturation", "1").toFloat(),
-                    data.getProperty("timeline.$i.color.warmth", "0").toFloat()))
+                    data.getProperty("timeline.$i.color.warmth", "0").toFloat()),
+                transition = CutTransition(CutTransitionKind.valueOf(data.getProperty("timeline.$i.transition.kind", "CUT")),
+                    data.getProperty("timeline.$i.transition.duration", "400").toLong()))
         }
         val music = if (data.getProperty("music.present", "false").toBooleanStrict()) MusicTrack(
             text("music.source"), text("music.name"), number("music.duration"), number("music.start"), number("music.end"),

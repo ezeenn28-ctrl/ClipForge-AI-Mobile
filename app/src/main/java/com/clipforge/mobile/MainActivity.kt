@@ -1030,10 +1030,11 @@ class MainActivity : ComponentActivity() {
                     val visuals = playingTimelineClip?.visuals ?: ClipVisuals()
                     val point = visuals.point(localVisualMs, playingTimelineClip?.durationMs ?: 1)
                     val previewEffect = if (timelineActive) playingTimelineClip?.effect ?: "None" else effectChoice
+                    val boundary = if (timelineActive) TimelineTransitions.frame(timeline.clips, timelinePlaybackIndex, localVisualMs) else TimelineTransitions.Frame()
                     val staticZoom = if (previewEffect == "Zoom") 1.12f else 1f
-                    val visualOpacity = visuals.opacity(localVisualMs, playingTimelineClip?.durationMs ?: 1)
+                    val visualOpacity = visuals.opacity(localVisualMs, playingTimelineClip?.durationMs ?: 1) * boundary.opacity
                     PreviewVideo(previewBinding, Modifier.fillMaxSize().graphicsLayer {
-                        scaleX = point.scale * staticZoom; scaleY = point.scale * staticZoom
+                        scaleX = point.scale * staticZoom * boundary.scale; scaleY = point.scale * staticZoom * boundary.scale
                         translationX = point.x * size.width; translationY = point.y * size.height; alpha = visualOpacity
                     }, crop = fillFrame, color = if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments(), monochrome = previewEffect == "Monochrome")
                     if (timelineActive || selectedDraft in drafts.indices || hookText.isNotBlank() || captionText.isNotBlank()) {
@@ -1245,6 +1246,9 @@ class MainActivity : ComponentActivity() {
                                         timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
                                             ColorControls(clip.color, !busy) { color ->
                                                 updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(color = color) else it }))
+                                            }
+                                            TransitionControls(clip, timeline.clips.indexOfFirst { it.id == clip.id } < timeline.clips.lastIndex, !busy) { changed ->
+                                                updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) changed else it }))
                                             }
                                             MotionControls(clip, !busy, onChange = { changed ->
                                                 updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) changed else it }))

@@ -125,3 +125,12 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Open **Effects** for brightness, contrast, saturation and warmth. Release a slider to apply its value as one undoable edit; **Reset color** restores neutral settings.
 - Settings persist per cut through save, reopen, split, duplicate and undo/redo. Older projects open at 1x with neutral color. Any edit requires a fresh review before export.
 - These controls are SDR; device-specific HDR tone mapping is not covered by the matching-color checks.
+
+## Personal release 1.0
+- Release APKs are non-debuggable, retain the Build 94 update signing identity and include a SHA-256 manifest.
+- The owner recovery envelope contains only encrypted signing-key bytes. The recipient private key stays outside this repository; the decrypted owner backup is delivered privately.
+- A missing or mismatched signing key fails the build; automation never silently generates a replacement identity.
+- Selected outgoing boundaries support dip-to-black and zoom-cut transitions (0.2–1s), including saved settings and split/undo behavior. These preserve output duration; overlapping cross-dissolves remain a future feature.
+- Campaign tracking includes Facebook alongside TikTok, Instagram, YouTube and X.
+- Release coverage includes a persisted two-hour/240-window interruption and backup/resume schedule, real bounded decoding near a two-hour video's end, campaign UI/edit/restore, and actual transition pixels in MP4.
+- See [Quick start and limits](docs/QUICK_START.md). Automated long-source checks do not establish phone-specific runtime, thermal behavior or transcription accuracy.

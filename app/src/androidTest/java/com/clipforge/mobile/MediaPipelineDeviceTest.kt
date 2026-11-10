@@ -347,6 +347,70 @@ class MediaPipelineDeviceTest {
         }
     }
 
+    @Test fun dipTransitionRendersBlackAtBoundaryAndKeepsTheOriginalDuration() {
+        val source = fixture("transition-cyan.mp4")
+        val next = fixture("transition-red.mp4")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val output = File(context.cacheDir, "boundary-transition.mp4").apply { delete() }
+        val clips = listOf(TimelineClip("cyan", 0, 1000, transition = CutTransition(CutTransitionKind.DIP_BLACK)),
+            TimelineClip("red", 0, 1000, source = Uri.fromFile(next).toString(), sourceDurationMs = 1000))
+        val composition = TimelineExport.composition(Uri.fromFile(source), clips, true, false, true, 39f, Color.WHITE)
+        val done = CountDownLatch(1); val failure = AtomicReference<Throwable?>(null)
+        lateinit var transformer: Transformer
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            transformer = Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory())
+                .addListener(object : Transformer.Listener {
+                    override fun onCompleted(c: Composition, result: ExportResult) { done.countDown() }
+                    override fun onError(c: Composition, result: ExportResult, error: ExportException) { failure.set(error); done.countDown() }
+                }).build()
+            transformer.start(composition, output.absolutePath)
+        }
+        try {
+            assertTrue("Boundary export timed out", done.await(180, TimeUnit.SECONDS))
+            failure.get()?.let { throw AssertionError("Boundary export failed", it) }
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(output.absolutePath)
+                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
+                assertTrue("Transition changed sequence duration: $duration", duration in 1900..2100)
+                fun center(time: Long): Int {
+                    val frame = retriever.getFrameAtTime(time, MediaMetadataRetriever.OPTION_CLOSEST)!!
+                    return try { frame.getPixel(frame.width / 2, frame.height / 2) } finally { frame.recycle() }
+                }
+                val before = center(500_000); val boundary = center(1_000_000); val after = center(1_500_000)
+                assertTrue("First source missing", Color.green(before) + Color.blue(before) > 350)
+                assertTrue("Cut boundary did not dip to black", Color.red(boundary) + Color.green(boundary) + Color.blue(boundary) < 40)
+                assertTrue("Second source missing", Color.red(after) > 170 && Color.green(after) < 60)
+            } finally { retriever.release() }
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }
+            output.delete()
+        }
+    }
+
+    @Test fun twoHourVideoDecodesBoundedAudioWindowsNearStartMiddleAndEnd() {
+        val source = fixture("two-hours.mp4")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val retriever = MediaMetadataRetriever()
+        try {
+            retriever.setDataSource(source.absolutePath)
+            val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
+            assertTrue("Fixture is not two hours: $duration", duration in 7_199_900..7_200_100)
+        } finally { retriever.release() }
+        for (start in listOf(0L, 3_600_000L, 7_199_000L)) {
+            val wav = File(context.cacheDir, "long-window-$start.wav")
+            try {
+                OfflineAudioPreparer.extractWav(context, Uri.fromFile(source), wav, start, start + 1000)
+                val bytes = wav.readBytes()
+                val header = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                val rate = header.getInt(24)
+                val seconds = (bytes.size - 44).toDouble() / 2 / rate
+                assertTrue("Incorrect window at $start: $seconds s", seconds in .9..1.1)
+                assertTrue("Far seek created an unbounded WAV", bytes.size < 100_000)
+            } finally { wav.delete() }
+        }
+    }
+
     @Test fun installedApplicationExposesItsAdaptiveLauncherIcon() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val icon = context.packageManager.getApplicationIcon(context.applicationInfo)
