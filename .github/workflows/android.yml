@@ -9,6 +9,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    env:
+      CLIPFORGE_ROBOLECTRIC_SDK: ${{ github.workspace }}/.ci-robolectric
     permissions:
       contents: read
     steps:
@@ -47,6 +49,13 @@ jobs:
       - name: Fetch pinned whisper.cpp native inference source
         run: |
           git clone --depth 1 --branch v1.7.6 https://github.com/ggml-org/whisper.cpp.git app/src/main/cpp/whisper.cpp
+      - name: Cache pinned Robolectric SDK
+        uses: actions/cache@v4
+        with:
+          path: .ci-robolectric
+          key: robolectric-android15-12650502-i7-v1
+      - name: Verify offline test SDK
+        run: python3 .github/scripts/prepare-robolectric.py
       - name: Validate source and run available unit tests
         shell: bash
         run: |
@@ -222,6 +231,23 @@ jobs:
           mkdir -p "$HOME/.android"
           keytool -genkeypair -keystore "$HOME/.android/clipforge-development.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ClipForge CI Test" -noprompt
           bash .github/scripts/media-fixtures.sh
+      - name: Cache Android test system image
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/system-images/android-30/default/x86_64
+          key: android-api30-default-x86_64-image-v1
+      - name: Prepare Android test image with bounded retries
+        shell: bash
+        run: |
+          sdkmanager_bin="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager_bin" --licenses >/dev/null || true
+          for attempt in 1 2 3; do
+            if "$sdkmanager_bin" "system-images;android-30;default;x86_64"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 10; fi
+          done
+          exit 1
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

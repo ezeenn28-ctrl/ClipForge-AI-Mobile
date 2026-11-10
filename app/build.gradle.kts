@@ -63,5 +63,11 @@ dependencies {
 tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     maxHeapSize = "2g"
     systemProperty("roborazzi.test.record", "true")
-    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+    val preparedSdk = providers.environmentVariable("CLIPFORGE_ROBOLECTRIC_SDK").orNull
+    if (preparedSdk != null) {
+        systemProperty("robolectric.dependency.dir", preparedSdk)
+        systemProperty("robolectric.offline", "true")
+    } else {
+        systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+    }
 }
