@@ -1,0 +1,78 @@
+name: Deliver ClipForge 1.0.2
+on:
+  push:
+    branches: [delivery/v1.0.2]
+    paths: ['.github/workflows/deliver-v1.0.2.yml']
+  workflow_dispatch:
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Require private repository and complete fresh verification
+        run: |
+          gh api "repos/$GH_REPO" > repository.json
+          gh api "repos/$GH_REPO/actions/runs/42795867454/jobs" > jobs.json
+          python3 - <<'PY'
+          import json
+          assert json.load(open("repository.json"))["private"]
+          jobs = json.load(open("jobs.json"))["jobs"]
+          names = ["build", "Android decoder and export integration", "Native Whisper integration and endurance", "Actual signed release complete acceptance"]
+          for name in names:
+              match = [j for j in jobs if j["name"] == name]
+              assert len(match) == 1 and match[0]["conclusion"] == "success", name
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClipForge-AI-Mobile-release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 42795867454
+          path: verified
+      - name: Verify and name the immutable installer
+        run: |
+          python3 - <<'PY'
+          import hashlib, json, shutil, zipfile
+          from pathlib import Path
+          p = Path("verified/app/build/outputs/apk/release/app-release.apk")
+          m = json.load(open("verified/release-manifest.json"))
+          sha = "d680accf98773c81ff98f108f81dc7c1d80d779eedd468f8b62b460de7b8614b"
+          assert hashlib.sha256(p.read_bytes()).hexdigest() == m["apk_sha256"] == sha
+          assert m["version"] == "1.0.2" and m["version_code"] == 116 and m["debuggable"] is False
+          assert m["commit"] == "21ceeb0fe10bc55f380da064b67df7aabb0a5c6f"
+          assert m["signing_certificate_sha256"] == "ea9f20de77e24660999aaae941f66029c76ffe94170e33dfc4cfb03ce13d8ea6"
+          assert zipfile.ZipFile(p).testzip() is None
+          shutil.copyfile(p, "ClipForge-AI-1.0.2-universal.apk")
+          Path("SHA256SUMS.txt").write_text(sha + "  ClipForge-AI-1.0.2-universal.apk\n")
+          PY
+      - name: Verify default-branch app source
+        run: |
+          tested_app=$(gh api "repos/$GH_REPO/git/trees/21ceeb0fe10bc55f380da064b67df7aabb0a5c6f" --jq '.tree[] | select(.path == "app") | .sha')
+          owner_app=$(gh api "repos/$GH_REPO/git/trees/main" --jq '.tree[] | select(.path == "app") | .sha')
+          test "$tested_app" = "$owner_app"
+      - name: Publish verified phone-test candidate
+        run: |
+          cat > notes.md <<'NOTES'
+          v1.0.2 Build 116 fixes an intermittent import crash caused by a pending playback tick reading a cleared timeline. Playback, seek and reconciliation now use consistent timeline snapshots.
+
+          All fresh verification jobs passed: 118 unit tests and 9 Android API 30 media tests with zero failures/errors/skips; all 240 real native inference windows; all 12 actual signed-APK workflow checks, including packaged-engine English auto captions, clean system-picker import, saved-project restart, approval-gated Gallery MP4 and Share. No ClipForge Java/native fatal exception was found in the complete workflow.
+
+          Native endurance input was repeated/padded public JFK speech totaling two hours. Linux CI wall time: 472.486 seconds; this is not a phone benchmark. Actual acceptance used the identical non-debuggable ARM64/x86_64 installer on an isolated x86 emulator. The pinned Build 94 update baseline was rebuilt for x86 compatibility, not the original ARM64 binary.
+
+          Verification: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42795867454
+          APK source: 21ceeb0fe10bc55f380da064b67df7aabb0a5c6f
+          SHA-256: d680accf98773c81ff98f108f81dc7c1d80d779eedd468f8b62b460de7b8614b
+
+          Install as an update without uninstalling. Original signing identity is retained. Version 1.0.1 is withdrawn after the reproduced import crash. Final physical Nubia testing, heat/battery behavior and broad Taglish accuracy remain owner checks. This prerelease label represents that remaining physical acceptance gate, not a failed CI gate.
+
+          Supported personal v1 scope and limits: docs/QUICK_START.md and docs/FINAL_RELEASE.md. Advanced overlapping layers, tracking, background removal and speed ramps remain future additions; no cloud provider is included.
+          NOTES
+          gh release create v1.0.2 ClipForge-AI-1.0.2-universal.apk SHA256SUMS.txt --target main --prerelease --title "ClipForge AI 1.0.2 - verified phone-test candidate" --notes-file notes.md
+      - name: Mark the older candidate withdrawn
+        run: |
+          gh release edit v1.0.1 --target main --prerelease --title "Withdrawn - ClipForge AI 1.0.1 import crash" --notes "WITHDRAWN: an intermittent import-time crash was reproduced. Install v1.0.2 instead. See docs/FINAL_RELEASE.md for fresh verification and the fix."
