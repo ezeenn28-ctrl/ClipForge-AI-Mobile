@@ -1,0 +1,92 @@
+name: Deliver verified private APK
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deliver-release.yml']
+  workflow_dispatch:
+jobs:
+  deliver:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Require private repository and completed verification
+        shell: bash
+        run: |
+          gh api "repos/$GH_REPO" > repository.json
+          python3 -c 'import json; assert json.load(open("repository.json"))["private"], "This delivery is private-only"'
+          for attempt in $(seq 1 30); do
+            status=$(gh api "repos/$GH_REPO/actions/runs/42775151387" --jq .status)
+            if [ "$status" = completed ]; then break; fi
+            sleep 20
+          done
+          gh api "repos/$GH_REPO/actions/runs/42769587936/jobs" > baseline-jobs.json
+          gh api "repos/$GH_REPO/actions/runs/42772568687/jobs" > media-jobs.json
+          gh api "repos/$GH_REPO/actions/runs/42775151387/jobs" > acceptance-jobs.json
+          python3 - <<'PY'
+          import json
+          expected = {
+            "baseline-jobs.json": ["build", "Native Whisper integration and endurance"],
+            "media-jobs.json": ["Android decoder and export integration"],
+            "acceptance-jobs.json": ["Actual signed release update and workflow"],
+          }
+          for path, names in expected.items():
+              jobs = json.load(open(path))["jobs"]
+              for name in names:
+                  matches = [j for j in jobs if j["name"] == name]
+                  assert len(matches) == 1 and matches[0]["conclusion"] == "success", (path, name)
+          print("All required real verification jobs passed")
+          PY
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClipForge-AI-Mobile-release
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 42769587936
+          path: verified
+      - name: Verify immutable APK and prepare owner installer
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, shutil, zipfile
+          apk = Path("verified/app/build/outputs/apk/release/app-release.apk")
+          manifest = json.load(open("verified/release-manifest.json"))
+          expected = "01d88ee76d8109c37ea3cda8462c594dfb873bda5e8fe18f8a1a35e606cdc69a"
+          assert hashlib.sha256(apk.read_bytes()).hexdigest() == expected == manifest["apk_sha256"]
+          assert manifest["version_code"] == 97 and manifest["version"] == "1.0.1"
+          assert manifest["debuggable"] is False
+          assert manifest["commit"] == "496792695211b64ab7e11ce3d82bd0d87306bf1b"
+          assert manifest["signing_certificate_sha256"] == "ea9f20de77e24660999aaae941f66029c76ffe94170e33dfc4cfb03ce13d8ea6"
+          with zipfile.ZipFile(apk) as z:
+              assert z.testzip() is None
+              for abi in ("arm64-v8a", "x86_64"):
+                  assert "lib/" + abi + "/libclipforge_whisper.so" in z.namelist()
+          shutil.copyfile(apk, "ClipForge-AI-1.0.1-universal.apk")
+          Path("SHA256SUMS.txt").write_text(expected + "  ClipForge-AI-1.0.1-universal.apk\n")
+          PY
+          cat > release-notes.md <<'NOTES'
+          Personal Android v1.0.1, Build 97. Install as an update; keep the existing app installed to retain projects and media access.
+
+          Verified: 116 host/unit tests and 9 Android API 30 media tests, zero failures/errors/skips. Real native inference completed 240 repeated/padded public-speech windows (two-hour-equivalent synthetic workload) in 765.529 seconds on Linux CI; this is not a phone benchmark.
+
+          The actual non-debuggable signed APK passed the isolated emulator update, saved-project/campaign retention, moving preview, approval-gated MP4 export, Gallery media checks, share sheet, packaged-engine auto captions, clean import and restart workflow. The Build 94 baseline was rebuilt from pinned source for x86 compatibility, rather than using the original ARM64 binary.
+
+          APK source: 496792695211b64ab7e11ce3d82bd0d87306bf1b. Verification runs: #97 (build/unit/native), #100 (media retry), #103 (actual APK acceptance). Test-harness and emulator provisioning failures are documented separately.
+
+          This freezes the supported personal v1 scope. Physical Nubia runtime/heat/battery behavior and broad Taglish accuracy remain for owner testing. Advanced tracking, background removal, overlapping layers/cross-dissolves and speed ramps remain future work. No cloud provider is included.
+          NOTES
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ClipForge-AI-1.0.1-universal
+          path: |
+            ClipForge-AI-1.0.1-universal.apk
+            SHA256SUMS.txt
+          if-no-files-found: error
+      - name: Publish installer to the private owner repository
+        run: |
+          gh release create v1.0.1 ClipForge-AI-1.0.1-universal.apk SHA256SUMS.txt --target 496792695211b64ab7e11ce3d82bd0d87306bf1b --title "ClipForge AI 1.0.1 - personal Android release" --notes-file release-notes.md

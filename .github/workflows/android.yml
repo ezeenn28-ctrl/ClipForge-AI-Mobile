@@ -8,7 +8,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[media-only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[delivery-only]') && !contains(github.event.head_commit.message, '[media-only]') }}
     runs-on: ubuntu-24.04
     env:
       CLIPFORGE_ROBOLECTRIC_SDK: ${{ github.workspace }}/.ci-robolectric
@@ -231,7 +231,7 @@ jobs:
           if-no-files-found: error
   native-smoke:
     # Acceptance-script-only commits reuse the recorded, unchanged engine/media evidence.
-    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[media-only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[delivery-only]') && !contains(github.event.head_commit.message, '[media-only]') }}
     name: Native Whisper integration and endurance
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -267,7 +267,7 @@ jobs:
 
   media-device:
     # Acceptance-script-only commits reuse the recorded, unchanged engine/media evidence.
-    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[delivery-only]') }}
     name: Android decoder and export integration
     runs-on: ubuntu-24.04
     timeout-minutes: 25
