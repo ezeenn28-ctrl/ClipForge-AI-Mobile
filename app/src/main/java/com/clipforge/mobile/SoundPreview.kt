@@ -28,8 +28,9 @@ class SoundPreview(private val player: Player) {
         if (active == null) { player.pause(); return }
         val local = positionMs - active.startMs
         if (changed || abs(player.currentPosition - local) > 80) player.seekTo(local)
-        val fade = minOf(1f, local / 20f, (active.durationMs - local) / 20f).coerceIn(0f, 1f)
-        player.volume = active.volume * fade
+        // A 50 ms UI clock cannot apply a 20 ms attack envelope: it would mute
+        // most of a short pop. The PCM asset already starts at zero amplitude.
+        player.volume = active.volume
         player.playWhenReady = playing
     }
 }
