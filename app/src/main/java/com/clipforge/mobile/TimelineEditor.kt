@@ -50,6 +50,7 @@ fun TimelineEditor(
     }
     var snapping by remember { mutableStateOf(true) }
     val clips = history.clips
+    val soundEvents = remember(clips) { SoundTimeline.events(clips) }
     val total = TimelineModel.duration(clips)
     val selectedIndex = clips.indexOfFirst { it.id == selectedId }.let { if (it < 0 && clips.isNotEmpty()) 0 else it }
     val selected = clips.getOrNull(selectedIndex)
@@ -97,6 +98,7 @@ fun TimelineEditor(
                 Box(Modifier.height(32.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { StudioGlyph(StudioGlyph.CAPTIONS, Modifier.size(16.dp), Color(0xFFFFD76A), "Captions track") }
                 Box(Modifier.height(28.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { StudioGlyph(StudioGlyph.AUDIO, Modifier.size(16.dp), accent, "Original audio track") }
                 if (music != null) Box(Modifier.height(28.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { StudioGlyph(StudioGlyph.AUDIO, Modifier.size(16.dp), MaterialTheme.colorScheme.secondary, "Music track") }
+                if (soundEvents.isNotEmpty()) Box(Modifier.height(28.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { Text("FX", fontSize = 10.sp, color = accent) }
             }
         Box(Modifier.weight(1f).onSizeChanged { viewportDp = it.width / density.density }
             .background(surface, RoundedCornerShape(14.dp)).horizontalScroll(trackScroll)) {
@@ -181,7 +183,15 @@ fun TimelineEditor(
                     }
                 }
             }
-            Canvas(Modifier.width(trackWidth).height(if (music != null) 194.dp else 166.dp)) {
+            if (soundEvents.isNotEmpty()) Canvas(Modifier.width(trackWidth).height(28.dp).align(androidx.compose.ui.Alignment.BottomStart).semantics { contentDescription = "Sound effects track" }) {
+                drawRect(surface)
+                soundEvents.forEach { sound ->
+                    drawRoundRect(accent.copy(alpha = .8f), Offset(sound.startMs * scale * density.density, 4.dp.toPx()),
+                        androidx.compose.ui.geometry.Size((sound.durationMs * scale * density.density).coerceAtLeast(3.dp.toPx()), 20.dp.toPx()),
+                        androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()))
+                }
+            }
+            Canvas(Modifier.width(trackWidth).height(((if (music != null) 194 else 166) + if (soundEvents.isNotEmpty()) 28 else 0).dp)) {
                 val x = playheadMs.coerceIn(0, total) * scale * density.density
                 drawLine(Color.White, Offset(x, 0f), Offset(x, size.height), 2.dp.toPx())
             }

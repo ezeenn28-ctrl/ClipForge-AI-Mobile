@@ -13,7 +13,7 @@ fun HookGeneratorControls(clip: TimelineClip, enabled: Boolean, onApply: (String
     var tone by remember { mutableStateOf(HookTone.FUNNY) }
     var suggestions by remember(clip.id) { mutableStateOf(emptyList<String>()) }
     var message by remember(clip.id) { mutableStateOf("") }
-    StudioCard("Generate Hook", "Offline text suggestions. Review the meaning before applying.") {
+    StudioCard("Hook ideas", "Offline text suggestions. Review the meaning before applying.") {
         OutlinedTextField(description, { description = it.take(1000); suggestions = emptyList() },
             enabled = enabled, label = { Text("What happens? (optional)") }, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {

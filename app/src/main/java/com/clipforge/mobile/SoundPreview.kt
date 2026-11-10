@@ -28,7 +28,8 @@ class SoundPreview(private val player: Player) {
         if (active == null) { player.pause(); return }
         val local = positionMs - active.startMs
         if (changed || abs(player.currentPosition - local) > 80) player.seekTo(local)
-        player.volume = active.volume
+        val fade = minOf(1f, local / 20f, (active.durationMs - local) / 20f).coerceIn(0f, 1f)
+        player.volume = active.volume * fade
         player.playWhenReady = playing
     }
 }

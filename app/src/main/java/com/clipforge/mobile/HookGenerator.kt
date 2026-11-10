@@ -29,7 +29,7 @@ object HookGenerator {
             HookTone.CURIOSITY -> listOf("“" + short + "”… bakit kaya? 👀", "Ano ang ibig niyang sabihin dito?", "Pakinggan muna ang buong usapan 👀")
             HookTone.STORY -> listOf("Dito nagsimula ang usapan 👀", "“" + short + "” — ito ang context", "Ganito napunta ang usapan dito")
         } else when (tone) {
-            HookTone.FUNNY -> listOfNotNull(specific, "“" + short + "”… wait 😭", "The “" + short + "” moment 😂")
+            HookTone.FUNNY -> listOfNotNull(specific, "“" + short + "”… wait 😭", "The “" + short + "” moment 😂", "Listen to this exchange 👀")
             HookTone.CURIOSITY -> listOf("“" + short + "”… what does that mean? 👀", "Listen to how this conversation unfolds 👀", "Here's the context behind “" + short + "”")
             HookTone.STORY -> listOf("This is where the conversation started 👀", "“" + short + "” — here's the context", "How this conversation got here")
         }
