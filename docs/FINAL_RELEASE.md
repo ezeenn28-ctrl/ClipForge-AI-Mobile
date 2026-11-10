@@ -1,3 +1,5 @@
+> **WITHDRAWN on 10 November 2026:** v1.0.1 has a newly reproduced import-time crash from a stale playback tick. Do not use it for final acceptance. The fix is being verified in v1.0.2 (Build 115); see Actions run 42795431790. Earlier passed checks below remain historical evidence, not a clean bill of health.
+
 # ClipForge AI 1.0.1 — final phone-test candidate
 
 Prepared 10 November 2026 (Asia/Manila). Physical owner acceptance is pending.
