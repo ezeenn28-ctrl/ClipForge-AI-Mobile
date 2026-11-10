@@ -75,7 +75,12 @@ def find(root, text=None, desc=None, contains=False, class_name=None):
 
 def tap_node(node):
     x1, y1, x2, y2 = bounds(node)
-    adb("shell", "input", "tap", str((x1 + x2) // 2), str((y1 + y2) // 2))
+    x, y = str((x1 + x2) // 2), str((y1 + y2) // 2)
+    if node.get("package") == "com.android.documentsui":
+        adb("shell", "CLASSPATH=/data/local/tmp/clipforge-touch.jar",
+            "app_process", "/system/bin", "ClipForgeTouch", x, y)
+    else:
+        adb("shell", "input", "tap", x, y)
     time.sleep(.25)
 
 
@@ -233,6 +238,8 @@ def verify_mp4(path):
 
 def main(args):
     adb("wait-for-device")
+    if args.phase != "update-export":
+        command("bash", ".github/scripts/prepare-ci-touch.sh", timeout=120)
     adb("logcat", "-c")
     adb("install", "-r", str(args.baseline))
     adb("shell", "am", "force-stop", PACKAGE)
