@@ -2,14 +2,19 @@
 
 Private, offline-first Android video editor for a personal clipping workflow.
 
-Current installer: **v1.0.2, Build 116**. The import crash in v1.0.1 is fixed;
-all automated release gates passed. Fresh physical phone acceptance remains.
-Version 1.0.1 is withdrawn. See the release record below.
+Current installer: **v1.1.0, Build 121**. Automated verification passed: 133 unit tests,
+10 Android media tests, 240 native inference windows and 15 actual signed-APK checks.
+Fresh physical phone acceptance remains. Version 1.0.1 remains withdrawn.
+[Download installer](https://chatgpt.com/library?file_id=libfile_609eddc84a148191af364613f739cee8&account_id=personal) · [Reference-style editing guide](docs/REFERENCE_STYLE.md).
 The v1 scope, installation instructions and limits are in [Quick start](docs/QUICK_START.md).
 See [Release record](docs/FINAL_RELEASE.md), [verification history](docs/VERIFICATION.md)
 and [release gates](docs/RELEASE_PLAN.md) for actual evidence.
 
 ## Editing
+
+- Offline Generate Hook suggestions from captions or a scene description; editable Funny, Curiosity and Story options.
+- White square/4:3 portrait reference frames and six original synthesized sound effects with timed placement, volume controls, suggestions and project persistence.
+
 
 - Original dark/cyan interface, custom vector icon, named projects and recent drafts.
 - Timeline with up to 60 cuts, multiple source videos, split, trim, duplicate,
