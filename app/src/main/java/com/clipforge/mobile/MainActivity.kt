@@ -479,13 +479,16 @@ class MainActivity : ComponentActivity() {
             }
         }
         val seekTimeline: (Long) -> Unit = { time ->
-            TimelineModel.position(timeline.clips, time)?.let { position ->
-                timelinePosition = time.coerceIn(0, TimelineModel.duration(timeline.clips))
+            val seekClips = timeline.clips
+            val seekSource = video
+            TimelineModel.position(seekClips, time)?.let { position ->
+                timelinePosition = time.coerceIn(0, TimelineModel.duration(seekClips))
                 timelinePlaybackIndex = position.index
                 previewPosition = position.sourceMs
-                if (timelineActive && video != null) {
-                    previewPlayback.load(timeline.clips.map { PreviewPlayback.Source(it.resolvedSource(video.toString()), it.startMs, it.endMs, it.speed) }, position.index, position.sourceMs - timeline.clips[position.index].startMs)
-                    player.seekTo(position.index, position.sourceMs - timeline.clips[position.index].startMs)
+                if (timelineMode && seekSource != null) {
+                    val sourceLocal = position.sourceMs - seekClips[position.index].startMs
+                    previewPlayback.load(seekClips.map { PreviewPlayback.Source(it.resolvedSource(seekSource.toString()), it.startMs, it.endMs, it.speed) }, position.index, sourceLocal)
+                    player.seekTo(position.index, sourceLocal)
                 }
             }
         }
@@ -519,9 +522,10 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(player, video, timelineActive, timeline.clips.map { listOf(it.id, it.startMs, it.endMs, it.source, it.speed) }) {
             val source = video ?: return@LaunchedEffect
-            if (timelineActive) {
-                val position = TimelineModel.position(timeline.clips, timelinePosition)!!
-                previewPlayback.load(timeline.clips.map { PreviewPlayback.Source(it.resolvedSource(source.toString()), it.startMs, it.endMs, it.speed) }, position.index, position.sourceMs - timeline.clips[position.index].startMs)
+            val playbackClips = timeline.clips
+            val position = if (timelineMode) TimelineModel.position(playbackClips, timelinePosition) else null
+            if (position != null) {
+                previewPlayback.load(playbackClips.map { PreviewPlayback.Source(it.resolvedSource(source.toString()), it.startMs, it.endMs, it.speed) }, position.index, position.sourceMs - playbackClips[position.index].startMs)
             } else previewPlayback.load(listOf(PreviewPlayback.Source(source.toString())), positionMs = (duration * start).toLong())
         }
         LaunchedEffect(start, end, duration) {
