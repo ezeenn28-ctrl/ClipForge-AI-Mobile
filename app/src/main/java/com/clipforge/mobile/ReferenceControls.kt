@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.unit.dp
 import java.util.UUID
 
@@ -38,14 +39,34 @@ fun HookGeneratorControls(clip: TimelineClip, enabled: Boolean, onApply: (String
 @Composable
 fun ReferencePresetControls(appearance: CaptionAppearance, enabled: Boolean, onChange: (CaptionAppearance) -> Unit) {
     Text("Reference frame")
-    ReferenceLayout.entries.forEach { layout ->
-        FilterChip(selected = appearance.layout == layout, enabled = enabled, onClick = {
-            onChange(appearance.copy(layout = layout, font = CaptionFont.SANS, alignment = CaptionAlignment.CENTER,
-                color = if (layout == ReferenceLayout.STANDARD) CaptionColor.INHERIT else CaptionColor.WHITE,
-                highlight = if (layout == ReferenceLayout.WHITE_CLASSIC) CaptionColor.GREEN else CaptionColor.YELLOW,
-                positionY = if (layout == ReferenceLayout.WHITE_CLASSIC) .79f else if (layout == ReferenceLayout.WHITE_SQUARE) .73f else 970f / 1280))
-        }, label = { Text(layout.label) })
+    ReferenceLayout.entries.chunked(3).forEach { row ->
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            row.forEach { layout ->
+                val sample = remember(layout) {
+                    val overlay = makeCaptionOverlay("", "", appearance = CaptionAppearance(layout = layout), bitmapScale = .25f)
+                    val bitmap = android.graphics.Bitmap.createBitmap(180, 320, android.graphics.Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(bitmap)
+                    canvas.drawColor(0xFF43637D.toInt())
+                    canvas.drawBitmap(overlay, 0f, 0f, null)
+                    overlay.recycle()
+                    bitmap.asImageBitmap()
+                }
+                Surface(onClick = {
+                    onChange(appearance.copy(layout = layout, positionY = layout.captionY))
+                }, enabled = enabled, modifier = Modifier.weight(1f),
+                    shape = MaterialTheme.shapes.medium,
+                    color = if (appearance.layout == layout) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                    border = androidx.compose.foundation.BorderStroke(if (appearance.layout == layout) 2.dp else 1.dp,
+                        if (appearance.layout == layout) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)) {
+                    Column(Modifier.padding(8.dp), horizontalAlignment = androidx.compose.ui.Alignment.CenterHorizontally) {
+                        androidx.compose.foundation.Image(sample, null, Modifier.height(54.dp).aspectRatio(9f/16f))
+                        Text(layout.label, style = MaterialTheme.typography.labelSmall, maxLines = 2)
+                    }
+                }
+            }
+        }
     }
+    Text("Selected frame: " + appearance.layout.label, style = MaterialTheme.typography.bodySmall)
 }
 
 @Composable
@@ -92,4 +113,5 @@ fun SoundControls(clip: TimelineClip, localMs: Long, projectCount: Int, enabled:
         }
     }
 }
+
 

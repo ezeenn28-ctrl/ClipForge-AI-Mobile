@@ -1096,7 +1096,7 @@ class MainActivity : ComponentActivity() {
                         PreviewVideo(previewBinding,
                             if (reference.videoAspect != null) Modifier.fillMaxWidth().aspectRatio(reference.videoAspect) else Modifier.fillMaxSize(),
                             crop = fillFrame || reference != ReferenceLayout.STANDARD,
-                            color = if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments(), monochrome = previewEffect == "Monochrome")
+                            color = VideoLooks.color(previewEffect, if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments()), monochrome = previewEffect == "Monochrome")
                     }
                     if (reference != ReferenceLayout.STANDARD || timelineActive || selectedDraft in drafts.indices || hookText.isNotBlank() || captionText.isNotBlank()) {
                         val playing = if (timelineActive) timeline.clips.getOrNull(timelinePlaybackIndex) else null
@@ -1294,7 +1294,7 @@ class MainActivity : ComponentActivity() {
                                             }) { Text(if (modelReady) "Generate captions" else "Set up auto captions") }
                                             CaptionStyleControls(captionPreset, subtitleSize, captionAppearance,
                                                 if (subtitleYellow) Color.YELLOW else Color.WHITE, !busy,
-                                                onPreset = { captionPreset = it; revokeCaptionApproval() },
+                                                onPreset = { captionPreset = it; captionAppearance = CaptionThemes.apply(it, captionAppearance); revokeCaptionApproval() },
                                                 onSize = { subtitleSize = it; revokeCaptionApproval() },
                                                 onAppearance = { captionAppearance = it; revokeCaptionApproval() })
                                             clip?.subtitles?.take(10)?.forEachIndexed { index, cue ->
@@ -1309,7 +1309,7 @@ class MainActivity : ComponentActivity() {
                                     }
                                     EditorTool.FORMAT -> StudioCard("Canvas") {
                                         ReferencePresetControls(captionAppearance, !busy) {
-                                            captionAppearance = it; vertical = true; captionPreset = CaptionPreset.HIGHLIGHT; revokeCaptionApproval()
+                                            captionAppearance = it; vertical = true; revokeCaptionApproval()
                                         }
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             FilterChip(selected = vertical, enabled = !busy, onClick = { vertical = true; approved = false }, label = { Text("9:16 vertical") })
@@ -1640,14 +1640,9 @@ class MainActivity : ComponentActivity() {
                     }
                     Text("Timed speech captions take priority over a manual caption when available.", style = MaterialTheme.typography.bodySmall)
                     Text("Rendered effect", style = MaterialTheme.typography.bodySmall)
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        listOf("None", "Zoom", "Monochrome").forEach { option ->
-                            FilterChip(enabled = !busy, selected = effectChoice == option, onClick = {
-                                effectChoice = option
-                                approved = false
-                                drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(effect = option, approved = false) }
-                            }, label = { Text(option) })
-                        }
+                    VideoLookPicker(effectChoice, !busy) { option ->
+                        effectChoice = option; approved = false
+                        drafts = drafts.toMutableList().also { list -> list[selectedDraft] = list[selectedDraft].copy(effect = option, approved = false) }
                     }
                 }
 
@@ -1758,7 +1753,7 @@ class MainActivity : ComponentActivity() {
                     Text("Timed subtitle editor", style = MaterialTheme.typography.titleMedium)
                     CaptionStyleControls(captionPreset, subtitleSize, captionAppearance,
                         if (subtitleYellow) Color.YELLOW else Color.WHITE, !busy,
-                        onPreset = { captionPreset = it; revokeCaptionApproval() },
+                        onPreset = { captionPreset = it; captionAppearance = CaptionThemes.apply(it, captionAppearance); revokeCaptionApproval() },
                         onSize = { subtitleSize = it; revokeCaptionApproval() },
                         onAppearance = { captionAppearance = it; revokeCaptionApproval() })
 
@@ -2062,6 +2057,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
 
 
 

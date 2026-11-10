@@ -42,7 +42,7 @@ data class EditorProject(
         require(source.startsWith("content://") || source.startsWith("file://")) { "Project source must be a local video" }
         require(durationMs > 0 && startMs >= 0 && endMs > startMs && endMs <= durationMs) { "Invalid project trim" }
         require(mode in listOf("Manual Editor", "AI Draft")) { "Unknown editing mode" }
-        require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown visual effect" }
+        require(effect in VideoLooks.names) { "Unknown visual effect" }
         require(subtitleSize.isFinite() && subtitleSize in 28f..55f) { "Invalid subtitle size" }
         TimelineModel.validate(timelineClips, durationMs)
         music?.validate()
@@ -55,7 +55,7 @@ data class EditorProject(
         require(subtitleDraftIndex == -1 || subtitleDraftIndex in drafts.indices) { "Invalid subtitle association" }
         drafts.forEach {
             require(it.startMs >= 0 && it.endMs > it.startMs && it.endMs <= durationMs) { "Invalid draft trim" }
-            require(it.effect in listOf("None", "Zoom", "Monochrome")) { "Invalid draft effect" }
+            require(it.effect in VideoLooks.names) { "Invalid draft effect" }
         }
         require(draftSegments.size <= 15 && draftSegments.keys.all { it in drafts.indices }) { "Invalid draft subtitles" }
         val currentDuration = timelineClips.firstOrNull { it.id == currentTimelineId }?.resolvedDuration(durationMs) ?: durationMs
@@ -67,4 +67,5 @@ data class EditorProject(
         }
     }
 }
+
 

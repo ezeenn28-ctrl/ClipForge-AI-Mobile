@@ -53,7 +53,7 @@ data class TimelineClip(
         transition.validate()
         require(id.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "Invalid timeline clip ID" }
         require(startMs >= 0 && endMs > startMs && endMs <= sourceDurationMs) { "Invalid timeline trim" }
-        require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown timeline effect" }
+        require(effect in VideoLooks.names) { "Unknown timeline effect" }
         require(volume.isFinite() && volume in 0f..1f && fadeInMs in 0..durationMs && fadeOutMs in 0..durationMs) { "Invalid audio settings" }
         require(subtitles.size <= 20_000) { "Too many subtitle cues" }
         subtitles.forEach { require(it.startMs >= 0 && it.endMs > it.startMs && it.endMs <= sourceDurationMs) { "Invalid timeline subtitle" } }
@@ -131,5 +131,6 @@ data class TimelineHistory(
     fun undo() = if (past.isEmpty()) this else TimelineHistory(past.last(), past.dropLast(1), listOf(clips) + future)
     fun redo() = if (future.isEmpty()) this else TimelineHistory(future.first(), (past + listOf(clips)).takeLast(30), future.drop(1))
 }
+
 
 

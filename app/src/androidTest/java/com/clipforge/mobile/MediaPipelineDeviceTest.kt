@@ -550,4 +550,64 @@ class MediaPipelineDeviceTest {
             output.delete(); wav.delete(); projectFile.delete()
         }
     }
+
+    @Test fun neonFrameCaptionAndWarmLookMatchTheSharedRenderer() = styleExport(ReferenceLayout.NEON_SQUARE, CaptionPreset.NEON, "Warm film")
+    @Test fun roundedPortraitStickerAndVintageLookMatchTheSharedRenderer() = styleExport(ReferenceLayout.PORTRAIT_CARD, CaptionPreset.STICKER, "Vintage")
+    private fun styleExport(layout: ReferenceLayout, preset: CaptionPreset, look: String) {
+        val source = fixture("transition-red.mp4")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val appearance = CaptionThemes.apply(preset,CaptionAppearance(layout=layout,positionY=layout.captionY))
+        val clip = TimelineClip("style",0,1000,hook="NEW LOOK",caption="HELLO #WORLD",captionEndMs=1000,effect=look)
+        val output = File(context.cacheDir,"style-" + layout.name + ".mp4").apply { delete() }
+        val done=CountDownLatch(1);val failure=AtomicReference<Throwable?>(null)
+        lateinit var transformer: Transformer
+        val composition=TimelineExport.composition(Uri.fromFile(source),listOf(clip),true,false,true,39f,Color.WHITE,preset=preset,appearance=appearance)
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            transformer=Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory()).addListener(object:Transformer.Listener {
+                override fun onCompleted(c:Composition,result:ExportResult){done.countDown()}
+                override fun onError(c:Composition,result:ExportResult,error:ExportException){failure.set(error);done.countDown()}
+            }).build()
+            transformer.start(composition,output.absolutePath)
+        }
+        try {
+            assertTrue("Style export timeout",done.await(180,TimeUnit.SECONDS))
+            failure.get()?.let { throw AssertionError("Style export failed",it) }
+            val retriever=MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(output.absolutePath)
+                val raw=retriever.getFrameAtTime(500_000,MediaMetadataRetriever.OPTION_CLOSEST)!!
+                val rotation=retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt()?:0
+                val frame=if(raw.width>raw.height && rotation in listOf(90,270))
+                    Bitmap.createBitmap(raw,0,0,raw.width,raw.height,android.graphics.Matrix().apply{postRotate(rotation.toFloat())},true)
+                        .also{if(it!==raw)raw.recycle()} else raw
+                try {
+                    fun at(x:Int,y:Int)=frame.getPixel(x*frame.width/720,y*frame.height/1280)
+                    val matte=at(360,20)
+                    for ((actual,expected) in listOf(Color.red(matte) to Color.red(layout.matteColor),Color.green(matte) to Color.green(layout.matteColor),Color.blue(matte) to Color.blue(layout.matteColor)))
+                        assertEquals("Matte differs",expected.toDouble(),actual.toDouble(),12.0)
+                    val center=at(360,640)
+                    val grade=VideoLooks.color(look).coefficients()
+                    val expected=floatArrayOf(grade[0]+grade[4],grade[5]+grade[9],grade[10]+grade[14])
+                    for ((actual,value) in listOf(Color.red(center) to expected[0],Color.green(center) to expected[1],Color.blue(center) to expected[2]))
+                        assertEquals("Video look differs from preview",value.coerceIn(0f,1f)*255.0,actual.toDouble(),15.0)
+                    val corner=at(3,layout.videoTop.toInt()+3)
+                    if(layout.cornerRadius>0) assertTrue("Rounded corner is not masked",Color.blue(corner)>210&&Color.green(corner)>210)
+                    var white=0;var accent=0;var black=0
+                    val start=(appearance.positionY*1280-70).toInt()
+                    for(y in start until start+95 step 2)for(x in 40..680 step 2){
+                        val c=at(x,y);val r=Color.red(c);val g=Color.green(c);val b=Color.blue(c)
+                        if(r>220&&g>220&&b>220)white++
+                        if(r+g+b<120)black++
+                        if(preset==CaptionPreset.NEON && r<110&&g>150&&b>170)accent++
+                        if(preset==CaptionPreset.STICKER && r>170&&g in 30..160&&b>110)accent++
+                    }
+                    assertTrue("Caption/card white pixels missing",white>30)
+                    assertTrue("Caption highlight missing",accent>15)
+                    if(preset==CaptionPreset.STICKER)assertTrue("Sticker ink missing",black>20)
+                } finally { frame.recycle() }
+            } finally { retriever.release() }
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() };output.delete()
+        }
+    }
 }

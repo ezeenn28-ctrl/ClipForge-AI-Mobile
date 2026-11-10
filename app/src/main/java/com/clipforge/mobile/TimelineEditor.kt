@@ -255,9 +255,7 @@ fun TimelineEditor(
                 if (compact) OutlinedTextField(value = clip.caption, onValueChange = { update(clip.copy(caption = it.take(100), captionStartMs = clip.startMs, captionEndMs = clip.endMs)) },
                     label = { Text("Manual caption") }, enabled = enabled, modifier = Modifier.fillMaxWidth())
                 }
-                if (!compact || tool == EditorTool.EFFECTS) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("None", "Zoom", "Monochrome").forEach { effect -> FilterChip(selected = clip.effect == effect, onClick = { update(clip.copy(effect = effect)) }, enabled = enabled, label = { Text(effect) }) }
-                }
+                if (!compact || tool == EditorTool.EFFECTS) VideoLookPicker(clip.effect, enabled) { effect -> update(clip.copy(effect = effect)) }
                 if (!compact || tool == EditorTool.AUDIO) {
                 Text("Volume · ${(clip.volume * 100).toInt()}%")
                 Slider(value = clip.volume, onValueChange = { update(clip.copy(volume = it)) }, valueRange = 0f..1f, enabled = enabled)
@@ -270,5 +268,6 @@ fun TimelineEditor(
         }
     }
 }
+
 
 

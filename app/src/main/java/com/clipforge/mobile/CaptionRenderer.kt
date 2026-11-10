@@ -17,9 +17,18 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
     val canvas = Canvas(bitmap).apply { scale(bitmapScale, bitmapScale) }
     val reference = appearance.layout != ReferenceLayout.STANDARD
     if (reference) {
-        val matte = Paint().apply { color = Color.WHITE }
-        canvas.drawRect(0f, 0f, 720f, appearance.layout.videoTop, matte)
-        canvas.drawRect(0f, appearance.layout.videoBottom, 720f, 1280f, matte)
+        val layout = appearance.layout
+        val matte = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = layout.matteColor }
+        val mask = android.graphics.Path().apply {
+            fillType = android.graphics.Path.FillType.EVEN_ODD
+            addRect(0f, 0f, 720f, 1280f, android.graphics.Path.Direction.CW)
+            addRoundRect(0f, layout.videoTop, 720f, layout.videoBottom, layout.cornerRadius, layout.cornerRadius, android.graphics.Path.Direction.CW)
+        }
+        canvas.drawPath(mask, matte)
+        if (layout.accentColor != 0) {
+            matte.color = layout.accentColor; matte.style = Paint.Style.STROKE; matte.strokeWidth = 4f
+            canvas.drawRoundRect(2f, layout.videoTop, 718f, layout.videoBottom, layout.cornerRadius, layout.cornerRadius, matte)
+        }
     }
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textAlign = Paint.Align.LEFT
@@ -29,11 +38,15 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
     data class Word(val text: String, val marked: Boolean)
     listOf(hook.take(65), caption.take(100)).forEachIndexed { index, text ->
         if (text.isBlank()) return@forEachIndexed
+        val body = index == 1
         paint.typeface = Typeface.create(if (index == 0) "sans-serif" else appearance.font.family,
-            if (preset == CaptionPreset.CLEAN) Typeface.NORMAL else Typeface.BOLD)
+            if (body && preset == CaptionPreset.EDITORIAL) Typeface.ITALIC else if (preset == CaptionPreset.CLEAN) Typeface.NORMAL else Typeface.BOLD)
+        paint.setShadowLayer(5f, 2f, 3f, Color.BLACK)
+        if (body && preset == CaptionPreset.NEON) paint.setShadowLayer(12f, 0f, 0f, appearance.highlightColor())
+        if (body && preset in listOf(CaptionPreset.STICKER, CaptionPreset.CAPSULE)) paint.clearShadowLayer()
         val baseSize = if (index == 0) if (reference) 38f else 45f else subtitleSize
         paint.textSize = baseSize
-        val words = text.split(Regex("\\s+")).filter { it.isNotEmpty() }.map {
+        val words = (if (body && preset == CaptionPreset.COMIC) text.uppercase(java.util.Locale.ROOT) else text).split(Regex("\\s+")).filter { it.isNotEmpty() }.map {
             val marked = it.startsWith("#") && it.length > 1
             Word(if (marked) it.drop(1) else it, marked)
         }
@@ -59,22 +72,46 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
                 CaptionAlignment.CENTER -> (720f - width) / 2f
                 CaptionAlignment.RIGHT -> 672f - width
             }
-            val y = (if (index == 0) if (reference) appearance.layout.videoTop - 100f else 210f else appearance.positionY * 1280f) + row * 55f
+            val lineStep = if (body && preset in listOf(CaptionPreset.OUTLINE, CaptionPreset.NEON, CaptionPreset.CAPSULE, CaptionPreset.STICKER, CaptionPreset.COMIC, CaptionPreset.EDITORIAL)) maxOf(55f, subtitleSize + 28f) else 55f
+            val newStyle = body && preset in listOf(CaptionPreset.OUTLINE, CaptionPreset.NEON, CaptionPreset.CAPSULE, CaptionPreset.STICKER, CaptionPreset.COMIC, CaptionPreset.EDITORIAL)
+            val captionY = if (newStyle) minOf(appearance.positionY * 1280f, 1240f - (minOf(3, rows.size) - 1) * lineStep) else appearance.positionY * 1280f
+            val y = (if (index == 0) if (reference) appearance.layout.videoTop - 100f else 210f else captionY) + row * lineStep
+            if (body && preset in listOf(CaptionPreset.CAPSULE, CaptionPreset.STICKER)) {
+                val card = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = if (preset == CaptionPreset.STICKER) Color.WHITE else Color.argb(235, 8, 12, 20)
+                    if (preset == CaptionPreset.STICKER) setShadowLayer(5f, 2f, 4f, Color.BLACK)
+                }
+                val radius = if (preset == CaptionPreset.CAPSULE) 28f else 8f
+                canvas.drawRoundRect(left - 18f, y - paint.textSize - 8f, left + width + 18f, y + 14f, radius, radius, card)
+                card.clearShadowLayer(); card.color = appearance.highlightColor()
+                if (preset == CaptionPreset.CAPSULE) canvas.drawRoundRect(left - 12f, y - paint.textSize, left - 6f, y + 6f, 3f, 3f, card)
+            }
+            if (body && preset == CaptionPreset.EDITORIAL) {
+                val rule = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = appearance.highlightColor(); strokeWidth = 3f }
+                canvas.drawLine(left, y + 11f, left + width, y + 11f, rule)
+            }
             if (preset == CaptionPreset.CARD && index == 1) {
                 paint.color = Color.argb(210, 0, 0, 0); paint.style = Paint.Style.FILL
                 canvas.drawRoundRect(left - 18f, y - paint.textSize - 7f, left + width + 18f, y + 13f, 12f, 12f, paint)
             }
             paint.color = Color.BLACK; paint.style = Paint.Style.STROKE
-            paint.strokeWidth = if (index == 0 && reference) 0f else if (preset == CaptionPreset.CLEAN) 5f else 9f
-            if (!(index == 0 && reference)) canvas.drawText(clean, left, y, paint)
+            paint.strokeWidth = when {
+                index == 0 && reference -> 0f
+                body && preset == CaptionPreset.OUTLINE -> 13f
+                body && preset == CaptionPreset.COMIC -> 11f
+                body && preset in listOf(CaptionPreset.NEON, CaptionPreset.EDITORIAL) -> 3f
+                preset == CaptionPreset.CLEAN -> 5f
+                else -> 9f
+            }
+            if (!(index == 0 && reference) && !(body && preset in listOf(CaptionPreset.STICKER, CaptionPreset.CAPSULE))) canvas.drawText(clean, left, y, paint)
             paint.style = Paint.Style.FILL
             var prefix = ""
             line.forEachIndexed { wordIndex, word ->
-                val autoHighlight = index == 1 && preset == CaptionPreset.HIGHLIGHT &&
+                val autoHighlight = index == 1 && preset in listOf(CaptionPreset.HIGHLIGHT, CaptionPreset.NEON, CaptionPreset.COMIC) &&
                     !explicitHighlights && wordIndex == line.lastIndex
                 paint.color = when {
                     word.marked || autoHighlight -> appearance.highlightColor()
-                    index == 0 && reference -> if (appearance.layout == ReferenceLayout.WHITE_CLASSIC) 0xFF179B38.toInt() else Color.BLACK
+                    index == 0 && reference -> appearance.layout.hookColor
                     index == 0 -> Color.WHITE
                     else -> appearance.textColor(preset, subtitleColor)
                 }
@@ -85,4 +122,5 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
     }
     return bitmap
 }
+
 

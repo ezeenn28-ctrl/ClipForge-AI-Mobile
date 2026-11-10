@@ -24,10 +24,10 @@ fun CaptionStyleControls(preset: CaptionPreset, size: Float, appearance: Caption
     when (panel) {
         CaptionPanel.STYLE -> {
             CaptionPresetPicker(preset, enabled, onPreset)
-            Text("Bold highlight emphasizes each line’s last word. Prefix a word with # to choose it.", style = MaterialTheme.typography.bodySmall)
+            Text("Highlight, Neon glow and Comic emphasize the last word. Prefix a word with # to choose it.", style = MaterialTheme.typography.bodySmall)
         }
         CaptionPanel.FONT -> {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CaptionFont.entries.forEach { font ->
                     FilterChip(selected = appearance.font == font, enabled = enabled,
                         onClick = { onAppearance(appearance.copy(font = font)) }, label = { Text(font.label) })
@@ -61,7 +61,7 @@ fun CaptionStyleControls(preset: CaptionPreset, size: Float, appearance: Caption
             }
         }
     }
-    TextButton(enabled = enabled, onClick = { onAppearance(CaptionAppearance()) }) { Text("Reset font, color & position") }
+    TextButton(enabled = enabled, onClick = { onAppearance(CaptionThemes.apply(preset, CaptionAppearance(positionY = appearance.layout.captionY, layout = appearance.layout))) }) { Text("Reset font, color & position") }
 }
 
 @Composable
@@ -73,3 +73,4 @@ private fun CaptionColorChoices(selectedArgb: Int, enabled: Boolean, onSelect: (
         }
     }
 }
+

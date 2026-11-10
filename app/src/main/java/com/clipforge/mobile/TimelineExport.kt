@@ -37,8 +37,9 @@ object TimelineExport {
                 .setStartPositionMs(clip.startMs).setEndPositionMs(clip.endMs).build()).build()
             val effects = mutableListOf<Effect>().apply {
                 addAll(creativeEffects(if (clip.effect == "Monochrome") "None" else clip.effect))
-                if (clip.color != ColorAdjustments() || clip.effect == "Monochrome") {
-                    val matrix = clip.color.exportMatrix(clip.effect == "Monochrome")
+                val grade = VideoLooks.color(clip.effect, clip.color)
+                if (grade != ColorAdjustments() || clip.effect == "Monochrome") {
+                    val matrix = grade.exportMatrix(clip.effect == "Monochrome")
                     add(RgbMatrix { _, _ -> matrix })
                 }
                 if (reference.videoAspect != null) add(Presentation.createForAspectRatio(reference.videoAspect, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
@@ -96,6 +97,7 @@ object TimelineExport {
         return Composition.Builder(sequences).experimentalSetForceAudioTrack(!mute || music != null || sounds.isNotEmpty()).build()
     }
 }
+
 
 
 
