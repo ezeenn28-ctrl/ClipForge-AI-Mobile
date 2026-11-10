@@ -366,7 +366,13 @@ def exercise_speech_import(args):
     tap_node(locate(text="Audio", scroll_axis="horizontal"))
     tap_node(locate(text="Add SFX at playhead", scroll_axis="vertical"))
     locate(text="Effect volume:", contains=True, scroll_axis="vertical")
-    screenshot("reference-hook-sfx-controls")
+    reference_image = screenshot("reference-hook-sfx-controls")
+    frame = locate(desc="Preview of time-synchronized subtitles")
+    fx1, fy1, fx2, fy2 = bounds(frame)
+    for sx in (fx1 - 20, fx2 + 20):
+        if 0 <= sx < reference_image.width:
+            assert sum(reference_image.getpixel((sx, (fy1 + fy2) // 2))) < 45, "Reference video overflows its portrait canvas"
+
     passed("Actual signed APK applies reference frame and adds a timed sound effect with volume control")
     time.sleep(1.5)
     adb("shell", "am", "force-stop", PACKAGE)

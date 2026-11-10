@@ -1053,7 +1053,7 @@ class MainActivity : ComponentActivity() {
                         if (!expanded) IconButton(onClick = { fullScreenPreview = true }) { StudioGlyph(StudioGlyph.EXPAND, description = "Full screen") }
                     }
                 Box(modifier = Modifier.fillMaxWidth().height(canvasHeight).clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp)).background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
-                    Box(Modifier.fillMaxHeight().aspectRatio(if (vertical) 9f / 16f else 16f / 9f, matchHeightConstraintsFirst = true), contentAlignment = Alignment.Center) {
+                    Box(Modifier.fillMaxHeight().aspectRatio(if (vertical) 9f / 16f else 16f / 9f, matchHeightConstraintsFirst = true).graphicsLayer { clip = true }, contentAlignment = Alignment.Center) {
                     val localVisualMs = if (timelineActive) playingTimelineClip?.outputOffsetMs(previewPosition - playingTimelineClip.startMs) ?: 0L else 0L
                     val visuals = playingTimelineClip?.visuals ?: ClipVisuals()
                     val point = visuals.point(localVisualMs, playingTimelineClip?.durationMs ?: 1)
