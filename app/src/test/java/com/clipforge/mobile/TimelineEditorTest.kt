@@ -88,13 +88,14 @@ class TimelineEditorTest {
         var history by mutableStateOf(TimelineHistory(listOf(TimelineClip("a", 1000, 5000))))
         compose.setContent {
             ClipForgeTheme { Surface { Column(Modifier.verticalScroll(rememberScrollState())) {
+                EditorTopBar(true, history.past.isNotEmpty(), history.future.isNotEmpty(), {}, { history = history.undo() }, { history = history.redo() }, {})
                 TimelineEditor(LocalContext.current, null, 8000, history, "a", 0, true,
                     { history = it }, {}, {}, {}, { error -> throw AssertionError(error) }, compact = true, tool = EditorTool.SPEED)
             } } }
         }
         compose.onNodeWithText("2.0x").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(2000L, history.clips.single().durationMs); assertEquals(1, history.past.size) }
-        compose.onNodeWithText("Undo").performScrollTo().performClick()
+        compose.onNodeWithContentDescription("Undo").performScrollTo().performClick()
         compose.runOnIdle { assertEquals(4000L, history.clips.single().durationMs) }
     }
 

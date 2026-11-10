@@ -305,6 +305,8 @@ class MediaPipelineDeviceTest {
             var centerX = 0; var centerY = 0; var barX = 0
             scenario.onActivity { activity ->
                 window = activity.window
+                // Match the editor's black canvas, independent of the harness window theme.
+                activity.preview.setBackgroundColor(Color.BLACK)
                 activity.preview.layoutParams = android.widget.FrameLayout.LayoutParams(360, 360)
                 player = PreviewPlayerFactory.create(activity, false)
                 activity.preview.player = player
