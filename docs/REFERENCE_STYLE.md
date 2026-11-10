@@ -1,22 +1,23 @@
-# Reference-style edits
+# Reference frames, video looks and caption styles
 
-1. Import a video and select its timeline cut.
-2. In **Text**, tap **Generate Hook**. Use captions in the selected cut, or enter **What happens?**. Choose Funny, Curiosity or Story, tap a suggestion and edit **Hook text** as needed.
-3. In **Format**, select **White square crop** or **White 4:3 crop**. Both are portrait presets with a cropped picture window, a short header and bold captions. Choose **Original canvas** for ordinary fit/crop controls.
-4. In **Audio**, choose Whoosh, Pop, Impact, Metal chime, Boing or Scratch. Scrub and tap **Add SFX at playhead**. Adjust volume, move an effect to the current playhead, remove it or clear the cut's effects.
-5. **Suggest SFX from captions** replaces the selected cut's effects with an opening whoosh and up to three spaced reaction cues. Without suitable captions it suggests the opening only. Undo restores the previous cut settings.
-6. Preview, review and explicitly approve before exporting.
+1. Import a video or continue a project, then select its timeline cut.
+2. Open **Format** and choose a reference frame. Eight templates are available: White square crop, White 4:3 crop, Dark square, Dark classic, Paper classic, Neon square, Cinema wide and Portrait card. **Original canvas** restores ordinary canvas controls.
+3. Open **Effects**. The video look picker appears first, before the timeline and manual adjustments. Choose Warm film, Cool film, Vivid, Vintage, Noir or Soft fade; None, Zoom and Monochrome remain available. Brightness, contrast, saturation and warmth refine the chosen look. None removes the preset while retaining manual adjustments.
+4. Open **Captions** and select a style: Bold clean, Bold highlight, Minimal, Caption card, Heavy outline, Neon glow, Capsule, Sticker, Comic or Editorial. Edit text, font, size, color and position. Changing the frame preserves the selected caption style.
+5. Open **Text → Generate Hook**, use captions or enter a scene description, then choose and edit a Funny, Curiosity or Story suggestion.
+6. Open **Audio → Sound library · 18+** to search/audition built-in effects, import local audio or explicitly search/download individual Myinstants sounds. Choose a sound, then **Add SFX at playhead**.
+7. Preview the cut and inspect cropped faces/action, text wrapping and sound levels. Review and explicitly approve before exporting.
 
-## Behavior and limits
+## Saved behavior and limits
 
-Hook suggestions are local templates based on supplied words, with English/Filipino variants. They are not visual scene recognition or a cloud language model. Review context and wording.
+Frame, style, font, colors and video look autosave with the project. They survive process restart. Changes and project restoration clear export approval. Tool switching returns the tool panel to its top.
 
-The 18 built-in PCM sounds are original procedural effects; no samples were copied from reference footage. Built-in effects, framing and hook suggestions work offline. The optional [Sound library](SOUND_LIBRARY.md) adds Myinstants search/download and local MP3 import.
+Reference templates apply to portrait output. Landscape suppresses the matte/crop while retaining the saved frame choice. Portrait card has rounded video corners. Template framing crops source footage; inspect important content.
 
-Effects are independent of original sound and music. Muting the original track leaves SFX enabled. Their source-time anchors follow split, reorder, trim and constant speed changes; each effect retains its original pitch and duration, shortened at the cut end or next effect. One SFX lane plays at a time. Very short overlapping remnants under 40 ms are omitted.
+The six new video looks are static SDR color treatments, not animated effects. Preview and export use the same grade calculation and shared caption/frame renderer. Device-specific HDR matching is not guaranteed.
 
-Limits are 12 effects per cut and 120 per project. Trimmed-out anchors remain saved and become active again when the trim is restored. Hooks, effects and frame settings autosave; restoration and edits clear export approval.
+Caption emphasis is visual highlighting, not word-level karaoke alignment. Hook suggestions are local templates based on supplied words, not visual recognition or a cloud language model. Review wording and context.
 
-Presets crop video, so check faces, action and captions in preview. Caption highlighting is visual emphasis rather than word-level speech alignment. A reference video is not automatically analyzed and reproduced by these controls.
+All frames, looks, caption styles, original synthesized sounds and downloaded sounds work offline. Myinstants search/download needs a connection. Source links do not establish commercial reuse rights. See [Sound library](SOUND_LIBRARY.md) for limits.
 
-Physical Nubia playback latency, loudness, device codecs, heat/battery behavior and broad Taglish accuracy remain owner checks.
+The app does not automatically analyze and reproduce a reference video. Physical Nubia codecs, legibility, loudness, heat/battery use and broad Taglish accuracy remain owner checks.
