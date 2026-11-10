@@ -159,3 +159,35 @@ unconfirmed music-import/volume checks and the Build 94 speed/color acceptance
 items. It does not establish new results for two-hour transcription/thermal
 behavior, interruption/resume, metadata-backup restore, Campaign Mode,
 overlapping transitions, HDR color matching or production signing.
+
+## Personal release 1.0.0 — Actions #96 — f62f7e7
+
+- 116 host/unit tests and all 9 Android media tests passed, zero failures/errors/skips;
+  native Whisper integration passed.
+- Saved dip-to-black/zoom-cut transitions, split/undo semantics, real boundary
+  MP4 pixels and unchanged duration passed.
+- Real two-hour AAC/video decoding passed at 0, 3,600,000 and 7,199,000 ms.
+  Requested one-second WAVs stayed bounded and retained their expected duration.
+- The 240-window runner test used synthetic transcript results. Durable process
+  loss, metadata backup/restore and resume skipped 17 completed units and processed
+  exactly 223 remaining windows without duplicate cues.
+- Campaign UI/edit/restore passed with 54 synthetic records; unreadable data was
+  preserved and Facebook is supported. Paid amounts remain separate from estimates.
+- The first release-candidate run exposed negative-AAC-PTS decoding and native
+  Release/RelWithDebInfo optimization gaps. EOF now uses sample-track availability,
+  and all native configurations use -O3. Assertions were retained and passed.
+- Release APK is non-debuggable, signed with the pinned Build 94 certificate,
+  versionCode 96. Signature, ZIP integrity, native optimization and SHA-256 passed.
+- Owner signing-key decryption, certificate match and CSR signature were verified.
+  A private owner backup is retained; no private signing/recovery key was committed.
+- FINAL_RELEASE.md and QUICK_START.md document the exact v1 scope and limits.
+  Prior phone reports are retained separately from current emulator results.
+
+Run: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42756941805
+APK: ClipForge-AI-1.0.0-arm64.apk
+SHA-256: 8d11e3ee2cb06e093ac938f162826c7178698b58688020b7ce676ba83acc16d3
+
+The documented personal v1 release is complete. Full-session phone thermal/runtime
+and transcription-quality benchmarks remain unmeasured. Public distribution and
+advanced additions are separate milestones; no unlimited-processing or full
+CapCut feature-parity claim is made.

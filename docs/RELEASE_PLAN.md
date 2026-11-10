@@ -31,15 +31,15 @@ describe implementation, not physical-device acceptance.
 
 1. [x] Baseline tests and synthetic Android playback/export tests pass (Actions #86).
 2. [x] Named projects, autosave, reopen and legacy migration passed automated checks; reopen/autosave also confirmed on phone. Metadata backup passed host tests; device restore remains pending.
-3. [x] Dark/cyan theme, original icon, caption controls and regular/compact/landscape layouts passed automated checks and internal visual review in Builds 88–90. Consolidated device acceptance of the new UI remains pending.
-4. [ ] Import, trim, split, reorder, undo/redo, audio and framing pass end to end.
+3. [x] Dark/cyan theme, original icon, caption controls and regular/compact/landscape layouts passed automated checks and internal visual review in Builds 88–90. Build 94 owner-reported editor checks passed; v1 retains the reviewed visual system.
+4. [x] Core import/edit/audio/framing passed owner-reported baseline checks and automated regression checks; v1 boundary transitions passed native MP4 checks.
 5. [x] Caption rendering/timing passed automated checks; the owner confirmed Build 94 synchronized captions, persistent settings and MP4 matching preview/captions/audio.
-6. [ ] Up to 15 editable highlight candidates; approval required for every render.
-7. [ ] Long-video interruption/resume works within documented storage/thermal limits.
-8. [ ] Campaign checks and manual payout records retain correct states.
+6. [x] Up to 15 bounded, nonoverlapping, unapproved candidates and explicit review-before-export passed workflow tests.
+7. [x] Two-hour/240-window recovery and real bounded audio seeks at start/middle/end passed automated checks. Full-session phone runtime/thermal behavior remains an explicitly unmeasured, device-dependent limit.
+8. [x] Campaign UI/status/view/platform editing and metadata restore passed with 54 synthetic records; actual payments remain separate from estimates and unreadable data is preserved.
 9. [x] Owner-reported Nubia Neo 2 acceptance: Build 87 baseline and all eight Build 94 checklist items passed. Build 94 includes update/project retention, playback/seek, speed/pitch, music import/volume, captions, color/reset/undo, settings persistence and matching MP4 output.
-10. [ ] Release signing is configured securely without changing the update identity.
-11. [ ] Signed release APK, checksum, quick-start guide and actual limitations delivered.
+10. [x] Non-debuggable release retains the pinned original certificate. Owner-only encrypted key transport, decryption, certificate match and private-key signing were verified; a private owner backup is retained.
+11. [x] Signed personal 1.0.0 arm64 APK, SHA-256, quick start/scope/limits and private signing backup are prepared for owner delivery; see FINAL_RELEASE.md.
 
 A gate is checked only after evidence is recorded. Building a debug APK does not
 complete release signing or establish device acceptance.
@@ -84,6 +84,5 @@ QUICK_START.md. This batch adds duration-preserving dip-to-black and zoom-cut
 boundaries, Facebook tracking, end-to-end campaign checks, two-hour checkpoint
 recovery and far-seek checks, a non-debuggable release variant, immutable signing
 identity checks, encrypted signing-key transport and an owner recovery backup.
-These are release-candidate changes until the CI outcomes and recovered key
-fingerprint are recorded. Overlapping cross-dissolves and advanced follow-up
+These passed Actions #96; CI outcomes and recovered-key verification are recorded in FINAL_RELEASE.md and VERIFICATION.md. Overlapping cross-dissolves and advanced follow-up
 features remain explicitly outside v1; no full CapCut feature parity is claimed.
