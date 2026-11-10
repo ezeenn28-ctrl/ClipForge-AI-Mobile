@@ -1,0 +1,17 @@
+name: CI harness syntax
+on:
+  push:
+    branches: [main]
+    paths: ['.github/scripts/**', '.github/workflows/harness-syntax.yml']
+  workflow_dispatch:
+jobs:
+  syntax:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile Python acceptance and build helpers
+        run: python3 -m py_compile .github/scripts/*.py
+      - name: Check whitespace
+        run: git diff --check HEAD^ HEAD

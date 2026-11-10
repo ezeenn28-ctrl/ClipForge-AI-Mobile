@@ -322,7 +322,8 @@ def main(args):
     tap_node(locate(text="Export"))
     assert locate(text="Export approved MP4", scroll_axis="vertical").get("enabled") == "false"
     passed("Process restart restores project and clears export approval")
-    exercise_speech_import(args)
+    if args.phase != "update-export":
+        exercise_speech_import(args)
 
 
 def exercise_speech_import(args):
@@ -383,7 +384,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     for name in ("baseline", "release", "seed", "video", "speech", "model"):
         parser.add_argument("--" + name, type=Path, required=True)
-    parser.add_argument("--phase", choices=("full", "speech-import"), default="full")
+    parser.add_argument("--phase", choices=("full", "speech-import", "update-export"), default="full")
     args = parser.parse_args()
     failure = None
     try:

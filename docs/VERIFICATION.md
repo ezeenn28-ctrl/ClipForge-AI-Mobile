@@ -191,3 +191,22 @@ The documented personal v1 release is complete. Full-session phone thermal/runti
 and transcription-quality benchmarks remain unmeasured. Public distribution and
 advanced additions are separate milestones; no unlimited-processing or full
 CapCut feature-parity claim is made.
+
+## v1.0.1 Build 97 — consolidated candidate verification
+
+See FINAL_RELEASE.md for the exact source, installer checksum, signing identity,
+all outcomes, errors and explicit pending checks. Build 97 passed 116 host/unit
+tests and 240 real native windows. Retry 100 passed all nine media tests.
+Phase 103 recorded nine completed actual-APK update/export checks before the
+later system-picker failure. Subsequent picker attempts, including 110, did not
+complete packaged-JNI captions or clean import. Failed whole jobs are not counted
+as fully passed. Production app code and installer bytes stayed unchanged.
+
+Native input was the public JFK sample padded/repeated to two hours. Linux CI
+wall time: 765.529 seconds; warm RSS: 308,980 KiB; final/peak RSS: 346,988 KiB.
+This is not phone runtime, heat/battery or broad recognition accuracy evidence.
+
+The default required acceptance job covers update/export; the unresolved
+DocumentsUI speech/import phase remains available through the driver for further
+diagnosis, and is an explicit physical-owner acceptance check. Existing owner
+Build 94 results are preserved as baseline evidence.

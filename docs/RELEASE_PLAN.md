@@ -86,3 +86,12 @@ recovery and far-seek checks, a non-debuggable release variant, immutable signin
 identity checks, encrypted signing-key transport and an owner recovery backup.
 These passed Actions #96; CI outcomes and recovered-key verification are recorded in FINAL_RELEASE.md and VERIFICATION.md. Overlapping cross-dissolves and advanced follow-up
 features remain explicitly outside v1; no full CapCut feature parity is claimed.
+
+## v1.0.1 phone-test candidate
+
+Build 97 is the original-key, non-debuggable universal installer. Unit/native
+checks passed in 97, nine media tests in retry 100, and nine exact-APK update/export
+checks in phase 103. Whole acceptance jobs later failed in DocumentsUI; packaged
+speech and clean-import verification remain pending, not passed. See
+FINAL_RELEASE.md for real outcomes and errors. Physical owner testing is the
+next gate; do not call this installer fully accepted before that result.

@@ -1,8 +1,10 @@
-# ClipForge AI 1.0 — personal Android release
+# ClipForge AI 1.0.1 — personal Android release
 
 ## Install
 
-Install the release APK as an update. Keep the existing app installed so its
+Download `ClipForge-AI-1.0.1-universal.apk` from the private GitHub v1.0.1 release.
+It includes ARM64 for the Nubia Neo 2 and x86_64 for acceptance testing.
+Install as an update. Keep the existing app installed so its
 projects and saved media grants remain available. This release retains the
 Build 94 signing certificate; its version code increases with the verified build.
 
