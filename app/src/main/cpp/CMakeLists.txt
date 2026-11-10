@@ -8,6 +8,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Directory options propagate into ggml subdirectories, even when the Android
 # toolchain shadows cache variables with its own debug flag variables.
 add_compile_options(-O3)
+# APK kernels must not inherit the build machine's optional CPU instructions.
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+if(ANDROID AND ANDROID_ABI STREQUAL "x86_64")
+    set(GGML_AVX OFF CACHE BOOL "" FORCE)
+    set(GGML_AVX2 OFF CACHE BOOL "" FORCE)
+    set(GGML_FMA OFF CACHE BOOL "" FORCE)
+    set(GGML_F16C OFF CACHE BOOL "" FORCE)
+endif()
 set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)

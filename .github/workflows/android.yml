@@ -65,6 +65,8 @@ jobs:
         run: |
           set -o pipefail
           gradle :app:testDebugUnitTest --no-daemon --console=plain --warning-mode=none 2>&1 | tee android-test.log
+      - name: Generate baseline-compatible update fixtures
+        run: gradle :app:writeReleaseUpgradeSeed --no-daemon --console=plain --warning-mode=none
       - name: Summarize unit test results
         if: always()
         shell: python
@@ -96,11 +98,27 @@ jobs:
           name: ClipForge-studio-previews
           path: app/build/outputs/studio-previews/*.png
           if-no-files-found: warn
+      - name: Check out the pinned Build 94 compatibility source
+        uses: actions/checkout@v4
+        with:
+          ref: e95ec581d12810eb248a4f04be31101d9a782af0
+          path: build/baseline94-source
+      - name: Build a signed x86 baseline from Build 94 source for update testing
+        run: |
+          GITHUB_RUN_NUMBER=94 gradle -p build/baseline94-source :app:assembleDebug -PmediaDeviceTests=true --no-daemon --console=plain --warning-mode=none
+          cp build/baseline94-source/app/build/outputs/apk/debug/app-debug.apk build/baseline94-test-only.apk
+      - name: Upload pinned baseline compatibility APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipForge-baseline94-compatibility-test-only
+          path: build/baseline94-test-only.apk
+          retention-days: 7
+          if-no-files-found: error
       - name: Build APK with concise diagnostics
         shell: bash
         run: |
           set -o pipefail
-          gradle :app:assembleRelease --no-daemon --console=plain --warning-mode=none 2>&1 | tee android-build.log
+          gradle :app:assembleRelease -PuniversalRelease=true --no-daemon --console=plain --warning-mode=none 2>&1 | tee android-build.log
       - name: Print actionable errors on failure
         if: failure()
         run: |
@@ -185,14 +203,14 @@ jobs:
           text = Path('release-badging.txt').read_text()
           if 'application-debuggable' in text:
               raise SystemExit('Release must not be debuggable')
-          if "versionName='1.0.0'" not in text:
+          if "versionName='1.0.1'" not in text:
               raise SystemExit('Unexpected release version')
           apk = Path('app/build/outputs/apk/release/app-release.apk')
           digest = hashlib.sha256(apk.read_bytes()).hexdigest()
-          record = dict(version='1.0.0', version_code=int(os.environ['GITHUB_RUN_NUMBER']),
+          record = dict(version='1.0.1', version_code=int(os.environ['GITHUB_RUN_NUMBER']),
                         commit=os.environ['GITHUB_SHA'], apk_sha256=digest,
                         signing_certificate_sha256=Path('.github/signing/identity.sha256').read_text().strip(),
-                        debuggable=False, abi='arm64-v8a')
+                        debuggable=False, abi=['arm64-v8a', 'x86_64'])
           Path('release-manifest.json').write_text(json.dumps(record, indent=2) + '\n')
           Path('SHA256SUMS.txt').write_text(digest + '  app-release.apk\n')
           print('Non-debuggable release manifest and SHA-256 verified')
@@ -206,9 +224,10 @@ jobs:
             app/build/outputs/apk/release/app-release.apk
             release-manifest.json
             SHA256SUMS.txt
+            app/build/outputs/release-update-seed/
           if-no-files-found: error
   native-smoke:
-    name: Native Whisper integration smoke test
+    name: Native Whisper integration and endurance
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -230,13 +249,15 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          bash .github/scripts/native-smoke.sh 2>&1 | tee native-smoke.log
+          CLIPFORGE_NATIVE_STRESS_WINDOWS=240 bash .github/scripts/native-smoke.sh 2>&1 | tee native-smoke.log
       - name: Upload native integration log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ClipForge-native-smoke-log
-          path: native-smoke.log
+          path: |
+            native-smoke.log
+            build/native-smoke/endurance-report.json
           if-no-files-found: warn
 
   media-device:
@@ -263,6 +284,13 @@ jobs:
           mkdir -p "$HOME/.android"
           keytool -genkeypair -keystore "$HOME/.android/clipforge-development.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ClipForge CI Test" -noprompt
           bash .github/scripts/media-fixtures.sh
+          mkdir -p .ci-models
+          if [ ! -s .ci-models/ggml-tiny.bin ]; then
+            curl --fail --location --retry 3 -o .ci-models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+          fi
+          printf '%s  %s\n' be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21 .ci-models/ggml-tiny.bin | sha256sum --check
+          curl --fail --location --retry 3 -o .ci-models/jfk.wav https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.7.6/samples/jfk.wav
+          ffmpeg -v error -y -f lavfi -i 'testsrc2=size=320x180:rate=24' -i .ci-models/jfk.wav -shortest -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac app/src/androidTest/assets/public-speech.mp4
       - name: Cache Android test system image
         uses: actions/cache@v4
         with:
@@ -302,4 +330,70 @@ jobs:
           path: |
             app/build/outputs/androidTest-results/
             app/build/reports/androidTests/
+          if-no-files-found: warn
+
+  release-update:
+    name: Actual signed release update and workflow
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClipForge-AI-Mobile-release
+          path: build/release-under-test
+      - uses: actions/download-artifact@v4
+        with:
+          name: ClipForge-baseline94-compatibility-test-only
+          path: build/baseline94
+      - name: Cache verified public speech model
+        uses: actions/cache@v4
+        with:
+          path: .ci-models/ggml-tiny.bin
+          key: whisper-tiny-be07e048e1e599ad-v1
+      - name: Prepare synthetic media and screenshot tools
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg python3-pil
+          bash .github/scripts/media-fixtures.sh
+          mkdir -p .ci-models
+          if [ ! -s .ci-models/ggml-tiny.bin ]; then
+            curl --fail --location --retry 3 -o .ci-models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
+          fi
+          printf '%s  %s\n' be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21 .ci-models/ggml-tiny.bin | sha256sum --check
+          curl --fail --location --retry 3 -o .ci-models/jfk.wav https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.7.6/samples/jfk.wav
+          ffmpeg -v error -y -f lavfi -i 'testsrc2=size=320x180:rate=24' -i .ci-models/jfk.wav -shortest -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac app/src/androidTest/assets/public-speech.mp4
+      - name: Cache Android test system image
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/system-images/android-30/default/x86_64
+          key: android-api30-default-x86_64-image-v1
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Install, update and exercise the actual signed release
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_2
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin
+      - name: Upload actual release acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipForge-signed-release-acceptance
+          path: build/release-acceptance/
           if-no-files-found: warn

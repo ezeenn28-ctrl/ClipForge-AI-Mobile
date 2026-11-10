@@ -12,4 +12,4 @@ cmake --build build/native-smoke --target clipforge_whisper --parallel 2
 mkdir -p build/native-smoke/classes
 javac -d build/native-smoke/classes .github/tests/com/clipforge/mobile/WhisperNative.java
 NATIVE_LIBRARY_PATH="$(find "$PWD/build/native-smoke" -name '*.so' -printf '%h\n' | sort -u | paste -sd:)"
-LD_LIBRARY_PATH="$NATIVE_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" java -Xcheck:jni -Djava.library.path="$NATIVE_LIBRARY_PATH" -cp build/native-smoke/classes com.clipforge.mobile.WhisperNative "$MODEL" app/src/main/cpp/whisper.cpp/samples/jfk.wav
+LD_LIBRARY_PATH="$NATIVE_LIBRARY_PATH${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" java -Xcheck:jni -Djava.library.path="$NATIVE_LIBRARY_PATH" -cp build/native-smoke/classes com.clipforge.mobile.WhisperNative "$MODEL" app/src/main/cpp/whisper.cpp/samples/jfk.wav "${CLIPFORGE_NATIVE_STRESS_WINDOWS:-0}"

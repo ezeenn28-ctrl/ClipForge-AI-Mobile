@@ -12,9 +12,13 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = ciBuildNumber
-        versionName = "1.0.0"
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-        ndk { abiFilters += if (providers.gradleProperty("mediaDeviceTests").orNull == "true") listOf("x86_64") else listOf("arm64-v8a") }
+        ndk { abiFilters += when {
+            providers.gradleProperty("mediaDeviceTests").orNull == "true" -> listOf("x86_64")
+            providers.gradleProperty("universalRelease").orNull == "true" -> listOf("arm64-v8a", "x86_64")
+            else -> listOf("arm64-v8a")
+        } }
     }
     signingConfigs {
         getByName("debug") {
@@ -78,4 +82,12 @@ tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
     } else {
         systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
     }
+}
+
+// Fixture generation uses production serializers; assertions run against the installed release UI.
+tasks.register<JavaExec>("writeReleaseUpgradeSeed") {
+    dependsOn("testDebugUnitTest")
+    mainClass.set("com.clipforge.mobile.ReleaseUpgradeSeed")
+    doFirst { classpath = tasks.named<org.gradle.api.tasks.testing.Test>("testDebugUnitTest").get().classpath }
+    args(layout.buildDirectory.dir("outputs/release-update-seed").get().asFile.absolutePath)
 }
