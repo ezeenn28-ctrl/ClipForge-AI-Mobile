@@ -36,4 +36,23 @@ class TimelineModelTest {
         val pieces = TimelineModel.split(listOf(clip), 10_000, "right")
         assertEquals(0L, pieces[0].fadeOutMs); assertEquals(0L, pieces[1].fadeInMs)
     }
+
+    @Test fun pendingPlayerTickSurvivesEmptyAndReplacementSequence() {
+        assertEquals(TimelineModel.Position(1, 1000, 61000),
+            TimelineModel.playerPosition(listOf(a, b), 1, 1000))
+        assertNull(TimelineModel.playerPosition(emptyList(), 1, 1000))
+        val replacement = TimelineClip("replacement", 0, 8000)
+        assertEquals(TimelineModel.Position(0, 1000, 1000),
+            TimelineModel.playerPosition(listOf(replacement), 1, 1000))
+    }
+
+    @Test fun playerClockBoundsStaleIndicesAndMapsSourceTimeThroughSpeed() {
+        val slow = a.withSpeed(.5f)
+        assertEquals(TimelineModel.Position(0, 2000, 11000),
+            TimelineModel.playerPosition(listOf(slow, b), -1, 1000))
+        assertEquals(TimelineModel.Position(0, 0, 10000),
+            TimelineModel.playerPosition(listOf(slow), 0, -100))
+        assertEquals(TimelineModel.Position(1, 20000, 80000),
+            TimelineModel.playerPosition(listOf(slow, b), Int.MAX_VALUE, Long.MAX_VALUE))
+    }
 }

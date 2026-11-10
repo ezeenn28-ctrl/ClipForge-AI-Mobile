@@ -66,6 +66,14 @@ object TimelineModel {
         require(clips.sumOf { it.subtitles.size } <= 50_000) { "Timeline subtitles exceed project limit" }
     }
     fun offset(clips: List<TimelineClip>, index: Int): Long = clips.take(index).sumOf { it.durationMs }
+    /** A player tick can outlive the sequence that scheduled it during source replacement. */
+    fun playerPosition(clips: List<TimelineClip>, mediaItemIndex: Int, sourceLocalMs: Long): Position? {
+        if (clips.isEmpty()) return null
+        val index = mediaItemIndex.coerceIn(0, clips.lastIndex)
+        val clip = clips[index]
+        val sourceLocal = sourceLocalMs.coerceIn(0, clip.sourceSpanMs)
+        return Position(index, clip.outputOffsetMs(sourceLocal), clip.startMs + sourceLocal)
+    }
     fun position(clips: List<TimelineClip>, compositionMs: Long): Position? {
         if (clips.isEmpty()) return null
         var cursor = compositionMs.coerceIn(0, duration(clips))

@@ -349,11 +349,7 @@ def exercise_speech_import(args):
             tap_node(nav[0]); tap_node(locate(text="Downloads"))
     choose_document("ClipForgeSpeechFixture.mp4")
     locate(text="ClipForgeSpeechFixture", contains=True, timeout=40)
-    # The editor can initialize its first cut after import. Do not duplicate it.
-    root = hierarchy()
-    if not any(n.get("content-desc", "").startswith("Timeline clip 1 source frame")
-            for n in root.iter("node")):
-        tap_node(locate(text="Add source clip", scroll_axis="vertical"))
+    locate(desc="Play", timeout=40)
     tap_node(locate(text="Captions", scroll_axis="horizontal"))
     tap_node(locate(text="Generate captions", scroll_axis="vertical"))
     locate(text="country", contains=True, timeout=150, scroll_axis="vertical")

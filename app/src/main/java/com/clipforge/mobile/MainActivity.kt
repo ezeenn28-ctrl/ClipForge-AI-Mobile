@@ -886,14 +886,18 @@ class MainActivity : ComponentActivity() {
         }
         LaunchedEffect(player, duration, start, end, video, timelineActive, timeline.clips, mute) {
             while (true) {
-                if (timelineActive) {
-                    val index = player.currentMediaItemIndex.coerceIn(0, timeline.clips.lastIndex)
-                    val clip = timeline.clips[index]
-                    val sourceLocal = player.currentPosition.coerceIn(0, clip.sourceSpanMs)
-                    val local = clip.outputOffsetMs(sourceLocal)
-                    timelinePlaybackIndex = index
-                    timelinePosition = TimelineModel.offset(timeline.clips, index) + local
-                    previewPosition = clip.startMs + sourceLocal
+                // Import/relink can clear the timeline before this effect is cancelled.
+                // Read one current immutable snapshot for the entire video/music tick.
+                val clockClips = timeline.clips
+                val clockTimelineActive = timelineMode && clockClips.isNotEmpty()
+                val clock = if (clockTimelineActive) TimelineModel.playerPosition(
+                    clockClips, player.currentMediaItemIndex, player.currentPosition) else null
+                if (clock != null) {
+                    val clip = clockClips[clock.index]
+                    val local = clock.localMs
+                    timelinePlaybackIndex = clock.index
+                    timelinePosition = TimelineModel.offset(clockClips, clock.index) + local
+                    previewPosition = clock.sourceMs
                     player.volume = if (mute) 0f else TimelineModel.audioGain(clip, local).coerceIn(0f, 1f)
                 } else {
                     if (duration > 0 && player.isPlaying && player.currentPosition >= (duration * end).toLong()) {
@@ -904,10 +908,10 @@ class MainActivity : ComponentActivity() {
                 }
                 val track = music
                 val localMusic = timelinePosition - (track?.timelineStartMs ?: 0)
-                val musicLength = track?.activeDuration(TimelineModel.duration(timeline.clips)) ?: 0
-                if (timelineActive && track != null && localMusic >= 0 && localMusic < musicLength && musicPlayer.mediaItemCount > 0) {
+                val musicLength = track?.activeDuration(TimelineModel.duration(clockClips)) ?: 0
+                if (clockTimelineActive && track != null && localMusic >= 0 && localMusic < musicLength && musicPlayer.mediaItemCount > 0) {
                     if (kotlin.math.abs(musicPlayer.currentPosition - localMusic) > 120) musicPlayer.seekTo(localMusic)
-                    musicPlayer.volume = track.gain(timelinePosition, TimelineModel.duration(timeline.clips))
+                    musicPlayer.volume = track.gain(timelinePosition, TimelineModel.duration(clockClips))
                     musicPlayer.playWhenReady = player.isPlaying
                 } else musicPlayer.pause()
                 previewPlaying = player.isPlaying
