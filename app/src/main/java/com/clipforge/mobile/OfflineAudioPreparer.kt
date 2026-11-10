@@ -49,7 +49,9 @@ object OfflineAudioPreparer {
                     val inputIndex = codec.dequeueInputBuffer(10000)
                     if (inputIndex >= 0) {
                         val buffer = codec.getInputBuffer(inputIndex) ?: error("Missing input buffer")
-                        val size = if (extractor.sampleTime < 0 || extractor.sampleTime >= endUs) -1 else extractor.readSampleData(buffer, 0)
+                        // AAC priming packets can have negative presentation timestamps.
+                        // sampleTrackIndex, rather than timestamp sign, identifies end of input.
+                        val size = if (extractor.sampleTrackIndex < 0 || extractor.sampleTime >= endUs) -1 else extractor.readSampleData(buffer, 0)
                         if (size < 0) {
                             codec.queueInputBuffer(inputIndex, 0, 0, 0, MediaCodec.BUFFER_FLAG_END_OF_STREAM)
                             inputDone = true

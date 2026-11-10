@@ -1,13 +1,13 @@
 cmake_minimum_required(VERSION 3.22.1)
 project(clipforge_whisper LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
-# APKs remain debuggable; inference kernels must not run at -O0 on phones.
+# Keep inference optimized in Debug and the Android Release/RelWithDebInfo profiles.
 set(CMAKE_C_FLAGS_DEBUG "-O3 -g" CACHE STRING "Optimized debug native C" FORCE)
 set(CMAKE_CXX_FLAGS_DEBUG "-O3 -g" CACHE STRING "Optimized debug native C++" FORCE)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 # Directory options propagate into ggml subdirectories, even when the Android
 # toolchain shadows cache variables with its own debug flag variables.
-add_compile_options($<$<CONFIG:Debug>:-O3>)
+add_compile_options(-O3)
 set(WHISPER_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(WHISPER_BUILD_SERVER OFF CACHE BOOL "" FORCE)
