@@ -8,7 +8,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   build:
-    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[media-only]') }}
     runs-on: ubuntu-24.04
     env:
       CLIPFORGE_ROBOLECTRIC_SDK: ${{ github.workspace }}/.ci-robolectric
@@ -231,7 +231,7 @@ jobs:
           if-no-files-found: error
   native-smoke:
     # Acceptance-script-only commits reuse the recorded, unchanged engine/media evidence.
-    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') }}
+    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[media-only]') }}
     name: Native Whisper integration and endurance
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -285,19 +285,12 @@ jobs:
       - name: Install synthetic fixture generator
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y --no-install-recommends ffmpeg
       - name: Prepare test-only signing identity and fixtures
         run: |
           mkdir -p "$HOME/.android"
           keytool -genkeypair -keystore "$HOME/.android/clipforge-development.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ClipForge CI Test" -noprompt
           bash .github/scripts/media-fixtures.sh
-          mkdir -p .ci-models
-          if [ ! -s .ci-models/ggml-tiny.bin ]; then
-            curl --fail --location --retry 3 -o .ci-models/ggml-tiny.bin https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin
-          fi
-          printf '%s  %s\n' be07e048e1e599ad46341c8d2a135645097a538221678b7acdd1b1919c6e1b21 .ci-models/ggml-tiny.bin | sha256sum --check
-          curl --fail --location --retry 3 -o .ci-models/jfk.wav https://raw.githubusercontent.com/ggml-org/whisper.cpp/v1.7.6/samples/jfk.wav
-          ffmpeg -v error -y -f lavfi -i 'testsrc2=size=320x180:rate=24' -i .ci-models/jfk.wav -shortest -c:v libx264 -preset ultrafast -pix_fmt yuv420p -c:a aac app/src/androidTest/assets/public-speech.mp4
       - name: Cache Android test system image
         uses: actions/cache@v4
         with:
@@ -326,8 +319,10 @@ jobs:
           api-level: 30
           arch: x86_64
           profile: pixel_2
+          disk-size: 2048M
+          emulator-boot-timeout: 180
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: gradle :app:connectedDebugAndroidTest -PmediaDeviceTests=true --no-daemon --console=plain --warning-mode=none
       - name: Upload device integration reports
         if: always()
@@ -375,7 +370,7 @@ jobs:
       - name: Prepare synthetic media and screenshot tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg python3-pil
+          sudo apt-get install -y --no-install-recommends ffmpeg python3-pil
           bash .github/scripts/media-fixtures.sh
           mkdir -p .ci-models
           if [ ! -s .ci-models/ggml-tiny.bin ]; then
@@ -400,8 +395,10 @@ jobs:
           api-level: 30
           arch: x86_64
           profile: pixel_2
+          disk-size: 2048M
+          emulator-boot-timeout: 180
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
           script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin
       - name: Upload actual release acceptance evidence
         if: always()
