@@ -24,6 +24,7 @@ object TimelineTouch {
         val value = if (snapping) snap(bounded, targets.filter { it in lower..upper }, toleranceMs) else bounded
         val a = if (startEdge) value else clip.startMs
         val b = if (startEdge) clip.endMs else value
-        return clip.copy(startMs = a, endMs = b, fadeInMs = minOf(clip.fadeInMs, b - a), fadeOutMs = minOf(clip.fadeOutMs, b - a))
+        return clip.trimmed(a, b)
     }
 }
+

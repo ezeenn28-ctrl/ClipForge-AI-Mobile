@@ -55,6 +55,9 @@ object ProjectStore {
         }
         safe.timelineClips.forEachIndexed { i, clip ->
             val v = clip.visuals
+            put("timeline.$i.speed", clip.speed)
+            put("timeline.$i.color.brightness", clip.color.brightness); put("timeline.$i.color.contrast", clip.color.contrast)
+            put("timeline.$i.color.saturation", clip.color.saturation); put("timeline.$i.color.warmth", clip.color.warmth)
             put("timeline.$i.visual.startScale", v.start.scale); put("timeline.$i.visual.startX", v.start.x); put("timeline.$i.visual.startY", v.start.y)
             put("timeline.$i.visual.endScale", v.end.scale); put("timeline.$i.visual.endX", v.end.x); put("timeline.$i.visual.endY", v.end.y)
             put("timeline.$i.visual.ease", v.ease); put("timeline.$i.visual.fadeIn", v.fadeInMs); put("timeline.$i.visual.fadeOut", v.fadeOutMs)
@@ -112,7 +115,12 @@ object ProjectStore {
                 source = data.getProperty("timeline.$i.source", ""), sourceDurationMs = data.getProperty("timeline.$i.duration", "0").toLong(), sourceName = data.getProperty("timeline.$i.name", ""), visuals = ClipVisuals(
                     MotionPoint(data.getProperty("timeline.$i.visual.startScale", "1").toFloat(), data.getProperty("timeline.$i.visual.startX", "0").toFloat(), data.getProperty("timeline.$i.visual.startY", "0").toFloat()),
                     MotionPoint(data.getProperty("timeline.$i.visual.endScale", "1").toFloat(), data.getProperty("timeline.$i.visual.endX", "0").toFloat(), data.getProperty("timeline.$i.visual.endY", "0").toFloat()),
-                    data.getProperty("timeline.$i.visual.ease", "true").toBooleanStrict(), data.getProperty("timeline.$i.visual.fadeIn", "0").toLong(), data.getProperty("timeline.$i.visual.fadeOut", "0").toLong()))
+                    data.getProperty("timeline.$i.visual.ease", "true").toBooleanStrict(), data.getProperty("timeline.$i.visual.fadeIn", "0").toLong(), data.getProperty("timeline.$i.visual.fadeOut", "0").toLong()),
+                speed = data.getProperty("timeline.$i.speed", "1").toFloat(),
+                color = ColorAdjustments(data.getProperty("timeline.$i.color.brightness", "0").toFloat(),
+                    data.getProperty("timeline.$i.color.contrast", "1").toFloat(),
+                    data.getProperty("timeline.$i.color.saturation", "1").toFloat(),
+                    data.getProperty("timeline.$i.color.warmth", "0").toFloat()))
         }
         val music = if (data.getProperty("music.present", "false").toBooleanStrict()) MusicTrack(
             text("music.source"), text("music.name"), number("music.duration"), number("music.start"), number("music.end"),

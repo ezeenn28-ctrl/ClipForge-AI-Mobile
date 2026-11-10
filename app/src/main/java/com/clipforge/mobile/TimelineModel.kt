@@ -1,6 +1,7 @@
 package com.clipforge.mobile
 
 import java.util.UUID
+import kotlin.math.roundToLong
 
 /** Non-destructive cuts from the current source. All subtitle times remain in source time. */
 data class TimelineClip(
@@ -19,9 +20,23 @@ data class TimelineClip(
     val source: String = "",
     val sourceDurationMs: Long = 0,
     val sourceName: String = "",
-    val visuals: ClipVisuals = ClipVisuals()
+    val visuals: ClipVisuals = ClipVisuals(),
+    val speed: Float = 1f,
+    val color: ColorAdjustments = ColorAdjustments()
 ) {
-    val durationMs: Long get() = endMs - startMs
+    val sourceSpanMs: Long get() = endMs - startMs
+    val durationMs: Long get() = (sourceSpanMs / speed.toDouble()).roundToLong().coerceAtLeast(1)
+    fun outputOffsetMs(sourceOffsetMs: Long): Long = (sourceOffsetMs / speed.toDouble()).roundToLong().coerceIn(0, durationMs)
+    fun sourceOffsetMs(outputOffsetMs: Long): Long = (outputOffsetMs * speed.toDouble()).roundToLong().coerceIn(0, sourceSpanMs)
+    fun withSpeed(value: Float): TimelineClip {
+        require(value.isFinite() && value in .5f..2f) { "Speed must be between 0.5x and 2x" }
+        val changed = copy(speed = value)
+        return changed.copy(fadeInMs = minOf(fadeInMs, changed.durationMs), fadeOutMs = minOf(fadeOutMs, changed.durationMs))
+    }
+    fun trimmed(from: Long, until: Long): TimelineClip {
+        val changed = copy(startMs = from, endMs = until)
+        return changed.copy(fadeInMs = minOf(fadeInMs, changed.durationMs), fadeOutMs = minOf(fadeOutMs, changed.durationMs))
+    }
     fun resolvedSource(primary: String): String = source.ifBlank { primary }
     fun resolvedDuration(primaryDurationMs: Long): Long = if (source.isBlank()) primaryDurationMs else sourceDurationMs
     fun validate(primaryDurationMs: Long) {
@@ -29,6 +44,8 @@ data class TimelineClip(
         require(source.isEmpty() || source.startsWith("content://") || source.startsWith("file://")) { "Timeline source must be local" }
         require(sourceDurationMs in 1..86_400_000) { "Invalid timeline source duration" }
         visuals.validate()
+        require(speed.isFinite() && speed in .5f..2f) { "Invalid clip speed" }
+        color.validate()
         require(id.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "Invalid timeline clip ID" }
         require(startMs >= 0 && endMs > startMs && endMs <= sourceDurationMs) { "Invalid timeline trim" }
         require(effect in listOf("None", "Zoom", "Monochrome")) { "Unknown timeline effect" }
@@ -51,7 +68,7 @@ object TimelineModel {
         if (clips.isEmpty()) return null
         var cursor = compositionMs.coerceIn(0, duration(clips))
         clips.forEachIndexed { index, clip ->
-            if (cursor < clip.durationMs || index == clips.lastIndex) return Position(index, cursor.coerceAtMost(clip.durationMs), clip.startMs + cursor.coerceAtMost(clip.durationMs))
+            if (cursor < clip.durationMs || index == clips.lastIndex) return Position(index, cursor.coerceAtMost(clip.durationMs), clip.startMs + clip.sourceOffsetMs(cursor.coerceAtMost(clip.durationMs)))
             cursor -= clip.durationMs
         }
         return null
@@ -61,8 +78,8 @@ object TimelineModel {
         val clip = clips[position.index]
         require(position.localMs >= 100 && clip.durationMs - position.localMs >= 100) { "Place the playhead at least 0.1s inside a clip" }
         val visualSplit = clip.visuals.split(position.localMs, clip.durationMs)
-        val left = clip.copy(endMs = position.sourceMs, visuals = visualSplit.first, fadeInMs = minOf(clip.fadeInMs, position.localMs), fadeOutMs = 0)
-        val right = clip.copy(id = newId, startMs = position.sourceMs, visuals = visualSplit.second, fadeInMs = 0, fadeOutMs = minOf(clip.fadeOutMs, clip.durationMs - position.localMs))
+        val left = clip.copy(endMs = position.sourceMs, visuals = visualSplit.first, fadeInMs = minOf(clip.fadeInMs, clip.copy(endMs = position.sourceMs).durationMs), fadeOutMs = 0)
+        val right = clip.copy(id = newId, startMs = position.sourceMs, visuals = visualSplit.second, fadeInMs = 0, fadeOutMs = minOf(clip.fadeOutMs, clip.copy(startMs = position.sourceMs).durationMs))
         return clips.take(position.index) + listOf(left, right) + clips.drop(position.index + 1)
     }
     fun move(clips: List<TimelineClip>, index: Int, delta: Int): List<TimelineClip> {
@@ -79,7 +96,9 @@ object TimelineModel {
         cues.mapNotNull { cue ->
             val start = maxOf(cue.startMs, clip.startMs)
             val end = minOf(cue.endMs, clip.endMs)
-            if (end <= start) null else cue.copy(startMs = offset + start - clip.startMs, endMs = offset + end - clip.startMs)
+            val outputStart = clip.outputOffsetMs(start - clip.startMs)
+            val outputEnd = clip.outputOffsetMs(end - clip.startMs)
+            if (end <= start || outputEnd <= outputStart) null else cue.copy(startMs = offset + outputStart, endMs = offset + outputEnd)
         }
     }
     fun audioGain(clip: TimelineClip, localMs: Long): Float {
@@ -98,3 +117,4 @@ data class TimelineHistory(
     fun undo() = if (past.isEmpty()) this else TimelineHistory(past.last(), past.dropLast(1), listOf(clips) + future)
     fun redo() = if (future.isEmpty()) this else TimelineHistory(future.first(), (past + listOf(clips)).takeLast(30), future.drop(1))
 }
+

@@ -57,7 +57,7 @@ fun SourceTrimHandles(clip: TimelineClip, sourceDurationMs: Long, targets: List<
                             onDragCancel = { draft = clip },
                             onDragEnd = { if (enabled && draft != clip) latestCommit(draft) },
                             onDrag = { change, amount ->
-                                if (enabled && clip.durationMs >= TimelineTouch.MIN_CUT_MS) {
+                                if (enabled && clip.sourceSpanMs >= TimelineTouch.MIN_CUT_MS) {
                                     change.consume()
                                     requested += amount.x / railPx * span
                                     draft = TimelineTouch.trim(clip, startEdge, requested.toLong().coerceIn(from, until), sourceDurationMs,
@@ -74,3 +74,4 @@ fun SourceTrimHandles(clip: TimelineClip, sourceDurationMs: Long, targets: List<
         Text("Release to apply · One drag = one undo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+

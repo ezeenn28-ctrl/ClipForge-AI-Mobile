@@ -27,7 +27,7 @@ class ClipAudioProcessor(private val clip: TimelineClip) : BaseAudioProcessor() 
         val input = ByteBuffer.wrap(bytes, 0, complete).order(ByteOrder.nativeOrder())
         val output = replaceOutputBuffer(complete).order(ByteOrder.nativeOrder())
         repeat(frames) {
-            val gain = TimelineModel.audioGain(clip, frame * 1000 / inputAudioFormat.sampleRate)
+            val gain = TimelineModel.audioGain(clip, clip.outputOffsetMs(frame * 1000 / inputAudioFormat.sampleRate))
             repeat(inputAudioFormat.channelCount) {
                 if (sampleBytes == 4) output.putFloat((input.float * gain).coerceIn(-1f, 1f))
                 else output.putShort((input.short * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
@@ -38,3 +38,4 @@ class ClipAudioProcessor(private val clip: TimelineClip) : BaseAudioProcessor() 
     }
     override fun onQueueEndOfStream() { check(pending.isEmpty()) { "Audio ended with an incomplete PCM frame" } }
 }
+

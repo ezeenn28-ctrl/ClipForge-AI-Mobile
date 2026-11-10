@@ -44,6 +44,15 @@ describe implementation, not physical-device acceptance.
 A gate is checked only after evidence is recorded. Building a debug APK does not
 complete release signing or establish device acceptance.
 
+## Core editing batch after Build 90
+
+Per-clip constant speed (0.5–2x, original-audio pitch preserved) and SDR brightness,
+contrast, saturation and warmth are implemented for automated verification.
+Source trim/caption timestamps remain immutable; output duration, seeking, fades,
+thumbnail sampling and music placement use explicit source/output clock conversion.
+Sliders commit one undo step per drag. Legacy projects default to 1x/neutral color.
+Overlapping transitions, speed ramps and HDR color matching remain outside this batch.
+
 ## Advanced follow-up
 
 Background removal, subject tracking, audio cleanup and advanced speed effects

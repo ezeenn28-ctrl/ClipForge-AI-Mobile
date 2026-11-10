@@ -484,8 +484,8 @@ class MainActivity : ComponentActivity() {
                 timelinePlaybackIndex = position.index
                 previewPosition = position.sourceMs
                 if (timelineActive && video != null) {
-                    previewPlayback.load(timeline.clips.map { PreviewPlayback.Source(it.resolvedSource(video.toString()), it.startMs, it.endMs) }, position.index, position.localMs)
-                    player.seekTo(position.index, position.localMs)
+                    previewPlayback.load(timeline.clips.map { PreviewPlayback.Source(it.resolvedSource(video.toString()), it.startMs, it.endMs, it.speed) }, position.index, position.sourceMs - timeline.clips[position.index].startMs)
+                    player.seekTo(position.index, position.sourceMs - timeline.clips[position.index].startMs)
                 }
             }
         }
@@ -517,11 +517,11 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        LaunchedEffect(player, video, timelineActive, timeline.clips.map { listOf(it.id, it.startMs, it.endMs, it.source) }) {
+        LaunchedEffect(player, video, timelineActive, timeline.clips.map { listOf(it.id, it.startMs, it.endMs, it.source, it.speed) }) {
             val source = video ?: return@LaunchedEffect
             if (timelineActive) {
                 val position = TimelineModel.position(timeline.clips, timelinePosition)!!
-                previewPlayback.load(timeline.clips.map { PreviewPlayback.Source(it.resolvedSource(source.toString()), it.startMs, it.endMs) }, position.index, position.localMs)
+                previewPlayback.load(timeline.clips.map { PreviewPlayback.Source(it.resolvedSource(source.toString()), it.startMs, it.endMs, it.speed) }, position.index, position.sourceMs - timeline.clips[position.index].startMs)
             } else previewPlayback.load(listOf(PreviewPlayback.Source(source.toString())), positionMs = (duration * start).toLong())
         }
         LaunchedEffect(start, end, duration) {
@@ -889,10 +889,11 @@ class MainActivity : ComponentActivity() {
                 if (timelineActive) {
                     val index = player.currentMediaItemIndex.coerceIn(0, timeline.clips.lastIndex)
                     val clip = timeline.clips[index]
-                    val local = player.currentPosition.coerceIn(0, clip.durationMs)
+                    val sourceLocal = player.currentPosition.coerceIn(0, clip.sourceSpanMs)
+                    val local = clip.outputOffsetMs(sourceLocal)
                     timelinePlaybackIndex = index
                     timelinePosition = TimelineModel.offset(timeline.clips, index) + local
-                    previewPosition = clip.startMs + local
+                    previewPosition = clip.startMs + sourceLocal
                     player.volume = if (mute) 0f else TimelineModel.audioGain(clip, local).coerceIn(0f, 1f)
                 } else {
                     if (duration > 0 && player.isPlaying && player.currentPosition >= (duration * end).toLong()) {
@@ -1025,13 +1026,13 @@ class MainActivity : ComponentActivity() {
                     }
                 Box(modifier = Modifier.fillMaxWidth().height(canvasHeight).clip(androidx.compose.foundation.shape.RoundedCornerShape(20.dp)).background(androidx.compose.ui.graphics.Color.Black), contentAlignment = Alignment.Center) {
                     Box(Modifier.fillMaxHeight().aspectRatio(if (vertical) 9f / 16f else 16f / 9f, matchHeightConstraintsFirst = true), contentAlignment = Alignment.Center) {
-                    val localVisualMs = if (timelineActive) (previewPosition - (playingTimelineClip?.startMs ?: 0)).coerceAtLeast(0) else 0L
+                    val localVisualMs = if (timelineActive) playingTimelineClip?.outputOffsetMs(previewPosition - playingTimelineClip.startMs) ?: 0L else 0L
                     val visuals = playingTimelineClip?.visuals ?: ClipVisuals()
                     val point = visuals.point(localVisualMs, playingTimelineClip?.durationMs ?: 1)
                     val previewEffect = if (timelineActive) playingTimelineClip?.effect ?: "None" else effectChoice
                     val staticZoom = if (previewEffect == "Zoom") 1.12f else 1f
                     val visualOpacity = visuals.opacity(localVisualMs, playingTimelineClip?.durationMs ?: 1)
-                    PreviewVideo(previewBinding, Modifier.fillMaxSize().previewMonochrome(previewEffect == "Monochrome").graphicsLayer {
+                    PreviewVideo(previewBinding, Modifier.fillMaxSize().previewColor(if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments(), previewEffect == "Monochrome").graphicsLayer {
                         scaleX = point.scale * staticZoom; scaleY = point.scale * staticZoom
                         translationX = point.x * size.width; translationY = point.y * size.height; alpha = visualOpacity
                     }, crop = fillFrame)
@@ -1196,6 +1197,7 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it }, compact = true, tool = editorTool, music = music)
                                 when (editorTool) {
+                                    EditorTool.SPEED -> Unit
                                     EditorTool.EDIT -> {
                                         OutlinedButton(enabled = !busy, onClick = { timelinePicker.launch(arrayOf("video/*")) }) { Text("Add video") }
                                     }
@@ -1224,7 +1226,7 @@ class MainActivity : ComponentActivity() {
                                                     val changed = clip.copy(subtitles = clip.subtitles.mapIndexed { i, item -> if (i == index) item.copy(text = text) else item })
                                                     updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) changed else it }))
                                                     if (timelineSubtitleTarget == clip.id) transcriptSegments = changed.subtitles
-                                                }, enabled = !busy, label = { Text("${Timecode.format(cue.startMs - clip.startMs)} · caption ${index + 1}") }, modifier = Modifier.fillMaxWidth())
+                                                }, enabled = !busy, label = { Text("${Timecode.format(clip.outputOffsetMs(cue.startMs - clip.startMs))} · caption ${index + 1}") }, modifier = Modifier.fillMaxWidth())
                                             }
                                             if ((clip?.subtitles?.size ?: 0) > 10) TextButton(onClick = { selectedTab = StudioTab.CAPTIONS }) { Text("Edit all captions") }
                                         }
@@ -1241,6 +1243,9 @@ class MainActivity : ComponentActivity() {
                                     }
                                     EditorTool.EFFECTS -> {
                                         timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
+                                            ColorControls(clip.color, !busy) { color ->
+                                                updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(color = color) else it }))
+                                            }
                                             MotionControls(clip, !busy, onChange = { changed ->
                                                 updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) changed else it }))
                                             }, onSeek = { endFrame ->
@@ -1874,7 +1879,7 @@ class MainActivity : ComponentActivity() {
                     status = "Exporting…"
                     val requestToken = Any()
                     activeExportToken = requestToken
-                    val transformer = Transformer.Builder(this@MainActivity)
+                    val transformer = Transformer.Builder(this@MainActivity).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory())
                         .addListener(object : Transformer.Listener {
                             override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
                                 runOnUiThread {

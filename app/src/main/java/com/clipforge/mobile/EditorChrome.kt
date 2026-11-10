@@ -15,7 +15,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class EditorTool(val label: String, val glyph: StudioGlyph) {
-    EDIT("Edit", StudioGlyph.EDIT), AUDIO("Audio", StudioGlyph.AUDIO), TEXT("Text", StudioGlyph.TEXT),
+    EDIT("Edit", StudioGlyph.EDIT), SPEED("Speed", StudioGlyph.SPEED), AUDIO("Audio", StudioGlyph.AUDIO), TEXT("Text", StudioGlyph.TEXT),
     CAPTIONS("Captions", StudioGlyph.CAPTIONS), EFFECTS("Effects", StudioGlyph.EFFECTS),
     FORMAT("Format", StudioGlyph.FORMAT), MORE("More", StudioGlyph.MORE)
 }

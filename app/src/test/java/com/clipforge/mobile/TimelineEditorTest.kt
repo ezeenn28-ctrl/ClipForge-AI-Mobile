@@ -83,4 +83,35 @@ class TimelineEditorTest {
         compose.onNodeWithText("Add source clip").performClick()
         compose.runOnIdle { org.junit.Assert.assertEquals(1, additions) }
     }
+
+    @Test fun compactSpeedPresetChangesDurationAndUndoRestoresIt() {
+        var history by mutableStateOf(TimelineHistory(listOf(TimelineClip("a", 1000, 5000))))
+        compose.setContent {
+            ClipForgeTheme { Surface { Column(Modifier.verticalScroll(rememberScrollState())) {
+                TimelineEditor(LocalContext.current, null, 8000, history, "a", 0, true,
+                    { history = it }, {}, {}, {}, { error -> throw AssertionError(error) }, compact = true, tool = EditorTool.SPEED)
+            } } }
+        }
+        compose.onNodeWithText("2.0x").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(2000L, history.clips.single().durationMs); assertEquals(1, history.past.size) }
+        compose.onNodeWithText("Undo").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(4000L, history.clips.single().durationMs) }
+    }
+
+    @Test fun colorDragCommitsOnceAndResetRestoresNeutral() {
+        var color by mutableStateOf(ColorAdjustments())
+        var changes = 0
+        compose.setContent {
+            ClipForgeTheme { Surface { Column(Modifier.verticalScroll(rememberScrollState())) {
+                ColorControls(color, true) { color = it; changes++ }
+            } } }
+        }
+        compose.onNodeWithTag("color-Brightness").performScrollTo().performTouchInput {
+            down(center); moveBy(androidx.compose.ui.geometry.Offset(25f, 0f)); moveBy(androidx.compose.ui.geometry.Offset(25f, 0f)); up()
+        }
+        compose.runOnIdle { org.junit.Assert.assertTrue(color.brightness > 0); assertEquals(1, changes) }
+        compose.onNodeWithText("Reset color").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(ColorAdjustments(), color) }
+        compose.onRoot().captureRoboImage(File("build/outputs/studio-previews/color-controls.png").apply { parentFile.mkdirs() }.absolutePath)
+    }
 }

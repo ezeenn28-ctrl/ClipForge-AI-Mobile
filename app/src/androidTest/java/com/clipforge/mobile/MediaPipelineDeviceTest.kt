@@ -77,9 +77,10 @@ class MediaPipelineDeviceTest {
                 }
                 await("highlight playback") { var result = false; scenario.onActivity { result = player.currentPosition > 2400 }; result }
                 scenario.onActivity {
-                    session.load(listOf(PreviewPlayback.Source(landscape, 1000, 2500), PreviewPlayback.Source(portrait, 3000, 5000)), play = true)
+                    session.load(listOf(PreviewPlayback.Source(landscape, 1000, 2500, 2f), PreviewPlayback.Source(portrait, 3000, 5000, .5f)), play = true)
                 }
                 await("second clip transition") { var result = false; scenario.onActivity { result = player.currentMediaItemIndex == 1 && player.currentPosition > 300 }; result }
+                scenario.onActivity { assertEquals(.5f, player.playbackParameters.speed, 0f); assertEquals(1f, player.playbackParameters.pitch, 0f) }
                 await("sequence completion") { var result = false; scenario.onActivity { result = player.playbackState == Player.STATE_ENDED }; result }
                 assertNull(error.get()); assertTrue("No rendered video frames", frames.get() >= 1)
                 scenario.onActivity { activity ->
@@ -105,7 +106,7 @@ class MediaPipelineDeviceTest {
         val composition = TimelineExport.composition(Uri.fromFile(first), clips, true, false, false, 39f, Color.YELLOW,
             MusicTrack(Uri.fromFile(music).toString(), "Synthetic tone", 3000, timelineStartMs = 500), CaptionPreset.CARD)
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
+            transformer = Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory()).addListener(object : Transformer.Listener {
                 override fun onCompleted(c: Composition, result: ExportResult) { done.countDown() }
                 override fun onError(c: Composition, result: ExportResult, error: ExportException) { failure.set(error); done.countDown() }
             }).build()
@@ -151,14 +152,14 @@ class MediaPipelineDeviceTest {
         val appearance = CaptionAppearance(CaptionFont.MONO, .45f, CaptionColor.PINK, CaptionColor.CYAN, CaptionAlignment.LEFT)
         ProjectStore.write(snapshot, EditorProject(Uri.fromFile(source).toString(), 3000, 0, 3000, captionAppearance = appearance))
         val saved = ProjectStore.read(snapshot)!!
-        val clip = TimelineClip("caption", 0, 3000, caption = "HELLO #WORLD", captionEndMs = 3000)
+        val clip = TimelineClip("caption", 0, 3000, caption = "HELLO #WORLD", captionEndMs = 3000, color = ColorAdjustments(brightness = .2f, warmth = .5f))
         val composition = TimelineExport.composition(Uri.fromFile(source), listOf(clip), true, false, false,
             39f, Color.WHITE, appearance = saved.captionAppearance)
         val output = File(context.cacheDir, "caption-appearance.mp4").apply { delete() }
         val done = CountDownLatch(1); val failure = AtomicReference<Throwable?>(null)
         lateinit var transformer: Transformer
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
-            transformer = Transformer.Builder(context).addListener(object : Transformer.Listener {
+            transformer = Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory()).addListener(object : Transformer.Listener {
                 override fun onCompleted(c: Composition, result: ExportResult) { done.countDown() }
                 override fun onError(c: Composition, result: ExportResult, error: ExportException) { failure.set(error); done.countDown() }
             }).build()
@@ -178,6 +179,10 @@ class MediaPipelineDeviceTest {
                 } else raw
                 try {
                     assertTrue("Portrait display frame expected", frame.height > frame.width)
+                    val background = frame.getPixel(frame.width / 2, frame.height / 4)
+                    assertEquals("Graded red channel", 64.0, Color.red(background).toDouble(), 12.0)
+                    assertEquals("Graded green channel", 51.0, Color.green(background).toDouble(), 12.0)
+                    assertEquals("Graded blue channel", 38.0, Color.blue(background).toDouble(), 12.0)
                     var pink = 0; var cyan = 0; var minX = frame.width; var maxY = -1
                     for (y in 0 until frame.height step 2) for (x in 0 until frame.width step 2) {
                         val c = frame.getPixel(x, y)
@@ -198,6 +203,62 @@ class MediaPipelineDeviceTest {
         } finally {
             InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }
             output.delete(); snapshot.delete()
+        }
+    }
+
+    @Test fun mixedSpeedExportKeepsOutputDurationAndVoicePitch() {
+        val source = fixture("landscape.mp4")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val output = File(context.cacheDir, "speed-output.mp4").apply { delete() }
+        val wav = File(context.cacheDir, "speed-audio.wav")
+        val clips = listOf(TimelineClip("fast", 1000, 3000, speed = 2f),
+            TimelineClip("slow", 3000, 5000, speed = .5f))
+        val composition = TimelineExport.composition(Uri.fromFile(source), clips, true, false, false, 39f, Color.WHITE)
+        val done = CountDownLatch(1); val failure = AtomicReference<Throwable?>(null)
+        lateinit var transformer: Transformer
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            transformer = Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory())
+                .addListener(object : Transformer.Listener {
+                    override fun onCompleted(c: Composition, result: ExportResult) { done.countDown() }
+                    override fun onError(c: Composition, result: ExportResult, error: ExportException) { failure.set(error); done.countDown() }
+                }).build()
+            transformer.start(composition, output.absolutePath)
+        }
+        try {
+            assertTrue("Speed export timed out", done.await(180, TimeUnit.SECONDS))
+            failure.get()?.let { throw AssertionError("Speed export failed", it) }
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(output.absolutePath)
+                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
+                assertTrue("Mixed speed duration: $duration", duration in 4800..5250)
+                for (time in listOf(500_000L, 2_000_000L, 4_000_000L)) {
+                    val frame = retriever.getFrameAtTime(time, MediaMetadataRetriever.OPTION_CLOSEST)!!
+                    try { assertTrue("Speed export black at $time", hasPicture(frame)) } finally { frame.recycle() }
+                }
+            } finally { retriever.release() }
+            OfflineAudioPreparer.extractWav(context, Uri.fromFile(output), wav)
+            val bytes = wav.readBytes()
+            val buffer = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            val rate = buffer.getInt(24)
+            val samples = (bytes.size - 44) / 2
+            for ((start, end) in listOf(200 to 800, 1800 to 3800)) {
+                val first = start * rate / 1000
+                val last = minOf(end * rate / 1000, samples)
+                assertTrue("Missing retimed audio", last > first)
+                var crossings = 0
+                var previous = buffer.getShort(44 + first * 2)
+                for (i in first + 1 until last) {
+                    val sample = buffer.getShort(44 + i * 2)
+                    if (previous <= 0 && sample > 0) crossings++
+                    previous = sample
+                }
+                val frequency = crossings.toDouble() * rate / (last - first)
+                assertEquals("Voice pitch changed at $start ms", 440.0, frequency, 15.0)
+            }
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }
+            output.delete(); wav.delete()
         }
     }
 

@@ -130,7 +130,7 @@ fun TimelineEditor(
                         val tiles = if (clip.durationMs * scale > 140f) 3 else 1
                         val frames = (0 until tiles).map { tile ->
                             rememberClipThumbnail(context, clip.source.takeIf { it.isNotBlank() }?.let(Uri::parse) ?: source,
-                                clip.startMs + clip.durationMs * tile / tiles, enabled && visible)
+                                clip.startMs + clip.sourceSpanMs * tile / tiles, enabled && visible)
                         }
                         Surface(onClick = { onSelect(clip.id); onSeek(TimelineModel.offset(clips, index)) }, enabled = enabled,
                             modifier = Modifier.width((clip.durationMs * scale).dp).height(64.dp), shape = RoundedCornerShape(8.dp),
@@ -205,7 +205,7 @@ fun TimelineEditor(
             OutlinedButton(enabled = enabled && selectedIndex > 0, onClick = { edit(TimelineModel.move(clips, selectedIndex, -1)) }) { Text("Earlier") }
             OutlinedButton(enabled = enabled && selectedIndex >= 0 && selectedIndex < clips.lastIndex, onClick = { edit(TimelineModel.move(clips, selectedIndex, 1)) }) { Text("Later") }
         }
-        selected?.takeIf { !compact || tool in listOf(EditorTool.EDIT, EditorTool.AUDIO, EditorTool.TEXT, EditorTool.EFFECTS) }?.let { clip ->
+        selected?.takeIf { !compact || tool in listOf(EditorTool.EDIT, EditorTool.AUDIO, EditorTool.TEXT, EditorTool.EFFECTS, EditorTool.SPEED) }?.let { clip ->
             var from by remember(clip.id, clip.startMs) { mutableStateOf(Timecode.precise(clip.startMs)) }
             var until by remember(clip.id, clip.endMs) { mutableStateOf(Timecode.precise(clip.endMs)) }
             fun update(changed: TimelineClip) = edit(clips.map { if (it.id == clip.id) changed else it })
@@ -226,9 +226,19 @@ fun TimelineEditor(
                 OutlinedButton(enabled = enabled, onClick = {
                     val a = Timecode.parse(from); val b = Timecode.parse(until)
                     if (a == null || b == null || !Timecode.validTrim(a, b, clipDuration)) onMessage("Enter a valid source range")
-                    else update(clip.copy(startMs = a, endMs = b, fadeInMs = minOf(clip.fadeInMs, b - a), fadeOutMs = minOf(clip.fadeOutMs, b - a)))
+                    else update(clip.trimmed(a, b))
                 }) { Text("Apply clip trim") }
                 }
+                }
+                if (!compact || tool == EditorTool.SPEED) {
+                    Text("Speed · ${clip.speed}x · ${Timecode.precise(clip.durationMs)} output")
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf(.5f, .75f, 1f, 1.25f, 1.5f, 2f).forEach { speed ->
+                            FilterChip(selected = clip.speed == speed, enabled = enabled,
+                                onClick = { update(clip.withSpeed(speed)) }, label = { Text("${speed}x") })
+                        }
+                    }
+                    Text("Voice pitch stays natural. Music keeps its own speed.", style = MaterialTheme.typography.bodySmall)
                 }
                 if (!compact || tool == EditorTool.TEXT) {
                 OutlinedTextField(value = clip.hook, onValueChange = { update(clip.copy(hook = it.take(65))) }, label = { Text("Clip hook") }, enabled = enabled, modifier = Modifier.fillMaxWidth())

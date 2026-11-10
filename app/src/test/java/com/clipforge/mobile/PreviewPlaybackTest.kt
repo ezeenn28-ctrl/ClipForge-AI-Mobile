@@ -14,8 +14,12 @@ class PreviewPlaybackTest {
     private class Fake {
         var count = 0; var index = 0; var position = 0L; var state = Player.STATE_IDLE
         var playing = false; var resets = 0; var prepares = 0
+        var parameters = androidx.media3.common.PlaybackParameters.DEFAULT
+        var listener: Player.Listener? = null
         val player = Proxy.newProxyInstance(Player::class.java.classLoader, arrayOf(Player::class.java)) { _, method, args ->
             when (method.name) {
+                "addListener" -> { listener = args!![0] as Player.Listener; null }
+                "setPlaybackParameters" -> { parameters = args!![0] as androidx.media3.common.PlaybackParameters; null }
                 "getMediaItemCount" -> count
                 "getCurrentMediaItemIndex" -> index
                 "getCurrentPosition" -> position
@@ -73,6 +77,20 @@ class PreviewPlaybackTest {
         preview.play(restart = true)
         assertEquals(0, fake.index); assertEquals(0L, fake.position)
     }
+    @Test fun speedOnlyChangesKeepDecoderPositionAndPlayRequestAndTransitionsSetPitch() {
+        val fake = Fake(); val preview = PreviewPlayback(fake.player)
+        val sources = listOf(PreviewPlayback.Source("content://one", 1000, 5000, 2f),
+            PreviewPlayback.Source("content://two", 2000, 4000, .5f))
+        preview.load(sources, play = true)
+        assertEquals(2f, fake.parameters.speed, 0f)
+        fake.position = 1200
+        assertFalse(preview.load(sources.mapIndexed { i, s -> if (i == 0) s.copy(speed = 1.5f) else s }))
+        assertEquals(1, fake.resets); assertEquals(1200L, fake.position); assertTrue(fake.playing)
+        assertEquals(1.5f, fake.parameters.speed, 0f); assertEquals(1f, fake.parameters.pitch, 0f)
+        fake.index = 1
+        fake.listener!!.onMediaItemTransition(null, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO)
+        assertEquals(.5f, fake.parameters.speed, 0f); assertEquals(1f, fake.parameters.pitch, 0f)
+    }
     @Test fun recoveryReloadsCurrentRangeWithoutExportingOrAutoPlaying() {
         val fake = Fake(); val preview = PreviewPlayback(fake.player)
         preview.load(listOf(PreviewPlayback.Source("content://media/primary", 30_000, 50_000)), play = true)
@@ -84,3 +102,4 @@ class PreviewPlaybackTest {
         assertEquals(3, fake.prepares); assertTrue(fake.playing)
     }
 }
+
