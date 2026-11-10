@@ -21,13 +21,13 @@ jobs:
           gh api "repos/$GH_REPO" > repository.json
           python3 -c 'import json; assert json.load(open("repository.json"))["private"], "This delivery is private-only"'
           for attempt in $(seq 1 30); do
-            status=$(gh api "repos/$GH_REPO/actions/runs/42775151387" --jq .status)
+            status=$(gh api "repos/$GH_REPO/actions/runs/42776234230" --jq .status)
             if [ "$status" = completed ]; then break; fi
             sleep 20
           done
           gh api "repos/$GH_REPO/actions/runs/42769587936/jobs" > baseline-jobs.json
           gh api "repos/$GH_REPO/actions/runs/42772568687/jobs" > media-jobs.json
-          gh api "repos/$GH_REPO/actions/runs/42775151387/jobs" > acceptance-jobs.json
+          gh api "repos/$GH_REPO/actions/runs/42776234230/jobs" > acceptance-jobs.json
           python3 - <<'PY'
           import json
           expected = {
@@ -76,7 +76,7 @@ jobs:
 
           The actual non-debuggable signed APK passed the isolated emulator update, saved-project/campaign retention, moving preview, approval-gated MP4 export, Gallery media checks, share sheet, packaged-engine auto captions, clean import and restart workflow. The Build 94 baseline was rebuilt from pinned source for x86 compatibility, rather than using the original ARM64 binary.
 
-          APK source: 496792695211b64ab7e11ce3d82bd0d87306bf1b. Verification runs: #97 (build/unit/native), #100 (media retry), #103 (actual APK acceptance). Test-harness and emulator provisioning failures are documented separately.
+          APK source: 496792695211b64ab7e11ce3d82bd0d87306bf1b. Verification runs: #97 (build/unit/native), #100 (media retry), #103 (nine completed exact-APK checks) and #105 (validates those saved checks, then completes real speech and clean-import checks). Test-harness and emulator provisioning failures are documented separately.
 
           This freezes the supported personal v1 scope. Physical Nubia runtime/heat/battery behavior and broad Taglish accuracy remain for owner testing. Advanced tracking, background removal, overlapping layers/cross-dissolves and speed ramps remain future work. No cloud provider is included.
           NOTES
