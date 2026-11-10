@@ -211,9 +211,11 @@ class MediaPipelineDeviceTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val output = File(context.cacheDir, "speed-output.mp4").apply { delete() }
         val wav = File(context.cacheDir, "speed-audio.wav")
-        val clips = listOf(TimelineClip("fast", 1000, 3000, speed = 2f),
-            TimelineClip("slow", 3000, 5000, speed = .5f))
-        val composition = TimelineExport.composition(Uri.fromFile(source), clips, true, false, false, 39f, Color.WHITE)
+        val clips = listOf(TimelineClip("fast", 1000, 3000, speed = 2f, subtitles = listOf(WhisperNative.Segment(1000, 2000, "TIMED TEST"))),
+            TimelineClip("slow", 3000, 5000, speed = .5f, subtitles = listOf(WhisperNative.Segment(3000, 3500, "SLOW CUE"))))
+        val music = fixture("music.wav")
+        val composition = TimelineExport.composition(Uri.fromFile(source), clips, true, false, false, 39f, Color.YELLOW,
+            MusicTrack(Uri.fromFile(music).toString(), "Synthetic music", 3000, timelineStartMs = 4500, volume = .4f, fadeInMs = 0, fadeOutMs = 0))
         val done = CountDownLatch(1); val failure = AtomicReference<Throwable?>(null)
         lateinit var transformer: Transformer
         InstrumentationRegistry.getInstrumentation().runOnMainSync {
@@ -236,6 +238,25 @@ class MediaPipelineDeviceTest {
                     val frame = retriever.getFrameAtTime(time, MediaMetadataRetriever.OPTION_CLOSEST)!!
                     try { assertTrue("Speed export black at $time", hasPicture(frame)) } finally { frame.recycle() }
                 }
+                fun captionPixels(timeUs: Long): Int {
+                    val raw = retriever.getFrameAtTime(timeUs, MediaMetadataRetriever.OPTION_CLOSEST)!!
+                    val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt() ?: 0
+                    val frame = if (raw.width > raw.height && rotation in listOf(90, 270))
+                        Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }, true)
+                            .also { if (it !== raw) raw.recycle() } else raw
+                    try {
+                        var count = 0
+                        for (y in frame.height * 7 / 10 until frame.height step 2) for (x in 0 until frame.width step 2) {
+                            val c = frame.getPixel(x, y)
+                            if (Color.red(c) > 170 && Color.green(c) > 170 && Color.blue(c) < 100) count++
+                        }
+                        return count
+                    } finally { frame.recycle() }
+                }
+                assertTrue("Fast caption missing", captionPixels(250_000) > 50)
+                assertTrue("Fast caption did not end", captionPixels(750_000) < 10)
+                assertTrue("Slow caption missing", captionPixels(1_500_000) > 50)
+                assertTrue("Slow caption did not end", captionPixels(2_500_000) < 10)
             } finally { retriever.release() }
             OfflineAudioPreparer.extractWav(context, Uri.fromFile(output), wav)
             val bytes = wav.readBytes()
@@ -256,9 +277,71 @@ class MediaPipelineDeviceTest {
                 val frequency = crossings.toDouble() * rate / (last - first)
                 assertEquals("Voice pitch changed at $start ms", 440.0, frequency, 15.0)
             }
+            fun magnitude(startMs: Int, frequency: Double): Double {
+                val first = startMs * rate / 1000
+                val count = rate / 5
+                assertTrue("Missing placed music audio", first + count < samples)
+                var real = 0.0; var imaginary = 0.0
+                for (i in 0 until count) {
+                    val value = buffer.getShort(44 + (first + i) * 2).toDouble()
+                    val phase = 2 * Math.PI * frequency * i / rate
+                    real += value * kotlin.math.cos(phase); imaginary += value * kotlin.math.sin(phase)
+                }
+                return kotlin.math.sqrt(real * real + imaginary * imaginary) / count
+            }
+            assertTrue("Music entered before placement", magnitude(2000, 880.0) < 50)
+            assertTrue("Music missing at output-clock placement", magnitude(4600, 880.0) > 100)
         } finally {
             InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }
             output.delete(); wav.delete()
+        }
+    }
+
+    @Test fun previewColorGradesTextureAndResetLeavesLetterboxBlack() {
+        val source = fixture("caption-canvas.mp4")
+        ActivityScenario.launch(MediaHarnessActivity::class.java).use { scenario ->
+            lateinit var player: ExoPlayer
+            lateinit var window: android.view.Window
+            var centerX = 0; var centerY = 0; var barX = 0
+            scenario.onActivity { activity ->
+                window = activity.window
+                activity.preview.layoutParams = android.widget.FrameLayout.LayoutParams(360, 360)
+                player = PreviewPlayerFactory.create(activity, false)
+                activity.preview.player = player
+                PreviewPlayback(player).load(listOf(PreviewPlayback.Source(Uri.fromFile(source).toString())), play = true)
+            }
+            fun pixel(): Pair<Int, Int> {
+                val bitmap = Bitmap.createBitmap(window.decorView.width, window.decorView.height, Bitmap.Config.ARGB_8888)
+                val done = CountDownLatch(1); val result = AtomicInteger(-1)
+                try {
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        android.view.PixelCopy.request(window, bitmap, { code -> result.set(code); done.countDown() },
+                            android.os.Handler(android.os.Looper.getMainLooper()))
+                    }
+                    assertTrue("Window copy timed out", done.await(5, TimeUnit.SECONDS))
+                    assertEquals(android.view.PixelCopy.SUCCESS, result.get())
+                    return bitmap.getPixel(centerX, centerY) to bitmap.getPixel(barX, centerY)
+                } finally { bitmap.recycle() }
+            }
+            try {
+                await("color fixture playback") { var ready = false; scenario.onActivity { ready = player.currentPosition > 400 }; ready }
+                scenario.onActivity { activity ->
+                    player.pause()
+                    val position = IntArray(2)
+                    activity.preview.getLocationInWindow(position)
+                    centerX = position[0] + activity.preview.width / 2
+                    centerY = position[1] + activity.preview.height / 2
+                    barX = position[0] + 10
+                    activity.preview.applyPreviewColor(ColorAdjustments(brightness = .2f, warmth = .5f))
+                }
+                await("graded texture") { val (center, _) = pixel(); Color.red(center) in 55..75 }
+                val (center, bar) = pixel()
+                assertEquals(51.0, Color.green(center).toDouble(), 10.0)
+                assertEquals(38.0, Color.blue(center).toDouble(), 10.0)
+                assertTrue("Letterbox was color graded", Color.red(bar) + Color.green(bar) + Color.blue(bar) < 20)
+                scenario.onActivity { it.preview.applyPreviewColor(ColorAdjustments()) }
+                await("neutral color reset") { val (c, _) = pixel(); Color.red(c) + Color.green(c) + Color.blue(c) < 20 }
+            } finally { scenario.onActivity { it.preview.player = null; player.release() } }
         }
     }
 

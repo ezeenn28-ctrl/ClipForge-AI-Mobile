@@ -1032,10 +1032,10 @@ class MainActivity : ComponentActivity() {
                     val previewEffect = if (timelineActive) playingTimelineClip?.effect ?: "None" else effectChoice
                     val staticZoom = if (previewEffect == "Zoom") 1.12f else 1f
                     val visualOpacity = visuals.opacity(localVisualMs, playingTimelineClip?.durationMs ?: 1)
-                    PreviewVideo(previewBinding, Modifier.fillMaxSize().previewColor(if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments(), previewEffect == "Monochrome").graphicsLayer {
+                    PreviewVideo(previewBinding, Modifier.fillMaxSize().graphicsLayer {
                         scaleX = point.scale * staticZoom; scaleY = point.scale * staticZoom
                         translationX = point.x * size.width; translationY = point.y * size.height; alpha = visualOpacity
-                    }, crop = fillFrame)
+                    }, crop = fillFrame, color = if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments(), monochrome = previewEffect == "Monochrome")
                     if (timelineActive || selectedDraft in drafts.indices || hookText.isNotBlank() || captionText.isNotBlank()) {
                         val playing = if (timelineActive) timeline.clips.getOrNull(timelinePlaybackIndex) else null
                         val hook = playing?.hook ?: hookText

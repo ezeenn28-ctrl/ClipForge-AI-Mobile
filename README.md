@@ -37,7 +37,7 @@ The baseline commit ae4f644 passed Actions build #59, including unit tests and A
 - Android may interrupt foreground processing because of system limits, heat or memory. Completed audio windows survive interruption and Resume is explicit; uninterrupted background execution is not guaranteed. The last editing project restores automatically when its original source is still accessible; active jobs are not restarted. Autosave runs after a one-second editing pause, including when completed batch results arrive. Full-transcription checkpoints survive restart; run full transcription on the restored original video to resume. Moving, replacing or deleting source media can prevent correct restoration; review it again before export.
 - Audio decoding seeks and trims each <=30-second inference window. Long files still require device validation of codec seeking, timestamp alignment, runtime and thermal behavior.
 - Whisper tiny accuracy varies, especially for Taglish, noise and overlapping speech. Review and correct subtitles.
-- Effects are a fixed zoom and monochrome filter; animated transitions, multitrack editing and face tracking remain future work.
+- Per-clip effects include zoom, monochrome, start/end motion, fades through black, constant 0.5–2x speed and SDR color controls. Overlapping transitions, speed ramps, multiple video layers, face tracking and HDR color matching remain future work.
 - Campaign checks do not fetch briefs or verify audience geography, account standing, engagement, duplicate submissions or payout eligibility.
 - Cloud AI has no provider implemented. No paid service is used. A future provider requires explicit permission before upload.
 - Export progress and cancellation are available; failed/cancelled partial files are removed. Downloads use unique temporary files so a failed import cannot overwrite the selected source.
@@ -118,3 +118,10 @@ Kotlin 2.0.21, AGP 8.7.3, Gradle 8.9, Java 17, Media3 1.5.1, whisper.cpp v1.7.6;
 - Timeline fits the viewport, exposes zoom controls, spaces ruler labels and separates video, caption, original-audio and optional music tracks. Visible clips load at most three sampled thumbnail frames through the existing serialized, bounded cache. Audio tracks do not claim analyzed waveform data.
 - Caption, campaign and export workspaces share the updated surfaces, typography and spacing. Export has a structured delivery summary; explicit approval is still required.
 - Layout and navigation checks cover the home, small/landscape screens, editor actions, launcher resources and saved-project preservation. Physical-device acceptance of the design upgrade remains a consolidated milestone.
+
+## Speed and color controls
+- Select a timeline cut and open **Speed**. Choose 0.5x, 0.75x, 1x, 1.25x, 1.5x or 2x. Duration and subtitle timing follow the new speed; source in/out fields stay in original-video time.
+- Original audio uses pitch-preserving time stretching. The separate music track keeps its own speed and output-timeline placement.
+- Open **Effects** for brightness, contrast, saturation and warmth. Release a slider to apply its value as one undoable edit; **Reset color** restores neutral settings.
+- Settings persist per cut through save, reopen, split, duplicate and undo/redo. Older projects open at 1x with neutral color. Any edit requires a fresh review before export.
+- These controls are SDR; device-specific HDR tone mapping is not covered by the matching-color checks.

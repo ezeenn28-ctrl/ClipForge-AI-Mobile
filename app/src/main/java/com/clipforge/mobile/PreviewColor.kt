@@ -1,20 +1,15 @@
 package com.clipforge.mobile
 
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.geometry.Rect
-import androidx.compose.ui.graphics.ColorFilter
-import androidx.compose.ui.graphics.ColorMatrix
-import androidx.compose.ui.graphics.Paint
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.view.TextureView
+import androidx.media3.ui.PlayerView
 
-/** Color is a view layer, avoiding video-renderer flushes when the user changes tools. */
-fun Modifier.previewColor(adjustments: ColorAdjustments, monochrome: Boolean = false): Modifier =
-    if (adjustments == ColorAdjustments() && !monochrome) this else drawWithCache {
-    val paint = Paint().apply { colorFilter = ColorFilter.colorMatrix(ColorMatrix(adjustments.previewMatrix(monochrome))) }
-    onDrawWithContent {
-        drawContext.canvas.saveLayer(Rect(0f, 0f, size.width, size.height), paint)
-        drawContent()
-        drawContext.canvas.restore()
-    }
+/** Grade the video texture only: letterbox bars and sibling caption layers stay unchanged. */
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+fun PlayerView.applyPreviewColor(color: ColorAdjustments, monochrome: Boolean = false) {
+    val texture = videoSurfaceView as? TextureView ?: return
+    texture.setLayerPaint(Paint().apply {
+        if (color != ColorAdjustments() || monochrome) colorFilter = ColorMatrixColorFilter(color.previewMatrix(monochrome))
+    })
 }
-
