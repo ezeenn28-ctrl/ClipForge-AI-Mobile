@@ -105,13 +105,27 @@ def scroll(root, horizontal=False, reverse=False):
     else:
         # The timeline consumes center-screen vertical drags. Use the parent's
         # left gutter so the enclosing vertical ScrollView receives the swipe.
-        swipe_x = x1 + min(24, (x2 - x1) // 10)
+        swipe_x = x1 + 2
         points = (swipe_x, y1 + (y2 - y1) * 4 // 5, swipe_x, y1 + (y2 - y1) // 5)
     if reverse:
         points = points[2:] + points[:2]
     adb("shell", "input", "swipe", *(str(v) for v in points), "350")
     time.sleep(.3)
     return True
+
+
+def editor_top():
+    previous = None
+    still = 0
+    for _ in range(14):
+        root = hierarchy()
+        signature = ET.tostring(root)
+        still = still + 1 if signature == previous else 0
+        if still >= 2:
+            return
+        previous = signature
+        if not scroll(root, reverse=True):
+            return
 
 
 def locate(text=None, desc=None, contains=False, timeout=30, scroll_axis=None):
@@ -428,13 +442,17 @@ def exercise_speech_import(args):
     tap_node(locate(text="Done"))
     passed("Imported effect and library favorite survive process restart")
     tap_node(locate(text="Effects", scroll_axis="horizontal"))
+    editor_top()
     tap_node(locate(text="Warm film", scroll_axis="vertical"))
+    editor_top()
     locate(text="Selected look: Warm film", scroll_axis="vertical")
     tap_node(locate(text="Captions", scroll_axis="horizontal"))
     tap_node(locate(text="Neon glow", scroll_axis="vertical"))
+    editor_top()
     locate(text="Selected style: Neon glow", scroll_axis="vertical")
     tap_node(locate(text="Format", scroll_axis="horizontal"))
     tap_node(locate(text="Neon square", scroll_axis="vertical"))
+    editor_top()
     locate(text="Selected frame: Neon square", scroll_axis="vertical")
     screenshot("new-style-pack-preview")
     passed("Actual signed APK applies a new video look, caption style and reference frame")

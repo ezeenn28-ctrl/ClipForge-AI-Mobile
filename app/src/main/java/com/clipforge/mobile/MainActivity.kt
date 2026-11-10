@@ -1249,7 +1249,16 @@ class MainActivity : ComponentActivity() {
                     if (simpleEditor) {
                         StudioWorkspaceLayout(modifier = Modifier.fillMaxSize().padding(innerPadding), showPreview = !fullScreenPreview,
                             wide = wideWorkspace, preview = { previewPanel(false) }) {
-                            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            val toolScroll = rememberScrollState()
+                            LaunchedEffect(editorTool, selectedTimelineId) { toolScroll.scrollTo(0) }
+                            Column(Modifier.fillMaxSize().verticalScroll(toolScroll).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if (editorTool == EditorTool.EFFECTS) {
+                                    timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
+                                        VideoLookPicker(clip.effect, !busy) { look ->
+                                            updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(effect = look) else it }))
+                                        }
+                                    }
+                                }
                                 TimelineEditor(this@MainActivity, video, duration, timeline, selectedTimelineId, timelinePosition, !busy,
                                     onHistory = updateTimeline, onSelect = { id ->
                                         selectedTimelineId = id; editorTool = EditorTool.EDIT
