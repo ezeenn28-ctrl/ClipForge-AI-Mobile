@@ -77,7 +77,9 @@ def scroll(root, horizontal=False):
             continue
         x1, y1, x2, y2 = bounds(node)
         width, height = x2 - x1, y2 - y1
-        if width > 100 and height > 40 and ((width > height * 2) if horizontal else (height > width / 3)):
+        is_horizontal = node.get("class") == "android.widget.HorizontalScrollView"
+        is_vertical = node.get("class") == "android.widget.ScrollView"
+        if width > 100 and height > 40 and (is_horizontal if horizontal else is_vertical):
             nodes.append(node)
     if not nodes:
         raise AssertionError("No visible scroll container for requested control")
