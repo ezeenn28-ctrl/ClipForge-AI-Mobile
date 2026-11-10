@@ -47,7 +47,7 @@ complete release signing or establish device acceptance.
 ## Core editing batch after Build 90
 
 Per-clip constant speed (0.5–2x, original-audio pitch preserved) and SDR brightness,
-contrast, saturation and warmth are implemented for automated verification.
+contrast, saturation and warmth are implemented and passed automated verification in Build 94; consolidated physical acceptance remains pending.
 Source trim/caption timestamps remain immutable; output duration, seeking, fades,
 thumbnail sampling and music placement use explicit source/output clock conversion.
 Sliders commit one undo step per drag. Legacy projects default to 1x/neutral color.

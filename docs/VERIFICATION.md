@@ -102,3 +102,39 @@ This is a consolidated development milestone. Physical acceptance of the new UI,
 music import/volume checks, long-video/thermal behavior and production release
 signing remain outstanding. The prior owner-reported Build 87 results are retained
 as baseline evidence, not relabeled as tests of Build 90.
+
+## Speed and color controls — Actions #94 — e95ec58
+
+- 107 JVM/Android-host tests passed: zero failures, errors or skipped tests.
+- All seven Android API 30 x86_64 integration tests passed.
+- Mixed-speed synthetic export used a 2-second source span at 2x followed by
+  another 2-second span at 0.5x, producing approximately five seconds of output.
+  Decoded frames remained visible and caption on/off timing matched both speeds.
+- Decoded original-audio pitch stayed approximately 440 Hz at both speeds.
+  The separate 880 Hz music fixture entered at its 4.5-second output placement.
+- Actual window pixels verified preview color grading and neutral reset without
+  tinting the editor's black letterbox canvas. Encoded MP4 pixels verified SDR
+  brightness/warmth values and independently colored caption text/highlights.
+- Host checks covered mixed-speed seek/split/trim clocks, output-time fades,
+  source-timed captions, speed-only updates without playlist reset, transition
+  playback parameters, one undo step per color drag, reset, persisted settings
+  and neutral/1x defaults for old projects.
+- Native Whisper integration, arm64 development APK assembly, cached development
+  signing fingerprint and APK ZIP integrity checks passed. The color-controls
+  layout was rendered and inspected.
+- Earlier runs exposed two test-host setup mistakes (missing compact toolbar and
+  a dark window instead of the editor's black canvas), corrected before this run.
+  External Maven HTTP 429 and interrupted emulator-image downloads were separate
+  infrastructure failures. CI now prepares a checksum-verified pinned Robolectric
+  SDK for offline test resolution and caches the Android image with bounded retries.
+
+Run: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42750019885
+
+APK: ClipForge-AI-Mobile-0.2.94-dev.apk
+SHA-256: e460e34a342c41daa27aa500eb43899366ba54cb59ddb98e356c98bc20d56034
+
+This remains a development milestone. These are synthetic/emulator checks, not
+new acceptance results from the owner's Nubia Neo 2. Consolidated phone acceptance,
+two-hour processing/thermal evidence, overlapping transitions and production signing
+remain outstanding. SDR color checks do not establish HDR matching. Export still
+requires review/approval; no owner footage was automatically rendered for testing.
