@@ -33,11 +33,11 @@ describe implementation, not physical-device acceptance.
 2. [x] Named projects, autosave, reopen and legacy migration passed automated checks; reopen/autosave also confirmed on phone. Metadata backup passed host tests; device restore remains pending.
 3. [x] Dark/cyan theme, original icon, caption controls and regular/compact/landscape layouts passed automated checks and internal visual review in Builds 88–90. Consolidated device acceptance of the new UI remains pending.
 4. [ ] Import, trim, split, reorder, undo/redo, audio and framing pass end to end.
-5. [ ] Captions retain timing/style across preview, saves and MP4 export.
+5. [x] Caption rendering/timing passed automated checks; the owner confirmed Build 94 synchronized captions, persistent settings and MP4 matching preview/captions/audio.
 6. [ ] Up to 15 editable highlight candidates; approval required for every render.
 7. [ ] Long-video interruption/resume works within documented storage/thermal limits.
 8. [ ] Campaign checks and manual payout records retain correct states.
-9. [x] Build 87 owner-reported Nubia Neo 2 playback/export test has no reported blocker. New changes still require their own acceptance; music controls remain unconfirmed.
+9. [x] Owner-reported Nubia Neo 2 acceptance: Build 87 baseline and all eight Build 94 checklist items passed. Build 94 includes update/project retention, playback/seek, speed/pitch, music import/volume, captions, color/reset/undo, settings persistence and matching MP4 output.
 10. [ ] Release signing is configured securely without changing the update identity.
 11. [ ] Signed release APK, checksum, quick-start guide and actual limitations delivered.
 
@@ -47,7 +47,7 @@ complete release signing or establish device acceptance.
 ## Core editing batch after Build 90
 
 Per-clip constant speed (0.5–2x, original-audio pitch preserved) and SDR brightness,
-contrast, saturation and warmth are implemented and passed automated verification in Build 94; consolidated physical acceptance remains pending.
+contrast, saturation and warmth are implemented and passed automated verification in Build 94; the owner confirmed all eight Build 94 phone-check items on 10 November 2026.
 Source trim/caption timestamps remain immutable; output duration, seeking, fades,
 thumbnail sampling and music placement use explicit source/output clock conversion.
 Sliders commit one undo step per drag. Legacy projects default to 1x/neutral color.

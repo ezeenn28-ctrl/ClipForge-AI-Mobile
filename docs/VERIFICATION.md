@@ -138,3 +138,24 @@ new acceptance results from the owner's Nubia Neo 2. Consolidated phone acceptan
 two-hour processing/thermal evidence, overlapping transitions and production signing
 remain outstanding. SDR color checks do not establish HDR matching. Export still
 requires review/approval; no owner footage was automatically rendered for testing.
+
+## Owner-reported Build 94 phone acceptance — 10 November 2026
+
+The owner selected every item in the two Build 94 device-check groups.
+These are owner-reported results on the established Nubia Neo 2 device, separate
+from the seven emulator tests above.
+
+1. Installed as an update with existing projects retained.
+2. Preview, Play/Pause and Seek worked.
+3. 0.5x/2x playback worked with natural voice pitch.
+4. Local music import and volume worked.
+5. Captions remained synchronized.
+6. Color controls, Reset and Undo worked.
+7. Settings persisted after closing/reopening.
+8. Exported MP4 matched preview, captions and audio.
+
+No blocker was reported in this checklist. This resolves the previously
+unconfirmed music-import/volume checks and the Build 94 speed/color acceptance
+items. It does not establish new results for two-hour transcription/thermal
+behavior, interruption/resume, metadata-backup restore, Campaign Mode,
+overlapping transitions, HDR color matching or production signing.
