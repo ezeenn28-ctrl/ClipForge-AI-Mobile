@@ -11,7 +11,7 @@
 
 Hook suggestions are local templates based on supplied words, with English/Filipino variants. They are not visual scene recognition or a cloud language model. Review context and wording.
 
-The six PCM sounds are original procedural effects; no samples were copied from reference footage. These features need no account, subscription or network request.
+The 18 built-in PCM sounds are original procedural effects; no samples were copied from reference footage. Built-in effects, framing and hook suggestions work offline. The optional [Sound library](SOUND_LIBRARY.md) adds Myinstants search/download and local MP3 import.
 
 Effects are independent of original sound and music. Muting the original track leaves SFX enabled. Their source-time anchors follow split, reorder, trim and constant speed changes; each effect retains its original pitch and duration, shortened at the cut end or next effect. One SFX lane plays at a time. Very short overlapping remnants under 40 ms are omitted.
 

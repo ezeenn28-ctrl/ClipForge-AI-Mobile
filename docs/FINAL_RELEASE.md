@@ -1,59 +1,62 @@
-# ClipForge AI 1.1.0 — Build 121
+# ClipForge AI 1.2.0 — Build 123
 
-Delivery record: 11 November 2026 (Asia/Manila). Physical owner acceptance remains.
+Prepared 11 November 2026 (Asia/Manila). Physical owner acceptance remains.
 
-## Installer and source
+## Installer
 
-- Filename: `ClipForge-AI-1.1.0-universal.apk`; 17,453,966 bytes.
-- Version 1.1.0, version code 121; package `com.clipforge.mobile`.
+- File: `ClipForge-AI-1.2.0-universal.apk`; 17,503,118 bytes.
+- Version 1.2.0, version code 123; package `com.clipforge.mobile`.
+- Source: `51acf8210a457697817a5e0aaf7e64eb39edec90`.
+- SHA-256: `8e533f00ebe8098b18c5c17cc166f8ddc235c67e162f71a23ad3386f235c1e0f`.
+- Certificate SHA-256: `ea9f20de77e24660999aaae941f66029c76ffe94170e33dfc4cfb03ce13d8ea6`.
 - Non-debuggable signed release; ARM64 and x86_64.
-- Source: `458d5bf7418c266c93d9912d113febd2dc1dfbf9`.
-- SHA-256: `9ffee78233d9479080f20c98fdb82b85aa20f06b4e38a120fda19f1ce8cf644d`.
-- Signing certificate SHA-256: `ea9f20de77e24660999aaae941f66029c76ffe94170e33dfc4cfb03ce13d8ea6`.
-- Install as an update without uninstalling; the original signing identity is retained.
+- Install as an update without uninstalling. Original signing identity and app data are retained.
 
-[Download APK](https://chatgpt.com/library?file_id=libfile_609eddc84a148191af364613f739cee8&account_id=personal)
+[Download APK](https://chatgpt.com/library?file_id=libfile_0eedd49a34008191b1e60b6e43504e56&account_id=personal)
 
-## Upgrade
+## Sound-library upgrade
 
-- Offline editable hook suggestions from captions or a scene description: Funny, Curiosity and Story tones.
-- Two white portrait reference frames: square crop and 4:3 crop, with header hook text and bold highlighted captions.
-- Six original procedural sound effects: Whoosh, Pop, Impact, Metal chime, Boing and Scratch.
-- Timed placement, per-effect volume, move/remove controls, caption-based suggestions, timeline markers, undo/redo and saved-project support.
-- Source-time SFX anchors follow split, trim, reorder and constant speed changes; their pitch remains unchanged.
-- Fixed a short-effect preview attack issue and clipped native preview video to its portrait canvas. A real screenshot check now rejects horizontal picture overflow.
-- Review approval remains required before export.
+- 18 original procedural effects, up from six.
+- Search, audition, local favorites, MP3/audio import and individual Myinstants downloads.
+- Official API access with explicit searches, bounded responses, HTTPS origin checks, download limits and rate-limit handling.
+- Downloaded/imported files are copied privately, converted to mono PCM and reduced if excessively boosted. Downloaded sounds retain their name and source-page link.
+- Custom effects keep their timing, volume, source information and duration through save/reopen, split, trim, reorder and constant speed changes.
+- Adding a new effect at an identical source position replaces the existing cue; Undo restores the previous cut settings.
+- Audition stops on dismissal/background navigation and avoids late playback after an asynchronous preparation is cancelled.
+- Existing hook generation, white-frame preview/export fix and explicit export approval remain.
 
-See [Reference-style guide](REFERENCE_STYLE.md).
+See [Sound library guide](SOUND_LIBRARY.md) and [reference-style guide](REFERENCE_STYLE.md).
 
 ## Verification
 
-[Build 121 verification](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42830932957).
+[Build 123 verification](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/42865182923).
 
 | Check | Actual result |
 | --- | --- |
-| Host and Android-host unit tests | 133 passed; zero failures/errors/skips |
-| Android API 30 x86_64 media integration tests | 10 passed; zero failures/errors/skips |
-| Native inference | 240/240 windows passed |
-| Exact signed installer workflow | 15 checks passed; no Java/native fatal exception |
-| Release integrity and identity | Original certificate, non-debuggable manifest, both ABIs and SHA-256 verified |
+| Host and Android-host unit tests | 144 passed; zero failures/errors/skips |
+| Android API 30 x86_64 media tests | 11 passed; zero failures/errors/skips |
+| Real native inference | 240/240 synthetic windows passed |
+| Exact signed installer workflow | 18 recorded checks passed |
+| Release integrity | Original certificate, non-debuggable manifest, both ABIs and checksum verified |
 
-The new media test decodes a real exported MP4: white frame bands and hook text remain before/between subtitle cues; a pop is audible at 1 second and impact at 2.5 seconds, with silent intervals when original audio is muted.
+New unit coverage includes official API response parsing, encoded queries, safe URLs, bounded requests, Retry-After handling, invalid/oversized downloads, custom cue timing/persistence, catalog recovery, boosted-wave handling and local-asset preview.
 
-Signed-installer checks cover the pinned Build 94 compatibility baseline, update/install, preserved projects/campaign record, moving preview frames, explicit export approval, saved speed/captions/audio/framing in Gallery MP4, Share chooser without sending, restart approval clearing, packaged JNI/service English captions, Generate Hook application, reference frame/SFX controls, persistence, clean system-picker import and crash-log checks. The new screenshot assertion checks that native video stays inside the portrait preview canvas.
+The added Android media test imports a synthetic MP3, restores its cue from a saved project, and exports it at the chosen time with music in another audio sequence. Decoded MP4 audio verifies quiet intervals and the imported effect's timed energy. The other ten media tests cover the prior preview, framing, captions, speed/pitch, transitions and long-source windowing regressions.
 
-The initial final-workflow attempt failed before app execution because Actions could not download its already-built APK artifact (Not Found). Only the failed job was retried using the same immutable APK; the passing build/media/native jobs were retained. Earlier Build 119 passed its workflow but manual screenshot inspection exposed preview overflow; Build 121 supersedes it. No earlier 1.1.0 candidate was delivered.
+The actual installer workflow retains the earlier update/project/preview/campaign/export/Share/JNI/caption/import checks. New checks search and audition a built-in sound, favorite/select it, expose Myinstants controls, import a local MP3 through the system picker, add it as a timed effect, and preserve both the custom cue and favorite across a process restart. The workflow also checks for Java/native fatal exceptions. Myinstants network download is not claimed as an automated Android UI test: the network client is unit-tested with controlled responses, while live official search and a real Vine Boom MP3 download/full decode were separately verified in the workstation.
 
-The update baseline is rebuilt x86 source from pinned Build 94, signed with the original identity, rather than the original ARM64 binary. The installed owner APK is otherwise unchanged. Tests use public/synthetic fixtures, not owner footage.
+Live downloaded example: VINE BOOM SOUND, 21,230 bytes, 1.306122 seconds. No downloaded Myinstants audio is included in the APK or repository.
 
-Native endurance repeats/pads public JFK speech into 240 consecutive 30-second windows, totaling 7,200 seconds. Linux CI wall time: 613.619 seconds; warm RSS 281,400 KiB, final/peak RSS 347,496 KiB. This is not unique two-hour footage, a phone speed benchmark or a speech-accuracy guarantee.
+Native endurance repeats/pads public JFK speech into 240 consecutive 30-second windows, totaling 7,200 seconds. Linux CI wall time was 607.759 seconds; warm RSS 281,584 KiB and final/peak RSS 292,452 KiB. This is not unique two-hour footage, a phone benchmark or a broad speech-accuracy guarantee.
 
-## Remaining owner checks
+The update baseline was rebuilt from pinned Build 94 source for x86 compatibility and signed with the original identity; it was not the original ARM64 binary. The owner installer itself was tested unchanged. Fixtures are public/synthetic; no owner footage was automatically exported. Build 122 was superseded during final refinements and is not counted as a completed release.
 
-Physical Nubia audio latency/loudness, codecs, heat/battery behavior and broad Filipino/Taglish accuracy remain unmeasured. Install, preview a personal clip, generate/edit a hook, place SFX, reopen the project and review an approved MP4.
+## Scope and remaining phone checks
 
-Hook suggestions are local templates, not a cloud language model or visual recognition. Reference presets crop footage; check framing. Original synthesized effects are not ripped from reference videos. These controls do not automatically reproduce an uploaded reference edit.
+Check actual Myinstants search/download over the phone's connection, audition loudness/latency, imported effects in a personal export, favorites and project reopening on the Nubia. Physical codec behavior, heat/battery use and broad Filipino/Taglish accuracy remain owner checks.
 
-Existing v1 scope limitations remain: overlapping layers/cross-dissolves, speed ramps, subject tracking, background removal, advanced audio cleanup and public-store release are future scope. No cloud provider is included.
+Myinstants community sounds do not establish blanket commercial reuse rights. Source links are retained for checking permissions before paid posts. API availability and network limits are controlled by Myinstants. Downloaded files and original effects work offline; search needs a connection.
 
-[Previous 1.0.2 release record](RELEASE_1_0_2.md). Version 1.0.1 remains withdrawn for its fixed import crash.
+Imported effects are limited to 0.04–15 seconds and 10 MB, with 200 library assets. Project limits remain 12 cues per cut and 120 overall. The lane plays one effect at a time. Metadata project backups do not include sound files.
+
+[Previous 1.1.0 release record](RELEASE_1_1_0.md). Version 1.0.1 remains withdrawn. Existing future scope—overlapping layers/cross-dissolves, speed ramps, tracking, background removal and public-store distribution—has not changed. No cloud AI provider is included.

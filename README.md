@@ -2,18 +2,21 @@
 
 Private, offline-first Android video editor for a personal clipping workflow.
 
-Current installer: **v1.1.0, Build 121**. Automated verification passed: 133 unit tests,
-10 Android media tests, 240 native inference windows and 15 actual signed-APK checks.
-Fresh physical phone acceptance remains. Version 1.0.1 remains withdrawn.
-[Download installer](https://chatgpt.com/library?file_id=libfile_609eddc84a148191af364613f739cee8&account_id=personal) · [Reference-style editing guide](docs/REFERENCE_STYLE.md).
+Current installer: **v1.2.0, Build 123**. Verification passed: 144 unit tests,
+11 Android media tests, 240 synthetic native windows and 18 actual signed-APK checks.
+Physical phone acceptance remains. Version 1.0.1 remains withdrawn.
+[Download installer](https://chatgpt.com/library?file_id=libfile_0eedd49a34008191b1e60b6e43504e56&account_id=personal) · [Sound library guide](docs/SOUND_LIBRARY.md).
 The v1 scope, installation instructions and limits are in [Quick start](docs/QUICK_START.md).
 See [Release record](docs/FINAL_RELEASE.md), [verification history](docs/VERIFICATION.md)
 and [release gates](docs/RELEASE_PLAN.md) for actual evidence.
 
 ## Editing
 
+- Searchable sound library, audition, local favorites, MP3/audio import and individual Myinstants downloads. Downloaded files remain available offline.
+
+
 - Offline Generate Hook suggestions from captions or a scene description; editable Funny, Curiosity and Story options.
-- White square/4:3 portrait reference frames and six original synthesized sound effects with timed placement, volume controls, suggestions and project persistence.
+- White square/4:3 portrait reference frames and 18 original synthesized sound effects with timed placement, volume controls, suggestions and project persistence.
 
 
 - Original dark/cyan interface, custom vector icon, named projects and recent drafts.
