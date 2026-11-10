@@ -87,7 +87,10 @@ def scroll(root, horizontal=False):
     if horizontal:
         points = (x2 - 25, (y1 + y2) // 2, x1 + 25, (y1 + y2) // 2)
     else:
-        points = ((x1 + x2) // 2, y1 + (y2 - y1) * 4 // 5, (x1 + x2) // 2, y1 + (y2 - y1) // 5)
+        # The timeline consumes center-screen vertical drags. Use the parent's
+        # left gutter so the enclosing vertical ScrollView receives the swipe.
+        swipe_x = x1 + min(24, (x2 - x1) // 10)
+        points = (swipe_x, y1 + (y2 - y1) * 4 // 5, swipe_x, y1 + (y2 - y1) // 5)
     adb("shell", "input", "swipe", *(str(v) for v in points), "350")
     time.sleep(.3)
 
