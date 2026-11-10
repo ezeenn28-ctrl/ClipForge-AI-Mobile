@@ -370,6 +370,21 @@ jobs:
           lines = (p / "logcat.txt").read_text().splitlines()
           print("\n".join([line for line in lines if any(s in line for s in ("AndroidRuntime", "ExportException", "Transformer", "Saved to", "Gallery"))][-35:]))
           PY
+      - name: Read prior public-fixture picker log
+        uses: actions/download-artifact@v4
+        with:
+          name: ClipForge-signed-release-acceptance
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 42777265060
+          path: build/picker-latest
+      - name: Inspect system picker messages
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          lines = Path("build/picker-latest/logcat.txt").read_text().splitlines()
+          picked = [s for s in lines if any(k in s.lower() for k in ("documentsui", "mime", "documentpicked", "itemactivated", "not allowed", "permission denial"))]
+          print("\n".join(picked[-100:]))
+          PY
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

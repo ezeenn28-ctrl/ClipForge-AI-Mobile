@@ -161,6 +161,10 @@ def open_editor():
 
 
 def choose_document(filename):
+    root = hierarchy()
+    list_toggle = find(root, desc="List view")
+    if list_toggle:
+        tap_node(list_toggle[0])
     locate(text=filename, timeout=35, scroll_axis="vertical")
     root = hierarchy()
     label = find(root, text=filename)[0]
