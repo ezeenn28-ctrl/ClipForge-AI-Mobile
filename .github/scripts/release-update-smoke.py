@@ -51,6 +51,7 @@ def bounds(node):
 
 def find(root, text=None, desc=None, contains=False, class_name=None):
     result = []
+    parents = {child: parent for parent in root.iter() for child in parent}
     for node in root.iter("node"):
         value = node.get("text", "") if text is not None else node.get("content-desc", "")
         wanted = text if text is not None else desc
@@ -60,6 +61,14 @@ def find(root, text=None, desc=None, contains=False, class_name=None):
             continue
         x1, y1, x2, y2 = bounds(node)
         if x2 > x1 and y2 > y1:
+            # Compose may leave a disabled button's TextView enabled. Its
+            # clickable ancestor controls whether the action is actually usable.
+            ancestor = node
+            while ancestor is not None:
+                if ancestor.get("enabled") == "false":
+                    node.set("enabled", "false")
+                    break
+                ancestor = parents.get(ancestor)
             result.append(node)
     return sorted(result, key=lambda n: (n.get("class") != "android.widget.Button", n.get("clickable") != "true"))
 
