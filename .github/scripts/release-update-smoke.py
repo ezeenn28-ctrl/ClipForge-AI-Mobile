@@ -159,6 +159,34 @@ def open_editor():
     locate(desc="Play")
 
 
+
+def choose_document(filename):
+    locate(text=filename, timeout=35, scroll_axis="vertical")
+    root = hierarchy()
+    label = find(root, text=filename)[0]
+    parents = {child: parent for parent in root.iter() for child in parent}
+    target = label
+    current = label
+    while current is not None:
+        if current.get("resource-id", "").endswith("/item_root"):
+            target = current
+            break
+        current = parents.get(current)
+    # DocumentsUI grid nameplates do not dispatch the item touch listener.
+    # Activate the actual document tile, away from its separate Preview badge.
+    tap_node(target)
+    root = hierarchy()
+    if any(n.get("package") == "com.android.documentsui" for n in root.iter("node")):
+        adb("shell", "input", "keyevent", "66")
+    deadline = time.monotonic() + 40
+    while time.monotonic() < deadline:
+        root = hierarchy()
+        if any(n.get("package") == PACKAGE for n in root.iter("node")):
+            return
+        time.sleep(.4)
+    raise AssertionError("System picker did not return the selected document")
+
+
 def exports():
     text = adb("shell", "sh", "-c", "'if [ -d /sdcard/Movies/ClipForge ]; then find /sdcard/Movies/ClipForge -name \"clipforge_*.mp4\"; fi'", check=False)
     return [line.strip() for line in text.splitlines() if line.startswith("/sdcard/") and line.endswith(".mp4")]
@@ -307,7 +335,7 @@ def exercise_speech_import(args):
         nav = [n for n in root.iter("node") if any(s in n.get("content-desc", "").lower() for s in ("roots", "navigation drawer"))]
         if nav:
             tap_node(nav[0]); tap_node(locate(text="Downloads"))
-    tap_node(locate(text="ClipForgeSpeechFixture.mp4", timeout=35, scroll_axis="vertical"))
+    choose_document("ClipForgeSpeechFixture.mp4")
     locate(text="ClipForgeSpeechFixture", contains=True, timeout=40)
     # New project intentionally starts with an empty, non-destructive sequence.
     tap_node(locate(text="Add source clip", scroll_axis="vertical"))
@@ -330,7 +358,7 @@ def exercise_speech_import(args):
         if nav:
             tap_node(nav[0])
             tap_node(locate(text="Downloads"))
-    tap_node(locate(text="ClipForgeImportFixture.mp4", timeout=35, scroll_axis="vertical"))
+    choose_document("ClipForgeImportFixture.mp4")
     locate(text="ClipForgeImportFixture", contains=True, timeout=40)
     root = hierarchy()
     assert find(root, desc="Play") or find(root, desc="Pause"), "Clean import did not open editor"
