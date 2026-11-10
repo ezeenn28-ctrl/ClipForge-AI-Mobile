@@ -1,8 +1,5 @@
 name: Deliver verified private APK
 on:
-  push:
-    branches: [main]
-    paths: ['.github/workflows/deliver-release.yml']
   workflow_dispatch:
 jobs:
   deliver:

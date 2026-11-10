@@ -4,11 +4,10 @@ on:
     branches: [main]
   workflow_dispatch:
 concurrency:
-  group: clipforge-android-${{ github.ref }}-${{ contains(github.event.head_commit.message, '[acceptance-only]') && 'acceptance' || 'build' }}
+  group: clipforge-android-${{ github.ref }}
   cancel-in-progress: true
 jobs:
   build:
-    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[delivery-only]') && !contains(github.event.head_commit.message, '[media-only]') }}
     runs-on: ubuntu-24.04
     env:
       CLIPFORGE_ROBOLECTRIC_SDK: ${{ github.workspace }}/.ci-robolectric
@@ -113,7 +112,6 @@ jobs:
         with:
           name: ClipForge-baseline94-compatibility-test-only
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ contains(github.event.head_commit.message, '[acceptance-only]') && '42769587936' || github.run_id }}
           path: build/baseline94-test-only.apk
           retention-days: 7
           if-no-files-found: error
@@ -230,8 +228,6 @@ jobs:
             app/build/outputs/release-update-seed/
           if-no-files-found: error
   native-smoke:
-    # Acceptance-script-only commits reuse the recorded, unchanged engine/media evidence.
-    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[delivery-only]') && !contains(github.event.head_commit.message, '[media-only]') }}
     name: Native Whisper integration and endurance
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -266,8 +262,6 @@ jobs:
           if-no-files-found: warn
 
   media-device:
-    # Acceptance-script-only commits reuse the recorded, unchanged engine/media evidence.
-    if: ${{ !contains(github.event.head_commit.message, '[acceptance-only]') && !contains(github.event.head_commit.message, '[delivery-only]') }}
     name: Android decoder and export integration
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -335,9 +329,7 @@ jobs:
           if-no-files-found: warn
 
   release-update:
-    # Retry only the harness against exactly the immutable signed Build 97 APK.
-    if: ${{ always() && (needs.build.result == 'success' || contains(github.event.head_commit.message, '[acceptance-only]')) }}
-    name: Actual signed release update and workflow
+    name: Actual signed release update and export
     needs: build
     runs-on: ubuntu-24.04
     timeout-minutes: 25
@@ -346,45 +338,6 @@ jobs:
       actions: read
     steps:
       - uses: actions/checkout@v4
-      - name: Inspect prior isolated acceptance failure
-        uses: actions/download-artifact@v4
-        with:
-          name: ClipForge-signed-release-acceptance
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 42775151387
-          path: build/prior-acceptance
-      - name: Print prior synthetic workflow diagnostics
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import xml.etree.ElementTree as E
-          p = Path("build/prior-acceptance")
-          import json
-          prior = json.loads((p / "result.json").read_text())
-          assert len(prior["checks"]) == 9, prior
-          assert prior["checks"][-1] == "Process restart restores project and clears export approval"
-          print("Nine previously completed exact-APK acceptance checks verified:", prior["checks"])
-          root = E.parse(p / "last-window.xml")
-          for n in root.iter("node"):
-              if n.get("text"): print(n.get("text"), n.get("bounds"), n.get("enabled"))
-          lines = (p / "logcat.txt").read_text().splitlines()
-          print("\n".join([line for line in lines if any(s in line for s in ("AndroidRuntime", "ExportException", "Transformer", "Saved to", "Gallery"))][-35:]))
-          PY
-      - name: Read prior public-fixture picker log
-        uses: actions/download-artifact@v4
-        with:
-          name: ClipForge-signed-release-acceptance
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: 42777265060
-          path: build/picker-latest
-      - name: Inspect system picker messages
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          lines = Path("build/picker-latest/logcat.txt").read_text().splitlines()
-          picked = [s for s in lines if any(k in s.lower() for k in ("documentsui", "mime", "documentpicked", "itemactivated", "not allowed", "permission denial"))]
-          print("\n".join(picked[-100:]))
-          PY
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -393,13 +346,11 @@ jobs:
         with:
           name: ClipForge-AI-Mobile-release
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ contains(github.event.head_commit.message, '[acceptance-only]') && '42769587936' || github.run_id }}
           path: build/release-under-test
       - uses: actions/download-artifact@v4
         with:
           name: ClipForge-baseline94-compatibility-test-only
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          run-id: ${{ contains(github.event.head_commit.message, '[acceptance-only]') && '42769587936' || github.run_id }}
           path: build/baseline94
       - name: Cache verified public speech model
         uses: actions/cache@v4
@@ -438,7 +389,7 @@ jobs:
           emulator-boot-timeout: 180
           disable-animations: true
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin --phase speech-import
+          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin --phase update-export
       - name: Upload actual release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
