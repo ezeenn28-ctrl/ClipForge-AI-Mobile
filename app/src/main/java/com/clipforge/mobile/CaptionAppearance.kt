@@ -2,7 +2,7 @@ package com.clipforge.mobile
 
 enum class CaptionFont(val label: String, val family: String) {
     SANS("Sans", "sans-serif"), SERIF("Serif", "serif"), MONO("Mono", "monospace"),
-    CONDENSED("Condensed", "sans-serif-condensed"), ROUNDED("Rounded", "sans-serif-medium")
+    CONDENSED("Condensed", "sans-serif-condensed"), MEDIUM("Medium sans", "sans-serif-medium")
 }
 enum class CaptionAlignment(val label: String) { LEFT("Left"), CENTER("Center"), RIGHT("Right") }
 enum class CaptionColor(val label: String, val argb: Int?) {
