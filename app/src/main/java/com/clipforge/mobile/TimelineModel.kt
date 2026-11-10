@@ -23,7 +23,8 @@ data class TimelineClip(
     val visuals: ClipVisuals = ClipVisuals(),
     val speed: Float = 1f,
     val color: ColorAdjustments = ColorAdjustments(),
-    val transition: CutTransition = CutTransition()
+    val transition: CutTransition = CutTransition(),
+    val sounds: List<ClipSound> = emptyList()
 ) {
     val sourceSpanMs: Long get() = endMs - startMs
     val durationMs: Long get() = (sourceSpanMs / speed.toDouble()).roundToLong().coerceAtLeast(1)
@@ -44,6 +45,8 @@ data class TimelineClip(
         val sourceDurationMs = resolvedDuration(primaryDurationMs)
         require(source.isEmpty() || source.startsWith("content://") || source.startsWith("file://")) { "Timeline source must be local" }
         require(sourceDurationMs in 1..86_400_000) { "Invalid timeline source duration" }
+        require(sounds.size <= 12 && sounds.map { it.id }.distinct().size == sounds.size) { "Up to 12 unique effects per clip" }
+        sounds.forEach { it.validate(sourceDurationMs) }
         visuals.validate()
         require(speed.isFinite() && speed in .5f..2f) { "Invalid clip speed" }
         color.validate()
@@ -62,6 +65,7 @@ object TimelineModel {
     fun validate(clips: List<TimelineClip>, sourceDurationMs: Long) {
         require(clips.size <= 60 && clips.map { it.id }.distinct().size == clips.size) { "Timeline allows up to 60 unique cuts" }
         clips.forEach { it.validate(sourceDurationMs) }
+        require(clips.sumOf { it.sounds.size } <= 120) { "Up to 120 sound effects per project" }
         require(duration(clips) <= 21_600_000) { "Timeline exceeds six hours" }
         require(clips.sumOf { it.subtitles.size } <= 50_000) { "Timeline subtitles exceed project limit" }
     }
@@ -88,8 +92,8 @@ object TimelineModel {
         val clip = clips[position.index]
         require(position.localMs >= 100 && clip.durationMs - position.localMs >= 100) { "Place the playhead at least 0.1s inside a clip" }
         val visualSplit = clip.visuals.split(position.localMs, clip.durationMs)
-        val left = clip.copy(endMs = position.sourceMs, visuals = visualSplit.first, transition = CutTransition(), fadeInMs = minOf(clip.fadeInMs, clip.copy(endMs = position.sourceMs).durationMs), fadeOutMs = 0)
-        val right = clip.copy(id = newId, startMs = position.sourceMs, visuals = visualSplit.second, fadeInMs = 0, fadeOutMs = minOf(clip.fadeOutMs, clip.copy(startMs = position.sourceMs).durationMs))
+        val left = clip.copy(endMs = position.sourceMs, sounds = clip.sounds.filter { it.sourceMs < position.sourceMs }, visuals = visualSplit.first, transition = CutTransition(), fadeInMs = minOf(clip.fadeInMs, clip.copy(endMs = position.sourceMs).durationMs), fadeOutMs = 0)
+        val right = clip.copy(id = newId, sounds = clip.sounds.filter { it.sourceMs >= position.sourceMs }, startMs = position.sourceMs, visuals = visualSplit.second, fadeInMs = 0, fadeOutMs = minOf(clip.fadeOutMs, clip.copy(startMs = position.sourceMs).durationMs))
         return clips.take(position.index) + listOf(left, right) + clips.drop(position.index + 1)
     }
     fun move(clips: List<TimelineClip>, index: Int, delta: Int): List<TimelineClip> {
@@ -127,4 +131,5 @@ data class TimelineHistory(
     fun undo() = if (past.isEmpty()) this else TimelineHistory(past.last(), past.dropLast(1), listOf(clips) + future)
     fun redo() = if (future.isEmpty()) this else TimelineHistory(future.first(), (past + listOf(clips)).takeLast(30), future.drop(1))
 }
+
 

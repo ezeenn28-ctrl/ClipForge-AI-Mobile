@@ -25,9 +25,11 @@ object TimelineExport {
         }
     }
     fun composition(source: Uri, clips: List<TimelineClip>, vertical: Boolean, fillFrame: Boolean,
-                    mute: Boolean, subtitleSize: Float, subtitleColor: Int, music: MusicTrack? = null, preset: CaptionPreset = CaptionPreset.BOLD, appearance: CaptionAppearance = CaptionAppearance()): Composition {
+                    mute: Boolean, subtitleSize: Float, subtitleColor: Int, music: MusicTrack? = null, preset: CaptionPreset = CaptionPreset.BOLD, appearance: CaptionAppearance = CaptionAppearance(), soundAssets: Map<SoundKind, String> = emptyMap()): Composition {
         appearance.validate()
         require(clips.isNotEmpty()) { "Add a timeline clip before exporting" }
+        val renderAppearance = if (vertical) appearance else appearance.copy(layout = ReferenceLayout.STANDARD)
+        val reference = renderAppearance.layout
         val items = clips.mapIndexed { index, clip ->
             val incoming = clips.getOrNull(index - 1)?.transition
             val outgoing = clip.transition.takeIf { index < clips.lastIndex }
@@ -39,14 +41,15 @@ object TimelineExport {
                     val matrix = clip.color.exportMatrix(clip.effect == "Monochrome")
                     add(RgbMatrix { _, _ -> matrix })
                 }
+                if (reference.videoAspect != null) add(Presentation.createForAspectRatio(reference.videoAspect, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
                 add(Presentation.createForWidthAndHeight(if (vertical) 1080 else 1920, if (vertical) 1920 else 1080,
-                    if (fillFrame) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT))
+                    if (fillFrame && reference == ReferenceLayout.STANDARD) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT))
                 if (incoming?.kind == CutTransitionKind.ZOOM_CUT || outgoing?.kind == CutTransitionKind.ZOOM_CUT)
                     add(ClipVisualEffects.transitionMotion(clip, incoming, outgoing))
                 if (clip.visuals.start != MotionPoint() || clip.visuals.end != MotionPoint()) add(ClipVisualEffects.motion(clip))
-                if (clip.hook.isNotBlank() || clip.caption.isNotBlank() || clip.subtitles.isNotEmpty()) {
-                    val overlay = if (clip.subtitles.isNotEmpty()) segmentSubtitleOverlay(clip.hook, clip.subtitles, clip.startMs, subtitleSize, subtitleColor, calibrateClock = true, preset = preset, appearance = appearance)
-                    else timedCaptionOverlay(clip.hook, clip.caption, clip.captionStartMs, clip.captionEndMs, clip.startMs, calibrateClock = true, subtitleSize = subtitleSize, subtitleColor = subtitleColor, preset = preset, appearance = appearance)
+                if (reference != ReferenceLayout.STANDARD || clip.hook.isNotBlank() || clip.caption.isNotBlank() || clip.subtitles.isNotEmpty()) {
+                    val overlay = if (clip.subtitles.isNotEmpty()) segmentSubtitleOverlay(clip.hook, clip.subtitles, clip.startMs, subtitleSize, subtitleColor, calibrateClock = true, preset = preset, appearance = renderAppearance)
+                    else timedCaptionOverlay(clip.hook, clip.caption, clip.captionStartMs, clip.captionEndMs, clip.startMs, calibrateClock = true, subtitleSize = subtitleSize, subtitleColor = subtitleColor, preset = preset, appearance = renderAppearance)
                     add(OverlayEffect(listOf(overlay)))
                 }
                 if (clip.visuals.fadeInMs > 0 || clip.visuals.fadeOutMs > 0) add(ClipVisualEffects.fade(clip))
@@ -73,7 +76,25 @@ object TimelineExport {
                 sequences.add(sequence.build())
             }
         }
-        return Composition.Builder(sequences).experimentalSetForceAudioTrack(!mute || music != null).build()
+        val sounds = SoundTimeline.events(clips)
+        if (sounds.isNotEmpty()) {
+            val sequence = EditedMediaItemSequence.Builder()
+            var cursor = 0L
+            sounds.forEach { sound ->
+                val uri = soundAssets[sound.kind] ?: error("Sound effect asset is missing")
+                if (sound.startMs > cursor) sequence.addGap((sound.startMs - cursor) * 1000)
+                val media = MediaItem.Builder().setUri(Uri.parse(uri)).setClippingConfiguration(
+                    MediaItem.ClippingConfiguration.Builder().setEndPositionMs(sound.durationMs).build()).build()
+                val envelope = TimelineClip("sfx", 0, sound.durationMs, volume = sound.volume,
+                    fadeInMs = minOf(20, sound.durationMs), fadeOutMs = minOf(20, sound.durationMs))
+                sequence.addItem(EditedMediaItem.Builder(media).setRemoveVideo(true)
+                    .setEffects(Effects(listOf(ClipAudioProcessor(envelope)), emptyList())).build())
+                cursor = sound.endMs
+            }
+            sequences.add(sequence.build())
+        }
+        return Composition.Builder(sequences).experimentalSetForceAudioTrack(!mute || music != null || sounds.isNotEmpty()).build()
     }
 }
+
 

@@ -32,6 +32,7 @@ object ProjectStore {
         put("caption.font", safe.captionAppearance.font.name); put("caption.y", safe.captionAppearance.positionY)
         put("caption.color", safe.captionAppearance.color.name); put("caption.highlight", safe.captionAppearance.highlight.name)
         put("caption.align", safe.captionAppearance.alignment.name)
+        put("caption.layout", safe.captionAppearance.layout.name)
         put("subtitleYellow", safe.subtitleYellow); put("subtitleDraft", safe.subtitleDraftIndex)
         put("drafts.count", safe.drafts.size)
         safe.drafts.forEachIndexed { i, draft ->
@@ -69,6 +70,11 @@ object ProjectStore {
             put("timeline.$i.effect", clip.effect); put("timeline.$i.volume", clip.volume)
             put("timeline.$i.fadeIn", clip.fadeInMs); put("timeline.$i.fadeOut", clip.fadeOutMs)
             segments("timeline.$i.cues", clip.subtitles)
+            put("timeline.$i.sounds.count", clip.sounds.size)
+            clip.sounds.forEachIndexed { j, sound ->
+                put("timeline.$i.sounds.$j.id", sound.id); put("timeline.$i.sounds.$j.at", sound.sourceMs)
+                put("timeline.$i.sounds.$j.kind", sound.kind.name); put("timeline.$i.sounds.$j.volume", sound.volume)
+            }
         }
         file.parentFile?.mkdirs()
         val temporary = File(file.parentFile, file.name + ".partial")
@@ -110,6 +116,10 @@ object ProjectStore {
         val timelineCount = data.getProperty("timeline.count", "0").toInt()
         require(timelineCount in 0..60) { "Invalid timeline count" }
         val timeline = (0 until timelineCount).map { i ->
+            val soundCount = data.getProperty("timeline.$i.sounds.count", "0").toInt()
+            require(soundCount in 0..12) { "Invalid sound effects count" }
+            val sounds = (0 until soundCount).map { j -> ClipSound(text("timeline.$i.sounds.$j.id"), number("timeline.$i.sounds.$j.at"),
+                SoundKind.valueOf(text("timeline.$i.sounds.$j.kind")), text("timeline.$i.sounds.$j.volume").toFloat()) }
             TimelineClip(text("timeline.$i.id"), number("timeline.$i.start"), number("timeline.$i.end"),
                 text("timeline.$i.hook"), text("timeline.$i.caption"), number("timeline.$i.captionStart"), number("timeline.$i.captionEnd"),
                 text("timeline.$i.effect"), text("timeline.$i.volume").toFloat(), number("timeline.$i.fadeIn"), number("timeline.$i.fadeOut"), segments("timeline.$i.cues"),
@@ -122,6 +132,7 @@ object ProjectStore {
                     data.getProperty("timeline.$i.color.contrast", "1").toFloat(),
                     data.getProperty("timeline.$i.color.saturation", "1").toFloat(),
                     data.getProperty("timeline.$i.color.warmth", "0").toFloat()),
+                sounds = sounds,
                 transition = CutTransition(CutTransitionKind.valueOf(data.getProperty("timeline.$i.transition.kind", "CUT")),
                     data.getProperty("timeline.$i.transition.duration", "400").toLong()))
         }
@@ -142,7 +153,9 @@ object ProjectStore {
                 positionY = data.getProperty("caption.y", (970f / 1280f).toString()).toFloat(),
                 color = CaptionColor.valueOf(data.getProperty("caption.color", "INHERIT")),
                 highlight = CaptionColor.valueOf(data.getProperty("caption.highlight", "YELLOW")),
-                alignment = CaptionAlignment.valueOf(data.getProperty("caption.align", "CENTER")))).also { it.validate() }
+                alignment = CaptionAlignment.valueOf(data.getProperty("caption.align", "CENTER")),
+                layout = ReferenceLayout.valueOf(data.getProperty("caption.layout", "STANDARD")))).also { it.validate() }
     }
 }
+
 

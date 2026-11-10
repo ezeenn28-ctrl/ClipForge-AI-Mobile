@@ -172,7 +172,7 @@ fun timedCaptionOverlay(
             val timeUs = if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs
             return if (untilUs <= fromUs || timeUs in fromUs until untilUs) {
                 withCaption ?: makeCaptionOverlay(hook, caption, subtitleSize, subtitleColor, preset, appearance).also { withCaption = it }
-            } else withoutCaption ?: makeCaptionOverlay(hook, "").also { withoutCaption = it }
+            } else withoutCaption ?: makeCaptionOverlay(hook, "", subtitleSize, subtitleColor, preset, appearance).also { withoutCaption = it }
         }
         override fun release() {
             super.release()
@@ -192,13 +192,13 @@ fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, 
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val absoluteMs = SubtitleTimeline.sourcePositionMs(trimStartMs, if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs)
             val index = SubtitleTimeline.activeSegmentIndex(segments, absoluteMs)
-            if (index < 0) return empty ?: makeCaptionOverlay(hook, "").also { empty = it }
+            if (index < 0) return empty ?: makeCaptionOverlay(hook, "", subtitleSize, subtitleColor, preset, appearance).also { empty = it }
             if (cachedIndex != index) {
                 cachedBitmap?.recycle()
                 cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor, preset, appearance)
                 cachedIndex = index
             }
-            return cachedBitmap ?: (empty ?: makeCaptionOverlay(hook, "").also { empty = it })
+            return cachedBitmap ?: (empty ?: makeCaptionOverlay(hook, "", subtitleSize, subtitleColor, preset, appearance).also { empty = it })
         }
         override fun release() {
             super.release()
@@ -420,6 +420,24 @@ class MainActivity : ComponentActivity() {
         val previewPlayback = remember(player) { PreviewPlayback(player) }
         val previewBinding = remember(player) { PreviewSurfaceBinding(player) }
         var playbackError by remember { mutableStateOf("") }
+        val soundPlayer = remember { ExoPlayer.Builder(this).build() }
+        val soundPreview = remember(soundPlayer) { SoundPreview(soundPlayer) }
+        var soundAssets by remember { mutableStateOf<Map<SoundKind, String>>(emptyMap()) }
+        LaunchedEffect(timeline.clips.any { it.sounds.isNotEmpty() }) {
+            if (timeline.clips.any { it.sounds.isNotEmpty() } && soundAssets.isEmpty()) {
+                try { soundAssets = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SoundAssets.ensure(filesDir) } }
+                catch (error: Exception) { status = "Could not prepare sound effects: ${error.message}"; approved = false }
+            }
+        }
+        DisposableEffect(soundPlayer) {
+            val listener = object : androidx.media3.common.Player.Listener {
+                override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                    status = "Sound effect preview failed: ${error.message}"; approved = false
+                }
+            }
+            soundPlayer.addListener(listener)
+            onDispose { soundPlayer.release() }
+        }
         val musicPlayer = remember { ExoPlayer.Builder(this).build() }
         DisposableEffect(musicPlayer) {
             val listener = object : Player.Listener {
@@ -441,9 +459,9 @@ class MainActivity : ComponentActivity() {
                 musicPlayer.prepare()
             } else musicPlayer.clearMediaItems()
         }
-        DisposableEffect(player, musicPlayer) {
+        DisposableEffect(player, musicPlayer, soundPlayer) {
             val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) { player.pause(); musicPlayer.pause() }
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) { player.pause(); musicPlayer.pause(); soundPlayer.pause() }
             }
             lifecycle.addObserver(observer)
             onDispose { lifecycle.removeObserver(observer) }
@@ -918,6 +936,8 @@ class MainActivity : ComponentActivity() {
                     musicPlayer.volume = track.gain(timelinePosition, TimelineModel.duration(clockClips))
                     musicPlayer.playWhenReady = player.isPlaying
                 } else musicPlayer.pause()
+                soundPreview.tick(if (clockTimelineActive) SoundTimeline.events(clockClips) else emptyList(),
+                    timelinePosition, player.isPlaying && clockTimelineActive, soundAssets)
                 previewPlaying = player.isPlaying
                 delay(50)
             }
@@ -1041,11 +1061,18 @@ class MainActivity : ComponentActivity() {
                     val boundary = if (timelineActive) TimelineTransitions.frame(timeline.clips, timelinePlaybackIndex, localVisualMs) else TimelineTransitions.Frame()
                     val staticZoom = if (previewEffect == "Zoom") 1.12f else 1f
                     val visualOpacity = visuals.opacity(localVisualMs, playingTimelineClip?.durationMs ?: 1) * boundary.opacity
-                    PreviewVideo(previewBinding, Modifier.fillMaxSize().graphicsLayer {
+                    val renderAppearance = if (vertical) captionAppearance else captionAppearance.copy(layout = ReferenceLayout.STANDARD)
+                    val reference = renderAppearance.layout
+                    Box(Modifier.fillMaxSize().graphicsLayer {
                         scaleX = point.scale * staticZoom * boundary.scale; scaleY = point.scale * staticZoom * boundary.scale
                         translationX = point.x * size.width; translationY = point.y * size.height; alpha = visualOpacity
-                    }, crop = fillFrame, color = if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments(), monochrome = previewEffect == "Monochrome")
-                    if (timelineActive || selectedDraft in drafts.indices || hookText.isNotBlank() || captionText.isNotBlank()) {
+                    }, contentAlignment = Alignment.Center) {
+                        PreviewVideo(previewBinding,
+                            if (reference.videoAspect != null) Modifier.fillMaxWidth().aspectRatio(reference.videoAspect) else Modifier.fillMaxSize(),
+                            crop = fillFrame || reference != ReferenceLayout.STANDARD,
+                            color = if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments(), monochrome = previewEffect == "Monochrome")
+                    }
+                    if (reference != ReferenceLayout.STANDARD || timelineActive || selectedDraft in drafts.indices || hookText.isNotBlank() || captionText.isNotBlank()) {
                         val playing = if (timelineActive) timeline.clips.getOrNull(timelinePlaybackIndex) else null
                         val hook = playing?.hook ?: hookText
                         val cues = playing?.subtitles ?: if (subtitleDraftIndex == selectedDraft) subtitleSegments else emptyList()
@@ -1055,10 +1082,10 @@ class MainActivity : ComponentActivity() {
                         val until = playing?.captionEndMs ?: drafts.getOrNull(selectedDraft)?.captionEndMs ?: 0
                         val fallback = if (cues.isNotEmpty()) "" else if (until <= from || previewPosition in from until until) caption else ""
                         val displayedCaption = activeSegment?.text ?: fallback
-                        if (hook.isNotBlank() || displayedCaption.isNotBlank()) {
-                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow, captionPreset, captionAppearance) {
+                        if (reference != ReferenceLayout.STANDARD || hook.isNotBlank() || displayedCaption.isNotBlank()) {
+                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow, captionPreset, renderAppearance) {
                                 makeCaptionOverlay(hook, displayedCaption, subtitleSize,
-                                    if (subtitleYellow) Color.YELLOW else Color.WHITE, captionPreset, captionAppearance, bitmapScale = .5f).asImageBitmap()
+                                    if (subtitleYellow) Color.YELLOW else Color.WHITE, captionPreset, renderAppearance, bitmapScale = .5f).asImageBitmap()
                             }
                             Image(
                                 bitmap = previewBitmap,
@@ -1088,7 +1115,7 @@ class MainActivity : ComponentActivity() {
         }
         val beginFindClips: (Boolean) -> Unit = { duplicateProject ->
             if (!busy && video != null && duration > 0) {
-                player.pause(); musicPlayer.pause()
+                player.pause(); musicPlayer.pause(); soundPlayer.pause()
                 showDiscovery = true; studioEditing = false; advancedEditor = false
                 if (!modelReady) {
                     selectedTab = StudioTab.CAPTIONS
@@ -1123,11 +1150,11 @@ class MainActivity : ComponentActivity() {
         }
         val showProjectHome = selectedTab == StudioTab.STUDIO && !studioEditing && !showDiscovery
         LaunchedEffect(showProjectHome) {
-            if (showProjectHome) { player.pause(); musicPlayer.pause() }
+            if (showProjectHome) { player.pause(); musicPlayer.pause(); soundPlayer.pause() }
         }
         BackHandler(enabled = !fullScreenPreview && (selectedTab != StudioTab.STUDIO || studioEditing || showDiscovery)) {
             if (selectedTab != StudioTab.STUDIO) selectedTab = StudioTab.STUDIO
-            else { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause() }
+            else { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause(); soundPlayer.pause() }
         }
         val revokeCaptionApproval: () -> Unit = {
             approved = false
@@ -1178,7 +1205,7 @@ class MainActivity : ComponentActivity() {
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     topBar = {
                         if (simpleEditor) EditorTopBar(!busy, timeline.past.isNotEmpty(), timeline.future.isNotEmpty(),
-                            onBack = { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause() }, onUndo = { updateTimeline(timeline.undo()) }, onRedo = { updateTimeline(timeline.redo()) },
+                            onBack = { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause(); soundPlayer.pause() }, onUndo = { updateTimeline(timeline.undo()) }, onRedo = { updateTimeline(timeline.redo()) },
                             onExport = { selectedTab = StudioTab.EXPORT }, projectName = projectName.ifBlank { sourceName })
                         else StudioHeader(BuildConfig.VERSION_NAME)
                     },
@@ -1206,6 +1233,13 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it }, compact = true, tool = editorTool, music = music)
                                 when (editorTool) {
+                                    EditorTool.TEXT -> {
+                                        timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
+                                            HookGeneratorControls(clip, !busy) { hook ->
+                                                updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(hook = hook) else it }))
+                                            }
+                                        }
+                                    }
                                     EditorTool.SPEED -> Unit
                                     EditorTool.EDIT -> {
                                         OutlinedButton(enabled = !busy, onClick = { timelinePicker.launch(arrayOf("video/*")) }) { Text("Add video") }
@@ -1217,6 +1251,13 @@ class MainActivity : ComponentActivity() {
                                         }
                                         MusicTrackEditor(music, TimelineModel.duration(timeline.clips), !busy && timeline.clips.isNotEmpty(),
                                             onPick = { musicPicker.launch(arrayOf("audio/*")) }, onChange = { music = it; approved = false }, onMessage = { status = it })
+                                        timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
+                                            val index = timeline.clips.indexOfFirst { it.id == clip.id }
+                                            SoundControls(clip, timelinePosition - TimelineModel.offset(timeline.clips, index),
+                                                timeline.clips.sumOf { it.sounds.size }, !busy) { changed ->
+                                                updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) changed else it }))
+                                            }
+                                        }
                                     }
                                     EditorTool.CAPTIONS -> {
                                         val clip = timeline.clips.firstOrNull { it.id == selectedTimelineId }
@@ -1241,6 +1282,9 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                     EditorTool.FORMAT -> StudioCard("Canvas") {
+                                        ReferencePresetControls(captionAppearance, !busy) {
+                                            captionAppearance = it; vertical = true; captionPreset = CaptionPreset.HIGHLIGHT; revokeCaptionApproval()
+                                        }
                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             FilterChip(selected = vertical, enabled = !busy, onClick = { vertical = true; approved = false }, label = { Text("9:16 vertical") })
                                             FilterChip(selected = !vertical, enabled = !busy, onClick = { vertical = false; approved = false }, label = { Text("16:9 landscape") })
@@ -1318,7 +1362,7 @@ class MainActivity : ComponentActivity() {
                                             }
                                         } else {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            IconButton(onClick = { showDiscovery = false; studioEditing = false; player.pause(); musicPlayer.pause() }) { StudioGlyph(StudioGlyph.BACK, description = "Back to projects") }
+                                            IconButton(onClick = { showDiscovery = false; studioEditing = false; player.pause(); musicPlayer.pause(); soundPlayer.pause() }) { StudioGlyph(StudioGlyph.BACK, description = "Back to projects") }
                                             Text(if (studioEditing) "Source tools" else "AI Highlights", style = MaterialTheme.typography.titleLarge)
                                         }
 
@@ -1923,15 +1967,16 @@ class MainActivity : ComponentActivity() {
                         }).build()
                     exportFile = output
                     activeTransformer = transformer
-                    player.pause(); musicPlayer.pause()
+                    player.pause(); musicPlayer.pause(); soundPlayer.pause()
                     exportScope.launch {
                     try {
-                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        val exportSounds = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             MediaAssets.checkTimeline(this@MainActivity, source.toString(), duration, exportClips, exportMusic)
+                            if (SoundTimeline.events(exportClips).isNotEmpty()) SoundAssets.ensure(filesDir) else emptyMap()
                         }
                         if (activeExportToken !== requestToken) return@launch
                         transformer.start(TimelineExport.composition(source, exportClips, vertical, fillFrame, mute,
-                            subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE, exportMusic, captionPreset, captionAppearance), output.absolutePath)
+                            subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE, exportMusic, captionPreset, captionAppearance, exportSounds), output.absolutePath)
                     }
                     catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                     catch (e: Exception) { activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; approved = false; status = "Export failed: ${e.message}" }
@@ -1991,4 +2036,5 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
 

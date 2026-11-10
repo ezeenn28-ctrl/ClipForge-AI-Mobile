@@ -426,4 +426,79 @@ class MediaPipelineDeviceTest {
             assertTrue("Launcher mark is missing or clipped", cyan > 100)
         } finally { bitmap.recycle() }
     }
+
+    @Test fun referenceFrameExportHasWhiteBandsHookAndTimedSoundEffects() {
+        val source = fixture("landscape.mp4")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val output = File(context.cacheDir, "reference-sfx.mp4").apply { delete() }
+        val wav = File(context.cacheDir, "reference-sfx.wav")
+        val clip = TimelineClip("reference", 0, 4000, hook = "THE UNEXPECTED MOMENT",
+            subtitles = listOf(WhisperNative.Segment(1500, 2000, "WAIT #WHAT")),
+            sounds = listOf(ClipSound("pop", 1000, SoundKind.POP, .8f), ClipSound("impact", 2500, SoundKind.IMPACT, .8f)))
+        val composition = TimelineExport.composition(Uri.fromFile(source), listOf(clip), true, false, true, 39f, Color.WHITE,
+            preset = CaptionPreset.HIGHLIGHT, appearance = CaptionAppearance(positionY = .73f, layout = ReferenceLayout.WHITE_SQUARE),
+            soundAssets = SoundAssets.ensure(context.filesDir))
+        val done = CountDownLatch(1); val failure = AtomicReference<Throwable?>(null)
+        lateinit var transformer: Transformer
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            transformer = Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory())
+                .addListener(object : Transformer.Listener {
+                    override fun onCompleted(c: Composition, result: ExportResult) { done.countDown() }
+                    override fun onError(c: Composition, result: ExportResult, error: ExportException) { failure.set(error); done.countDown() }
+                }).build()
+            transformer.start(composition, output.absolutePath)
+        }
+        try {
+            assertTrue("Reference export timed out", done.await(180, TimeUnit.SECONDS))
+            failure.get()?.let { throw AssertionError("Reference export failed", it) }
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(output.absolutePath)
+                val duration = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong()
+                assertTrue("SFX shortened the picture: $duration", duration in 3900..4200)
+                for (time in listOf(500_000L, 1_750_000L, 3_500_000L)) {
+                    val raw = retriever.getFrameAtTime(time, MediaMetadataRetriever.OPTION_CLOSEST)!!
+                    val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt() ?: 0
+                    val frame = if (raw.width > raw.height && rotation in listOf(90,270))
+                        Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height, android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }, true)
+                            .also { if (it !== raw) raw.recycle() } else raw
+                    try {
+                        assertTrue("Portrait display expected", frame.height > frame.width)
+                        for (y in listOf(frame.height / 20, frame.height * 19 / 20)) {
+                            val c = frame.getPixel(frame.width / 2, y)
+                            assertTrue("White reference bands disappeared at $time", Color.red(c) > 235 && Color.green(c) > 235 && Color.blue(c) > 235)
+                        }
+                        assertTrue("Video window is black", hasPicture(frame))
+                        var ink = 0
+                        for (y in frame.height / 10 until frame.height / 5 step 2)
+                            for (x in frame.width / 10 until frame.width * 9 / 10 step 2) {
+                                val c = frame.getPixel(x,y)
+                                if (Color.red(c) + Color.green(c) + Color.blue(c) < 150) ink++
+                            }
+                        assertTrue("Hook missing before/between captions", ink > 100)
+                    } finally { frame.recycle() }
+                }
+            } finally { retriever.release() }
+            OfflineAudioPreparer.extractWav(context, Uri.fromFile(output), wav)
+            val bytes = wav.readBytes()
+            val buffer = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            val rate = buffer.getInt(24)
+            fun rms(fromMs: Int, toMs: Int): Double {
+                val first = fromMs * rate / 1000
+                val last = minOf(toMs * rate / 1000, (bytes.size - 44) / 2)
+                assertTrue(last > first)
+                var sum = 0.0
+                for (i in first until last) { val value = buffer.getShort(44 + i * 2).toDouble(); sum += value * value }
+                return kotlin.math.sqrt(sum / (last - first))
+            }
+            assertTrue("Unwanted audio before first effect", rms(200,800) < 50)
+            assertTrue("Pop missing at 1 second", rms(1000,1150) > 150)
+            assertTrue("Unwanted audio between effects", rms(1600,2200) < 50)
+            assertTrue("Impact missing at 2.5 seconds", rms(2500,2800) > 150)
+            assertTrue("Effect leaked past its end", rms(3300,3800) < 50)
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }
+            output.delete(); wav.delete()
+        }
+    }
 }
