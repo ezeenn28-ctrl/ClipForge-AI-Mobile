@@ -8,12 +8,13 @@ import kotlin.math.abs
 /** A separately synchronized effects player; original sound and music remain independent. */
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 class SoundPreview(private val player: Player) {
+    fun reset() { loaded = null; mediaKey = null }
     private var loaded: String? = null
     private var mediaKey: Pair<String, Long>? = null
     fun tick(events: List<TimedSound>, positionMs: Long, playing: Boolean, assets: Map<SoundKind, String>) {
         val active = SoundTimeline.active(events, positionMs)
         val target = active ?: events.firstOrNull { it.startMs >= positionMs && it.startMs - positionMs <= 3000 }
-        val uri = target?.let { assets[it.kind] }
+        val uri = target?.let { it.asset?.source ?: assets[it.kind] }
         if (target == null || uri == null) { player.pause(); loaded = null; return }
         val key = uri to target.durationMs
         val changed = loaded != target.id
@@ -34,3 +35,4 @@ class SoundPreview(private val player: Player) {
         player.playWhenReady = playing
     }
 }
+

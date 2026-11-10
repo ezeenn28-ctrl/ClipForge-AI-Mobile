@@ -10,15 +10,22 @@ import kotlin.math.*
 
 enum class SoundKind(val label: String, val durationMs: Long) {
     WHOOSH("Whoosh", 650), POP("Pop", 220), IMPACT("Impact", 550),
-    CHIME("Metal chime", 700), BOING("Boing", 650), SCRATCH("Scratch", 450)
+    CHIME("Metal chime", 700), BOING("Boing", 650), SCRATCH("Scratch", 450),
+    BASS_BOOM("Bass boom", 900), PUNCH("Punch", 300), RISER("Riser", 1200),
+    SWISH("Fast swish", 350), CLICK("Click", 100), SHUTTER("Camera shutter", 250),
+    DING("Ding", 500), ERROR("Error beep", 550), BUZZER("Buzzer", 650),
+    GLITCH("Glitch", 450), HEARTBEAT("Heartbeat", 900), TICK("Tick", 120)
 }
-data class ClipSound(val id: String, val sourceMs: Long, val kind: SoundKind, val volume: Float = .3f) {
+data class ClipSound(val id: String, val sourceMs: Long, val kind: SoundKind, val volume: Float = .3f, val asset: SoundAsset? = null) {
+    val label: String get() = asset?.name ?: kind.label
+    val durationMs: Long get() = asset?.durationMs ?: kind.durationMs
     fun validate(sourceDuration: Long) {
+        asset?.validate()
         require(id.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "Invalid sound effect ID" }
         require(sourceMs in 0 until sourceDuration && volume.isFinite() && volume in 0f..1f) { "Invalid sound effect timing or volume" }
     }
 }
-data class TimedSound(val id: String, val startMs: Long, val durationMs: Long, val kind: SoundKind, val volume: Float) {
+data class TimedSound(val id: String, val startMs: Long, val durationMs: Long, val kind: SoundKind, val volume: Float, val asset: SoundAsset? = null) {
     val endMs: Long get() = startMs + durationMs
 }
 object SoundTimeline {
@@ -29,7 +36,7 @@ object SoundTimeline {
                 val local = clip.outputOffsetMs(cue.sourceMs - clip.startMs)
                 val available = clip.durationMs - local
                 if (available <= 0) null else TimedSound(clip.id + ":" + cue.id, offset + local,
-                    minOf(cue.kind.durationMs, available), cue.kind, cue.volume)
+                    minOf(cue.durationMs, available), cue.kind, cue.volume, cue.asset)
             }
         }.sortedWith(compareBy<TimedSound> { it.startMs }.thenBy { it.id })
         // One sparse effects lane: nearby effects are shortened, never stacked uncontrollably.
@@ -97,6 +104,18 @@ object SoundAssets {
                 SoundKind.IMPACT -> (sin(2 * PI * (75 * t + 30 * t * t)) * .8 + random * .2) * exp(-7 * x) * minOf(1.0, x * 80)
                 SoundKind.CHIME -> (sin(2 * PI * 880 * t) + .45 * sin(2 * PI * 1423 * t) + .2 * sin(2 * PI * 2341 * t)) / 1.65 * exp(-5 * x) * minOf(1.0, x * 90)
                 SoundKind.BOING -> sin(2 * PI * (220 * t + 30 * sin(2 * PI * 5 * t))) * exp(-4 * x) * minOf(1.0, x * 80)
+                SoundKind.BASS_BOOM -> (sin(2 * PI * (52 * t + 20 * (1 - exp(-18 * t)))) * .85 + random * .15) * exp(-5 * x) * minOf(1.0, x * 90)
+                SoundKind.PUNCH -> (random * .45 + sin(2 * PI * (130 * t - 70 * t * t)) * .55) * exp(-12 * x) * minOf(1.0, x * 120)
+                SoundKind.RISER -> (random * .55 + sin(2 * PI * (120 * t + 950 * t * t)) * .45) * envelope
+                SoundKind.SWISH -> random * envelope * sin(2 * PI * 1800 * t)
+                SoundKind.CLICK -> random * exp(-35 * x) * minOf(1.0, x * 200)
+                SoundKind.SHUTTER -> random * (exp(-80 * abs(x - .12)) + exp(-65 * abs(x - .46))) * .85
+                SoundKind.DING -> (sin(2 * PI * 1200 * t) * .75 + sin(2 * PI * 2400 * t) * .25) * exp(-6 * x) * minOf(1.0, x * 100)
+                SoundKind.ERROR -> sin(2 * PI * (if (x < .5) 440 else 330) * t) * sin(PI * ((x * 2) % 1)).pow(2)
+                SoundKind.BUZZER -> sign(sin(2 * PI * 145 * t)) * envelope * .65
+                SoundKind.GLITCH -> (random * .6 + sin(2 * PI * (350 * t + 800 * t * t)) * .4) * envelope * if ((x * 12).toInt() % 2 == 0) 1.0 else .15
+                SoundKind.HEARTBEAT -> sin(2 * PI * 70 * t) * (exp(-100 * abs(x - .15)) + .65 * exp(-100 * abs(x - .4)))
+                SoundKind.TICK -> sin(2 * PI * 2200 * t) * exp(-25 * x) * minOf(1.0, x * 180)
                 SoundKind.SCRATCH -> (sin(2 * PI * (1800 * t - 1400 * t * t)) * .65 + random * .35) * envelope
             }
             out.putShort((sample * .42 * Short.MAX_VALUE).roundToInt().coerceIn(-32767, 32767).toShort())
@@ -104,3 +123,4 @@ object SoundAssets {
         return out.array()
     }
 }
+

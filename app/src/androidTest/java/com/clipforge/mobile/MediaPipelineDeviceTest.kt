@@ -501,4 +501,53 @@ class MediaPipelineDeviceTest {
             output.delete(); wav.delete()
         }
     }
+
+    @Test fun importedMp3PersistsAndMixesWithMusicAtTheChosenTime() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val mp3 = fixture("sfx-import.mp3")
+        val source = fixture("landscape.mp4")
+        val music = fixture("music.wav")
+        val asset = SoundLibrary.import(context, Uri.fromFile(mp3), "Imported test pop")
+        assertTrue(File(Uri.parse(asset.source).path!!).isFile)
+        val clip = TimelineClip("imported-sfx", 0, 4000,
+            sounds = listOf(ClipSound("custom", 1000, SoundKind.POP, .8f, asset)))
+        val projectFile = File(context.cacheDir, "custom-sfx.properties")
+        ProjectStore.write(projectFile, EditorProject(Uri.fromFile(source).toString(), 8000, 0, 4000,
+            timelineMode = true, timelineClips = listOf(clip)))
+        val restored = ProjectStore.read(projectFile)!!.timelineClips
+        assertEquals(asset, restored.single().sounds.single().asset)
+        val composition = TimelineExport.composition(Uri.fromFile(source), restored, true, false, true, 39f, Color.WHITE,
+            MusicTrack(Uri.fromFile(music).toString(), "Quiet test music", 3000, volume = .01f, fadeInMs = 0, fadeOutMs = 0))
+        val output = File(context.cacheDir, "imported-sfx.mp4").apply { delete() }
+        val wav = File(context.cacheDir, "imported-sfx-output.wav")
+        val done = CountDownLatch(1); val failure = AtomicReference<Throwable?>(null)
+        lateinit var transformer: Transformer
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            transformer = Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory()).addListener(object : Transformer.Listener {
+                override fun onCompleted(c: Composition, result: ExportResult) { done.countDown() }
+                override fun onError(c: Composition, result: ExportResult, error: ExportException) { failure.set(error); done.countDown() }
+            }).build()
+            transformer.start(composition, output.absolutePath)
+        }
+        try {
+            assertTrue("Imported SFX export timed out", done.await(180, TimeUnit.SECONDS))
+            failure.get()?.let { throw AssertionError("Imported SFX export failed", it) }
+            OfflineAudioPreparer.extractWav(context, Uri.fromFile(output), wav)
+            val bytes = wav.readBytes(); val data = java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            val rate = data.getInt(24)
+            fun rms(from: Int, until: Int): Double {
+                val first = from * rate / 1000; val last = minOf(until * rate / 1000, (bytes.size - 44) / 2)
+                assertTrue(last > first); var energy = 0.0
+                for (i in first until last) { val value = data.getShort(44 + i * 2).toDouble(); energy += value * value }
+                return kotlin.math.sqrt(energy / (last - first))
+            }
+            assertTrue("SFX started before chosen time", rms(200,800) < 100)
+            assertTrue("Imported SFX missing", rms(1100,1250) > 200)
+            assertTrue("SFX did not end", rms(1800,2200) < 100)
+            assertTrue("Unexpected trailing audio", rms(3300,3800) < 50)
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }
+            output.delete(); wav.delete(); projectFile.delete()
+        }
+    }
 }

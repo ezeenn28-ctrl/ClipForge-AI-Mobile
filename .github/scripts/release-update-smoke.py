@@ -374,6 +374,40 @@ def exercise_speech_import(args):
             assert sum(reference_image.getpixel((sx, (fy1 + fy2) // 2))) < 45, "Reference video overflows its portrait canvas"
 
     passed("Actual signed APK applies reference frame and adds a timed sound effect with volume control")
+    tap_node(locate(text="Sound library · 18+", scroll_axis="vertical"))
+    tap_node(locate(text="Find a sound"))
+    adb("shell", "input", "text", "Bass")
+    adb("shell", "input", "keyevent", "4")
+    locate(text="Bass boom")
+    tap_node(locate(text="Preview"))
+    tap_node(locate(text="Favorite"))
+    tap_node(locate(text="Favorites"))
+    tap_node(locate(text="Use sound"))
+    locate(text="Selected: Bass boom", scroll_axis="vertical")
+    passed("Actual signed APK searches, auditions and selects an expanded built-in sound")
+    tap_node(locate(text="Sound library · 18+", scroll_axis="vertical"))
+    tap_node(locate(text="Myinstants"))
+    locate(text="Search Myinstants")
+    locate(text="Search sounds")
+    tap_node(locate(text="My sounds"))
+    adb("push", str(args.video.parent / "sfx-import.mp3"), "/sdcard/Download/ClipForgeEffectFixture.mp3")
+    adb("shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", "file:///sdcard/Download/ClipForgeEffectFixture.mp3")
+    tap_node(locate(text="Import MP3 / audio"))
+    root = hierarchy()
+    if not find(root, text="ClipForgeEffectFixture.mp3"):
+        nav = [n for n in root.iter("node") if any(s in n.get("content-desc", "").lower() for s in ("roots", "navigation drawer"))]
+        if nav:
+            tap_node(nav[0]); tap_node(locate(text="Downloads"))
+    choose_document("ClipForgeEffectFixture.mp3")
+    locate(text="ClipForgeEffectFixture.mp3", timeout=40)
+    tap_node(locate(text="Preview"))
+    tap_node(locate(text="Use sound"))
+    locate(text="Selected: ClipForgeEffectFixture.mp3", scroll_axis="vertical")
+    tap_node(locate(text="Add SFX at playhead", scroll_axis="vertical"))
+    locate(text="ClipForgeEffectFixture.mp3", contains=True, scroll_axis="vertical")
+    screenshot("sound-library-import")
+    passed("Actual signed APK exposes Myinstants search and imports a local MP3 as a timed effect")
+
     time.sleep(1.5)
     adb("shell", "am", "force-stop", PACKAGE)
     adb("shell", "am", "start", "-W", "-n", ACTIVITY, "-f", "0x10008000")
@@ -385,6 +419,15 @@ def exercise_speech_import(args):
     tap_node(locate(text="Export"))
     assert locate(text="Export approved MP4", scroll_axis="vertical").get("enabled") == "false"
     passed("Generated hook and timed SFX survive restart while export still requires review")
+    adb("shell", "input", "keyevent", "4")
+    tap_node(locate(text="Audio", scroll_axis="horizontal"))
+    locate(text="ClipForgeEffectFixture.mp3", contains=True, scroll_axis="vertical")
+    tap_node(locate(text="Sound library · 18+", scroll_axis="vertical"))
+    tap_node(locate(text="Favorites"))
+    locate(text="Bass boom")
+    tap_node(locate(text="Done"))
+    passed("Imported effect and library favorite survive process restart")
+
     # Clean-install test resets only this isolated emulator's synthetic app data.
     adb("uninstall", PACKAGE)
     adb("install", str(args.release))

@@ -79,7 +79,7 @@ class ReferenceFeatureTest {
     }
     @Test fun assetPreparationReusesOriginalFiles() {
         val directory = Files.createTempDirectory("clipforge-sfx").toFile()
-        try { assertEquals(SoundAssets.ensure(directory), SoundAssets.ensure(directory)); assertEquals(6, directory.resolve("sound-effects").listFiles()!!.size) }
+        try { assertEquals(SoundAssets.ensure(directory), SoundAssets.ensure(directory)); assertEquals(SoundKind.entries.size, directory.resolve("sound-effects").listFiles()!!.size) }
         finally { directory.deleteRecursively() }
     }
     @Test fun projectRestoresReferenceHookSoundsAndLegacyDefaults() {

@@ -422,6 +422,29 @@ class MainActivity : ComponentActivity() {
         var playbackError by remember { mutableStateOf("") }
         val soundPlayer = remember { ExoPlayer.Builder(this).build() }
         val soundPreview = remember(soundPlayer) { SoundPreview(soundPlayer) }
+        var auditionUntil by remember { mutableLongStateOf(0) }
+        var auditionRequest by remember { mutableIntStateOf(0) }
+        val auditionScope = rememberCoroutineScope()
+        val audition: (SoundKind?, SoundAsset?) -> Unit = { kind, asset ->
+            val request = ++auditionRequest
+            soundPlayer.pause(); auditionUntil = 0; soundPreview.reset()
+            if (kind != null || asset != null) {
+                player.pause()
+                auditionScope.launch {
+                    try {
+                        val uri = asset?.source ?: kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { SoundAssets.ensure(filesDir)[requireNotNull(kind)] }
+                            ?: error("Sound file missing")
+                        if (request != auditionRequest) return@launch
+                        val length = asset?.durationMs ?: kind!!.durationMs
+                        soundPlayer.setMediaItem(MediaItem.Builder().setUri(Uri.parse(uri)).setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder().setEndPositionMs(length).build()).build())
+                        auditionUntil = android.os.SystemClock.elapsedRealtime() + length + 2000
+                        soundPlayer.volume = .25f; soundPlayer.prepare(); soundPlayer.play()
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (error: Exception) { auditionUntil = 0; status = "Sound preview failed: ${error.message}" }
+                }
+            }
+        }
         var soundAssets by remember { mutableStateOf<Map<SoundKind, String>>(emptyMap()) }
         LaunchedEffect(timeline.clips.any { it.sounds.isNotEmpty() }) {
             if (timeline.clips.any { it.sounds.isNotEmpty() } && soundAssets.isEmpty()) {
@@ -461,7 +484,7 @@ class MainActivity : ComponentActivity() {
         }
         DisposableEffect(player, musicPlayer, soundPlayer) {
             val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-                if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) { player.pause(); musicPlayer.pause(); soundPlayer.pause() }
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) { player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++ }
             }
             lifecycle.addObserver(observer)
             onDispose { lifecycle.removeObserver(observer) }
@@ -936,8 +959,11 @@ class MainActivity : ComponentActivity() {
                     musicPlayer.volume = track.gain(timelinePosition, TimelineModel.duration(clockClips))
                     musicPlayer.playWhenReady = player.isPlaying
                 } else musicPlayer.pause()
-                soundPreview.tick(if (clockTimelineActive) SoundTimeline.events(clockClips) else emptyList(),
-                    timelinePosition, player.isPlaying && clockTimelineActive, soundAssets)
+                if (auditionUntil <= android.os.SystemClock.elapsedRealtime() || player.isPlaying) {
+                    if (auditionUntil > 0) { auditionUntil = 0; soundPlayer.pause(); soundPreview.reset() }
+                    soundPreview.tick(if (clockTimelineActive) SoundTimeline.events(clockClips) else emptyList(),
+                        timelinePosition, player.isPlaying && clockTimelineActive, soundAssets)
+                }
                 previewPlaying = player.isPlaying
                 delay(50)
             }
@@ -1115,7 +1141,7 @@ class MainActivity : ComponentActivity() {
         }
         val beginFindClips: (Boolean) -> Unit = { duplicateProject ->
             if (!busy && video != null && duration > 0) {
-                player.pause(); musicPlayer.pause(); soundPlayer.pause()
+                player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++
                 showDiscovery = true; studioEditing = false; advancedEditor = false
                 if (!modelReady) {
                     selectedTab = StudioTab.CAPTIONS
@@ -1150,11 +1176,11 @@ class MainActivity : ComponentActivity() {
         }
         val showProjectHome = selectedTab == StudioTab.STUDIO && !studioEditing && !showDiscovery
         LaunchedEffect(showProjectHome) {
-            if (showProjectHome) { player.pause(); musicPlayer.pause(); soundPlayer.pause() }
+            if (showProjectHome) { player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++ }
         }
         BackHandler(enabled = !fullScreenPreview && (selectedTab != StudioTab.STUDIO || studioEditing || showDiscovery)) {
             if (selectedTab != StudioTab.STUDIO) selectedTab = StudioTab.STUDIO
-            else { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause(); soundPlayer.pause() }
+            else { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++ }
         }
         val revokeCaptionApproval: () -> Unit = {
             approved = false
@@ -1205,7 +1231,7 @@ class MainActivity : ComponentActivity() {
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     topBar = {
                         if (simpleEditor) EditorTopBar(!busy, timeline.past.isNotEmpty(), timeline.future.isNotEmpty(),
-                            onBack = { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause(); soundPlayer.pause() }, onUndo = { updateTimeline(timeline.undo()) }, onRedo = { updateTimeline(timeline.redo()) },
+                            onBack = { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++ }, onUndo = { updateTimeline(timeline.undo()) }, onRedo = { updateTimeline(timeline.redo()) },
                             onExport = { selectedTab = StudioTab.EXPORT }, projectName = projectName.ifBlank { sourceName })
                         else StudioHeader(BuildConfig.VERSION_NAME)
                     },
@@ -1254,9 +1280,9 @@ class MainActivity : ComponentActivity() {
                                         timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
                                             val index = timeline.clips.indexOfFirst { it.id == clip.id }
                                             SoundControls(clip, timelinePosition - TimelineModel.offset(timeline.clips, index),
-                                                timeline.clips.sumOf { it.sounds.size }, !busy) { changed ->
+                                                timeline.clips.sumOf { it.sounds.size }, !busy, onChange = { changed ->
                                                 updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) changed else it }))
-                                            }
+                                            }, onPreview = audition)
                                         }
                                     }
                                     EditorTool.CAPTIONS -> {
@@ -1362,7 +1388,7 @@ class MainActivity : ComponentActivity() {
                                             }
                                         } else {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            IconButton(onClick = { showDiscovery = false; studioEditing = false; player.pause(); musicPlayer.pause(); soundPlayer.pause() }) { StudioGlyph(StudioGlyph.BACK, description = "Back to projects") }
+                                            IconButton(onClick = { showDiscovery = false; studioEditing = false; player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++ }) { StudioGlyph(StudioGlyph.BACK, description = "Back to projects") }
                                             Text(if (studioEditing) "Source tools" else "AI Highlights", style = MaterialTheme.typography.titleLarge)
                                         }
 
@@ -1967,7 +1993,7 @@ class MainActivity : ComponentActivity() {
                         }).build()
                     exportFile = output
                     activeTransformer = transformer
-                    player.pause(); musicPlayer.pause(); soundPlayer.pause()
+                    player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++
                     exportScope.launch {
                     try {
                         val exportSounds = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
@@ -2036,5 +2062,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 }
+
 
 

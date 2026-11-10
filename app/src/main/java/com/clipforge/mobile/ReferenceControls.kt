@@ -49,17 +49,28 @@ fun ReferencePresetControls(appearance: CaptionAppearance, enabled: Boolean, onC
 }
 
 @Composable
-fun SoundControls(clip: TimelineClip, localMs: Long, projectCount: Int, enabled: Boolean, onChange: (TimelineClip) -> Unit) {
+fun SoundControls(clip: TimelineClip, localMs: Long, projectCount: Int, enabled: Boolean, onChange: (TimelineClip) -> Unit,
+                  onPreview: (SoundKind?, SoundAsset?) -> Unit = { _, _ -> }) {
     var kind by remember { mutableStateOf(SoundKind.WHOOSH) }
-    val at = clip.startMs + clip.sourceOffsetMs(localMs.coerceIn(0, (clip.durationMs - 1).coerceAtLeast(0)))
+    var asset by remember { mutableStateOf<SoundAsset?>(null) }
+    var library by remember { mutableStateOf(false) }
+    if (library) SoundLibraryDialog(onDismiss = { library = false }, onPreview = onPreview) { chosenKind, chosenAsset ->
+        kind = chosenKind; asset = chosenAsset
+    }
+    val at = clip.startMs + clip.sourceOffsetMs(localMs.coerceIn(0, (clip.durationMs - 50).coerceAtLeast(0)))
     StudioCard("Sound effects", "Original offline effects. Timing follows this clip; preview before export.") {
-        SoundKind.entries.chunked(3).forEach { row ->
+        SoundKind.entries.take(6).chunked(3).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { item -> FilterChip(selected = kind == item, enabled = enabled, onClick = { kind = item }, label = { Text(item.label) }) }
+                row.forEach { item -> FilterChip(selected = asset == null && kind == item, enabled = enabled, onClick = { kind = item; asset = null }, label = { Text(item.label) }) }
             }
         }
+        Row {
+            OutlinedButton(enabled = enabled, onClick = { library = true }) { Text("Sound library · 18+") }
+            TextButton(enabled = enabled, onClick = { onPreview(kind, asset) }) { Text("Preview selected") }
+        }
+        Text("Selected: " + (asset?.name ?: kind.label))
         Button(enabled = enabled && clip.sounds.size < 12 && projectCount < 120, onClick = {
-            onChange(clip.copy(sounds = clip.sounds + ClipSound(UUID.randomUUID().toString(), at, kind)))
+            onChange(clip.copy(sounds = clip.sounds + ClipSound(UUID.randomUUID().toString(), at, kind, asset = asset)))
         }) { Text("Add SFX at playhead") }
         OutlinedButton(enabled = enabled && projectCount - clip.sounds.size + 4 <= 120, onClick = {
             onChange(clip.copy(sounds = SoundTimeline.suggest(clip)))
@@ -69,7 +80,7 @@ fun SoundControls(clip: TimelineClip, localMs: Long, projectCount: Int, enabled:
             key(sound.id) {
                 var gain by remember(sound.volume) { mutableFloatStateOf(sound.volume) }
                 val inside = sound.sourceMs in clip.startMs until clip.endMs
-                Text(sound.kind.label + " · " + Timecode.format(clip.outputOffsetMs(sound.sourceMs - clip.startMs)) + if (inside) "" else " · outside trim")
+                Text(sound.label + " · " + Timecode.format(clip.outputOffsetMs(sound.sourceMs - clip.startMs)) + if (inside) "" else " · outside trim")
                 Text("Effect volume: ${(gain * 100).toInt()}%")
                 Slider(value = gain, onValueChange = { gain = it }, enabled = enabled,
                     onValueChangeFinished = { onChange(clip.copy(sounds = clip.sounds.map { if (it.id == sound.id) it.copy(volume = gain) else it })) })
@@ -81,3 +92,4 @@ fun SoundControls(clip: TimelineClip, localMs: Long, projectCount: Int, enabled:
         }
     }
 }
+

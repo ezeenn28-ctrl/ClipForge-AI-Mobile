@@ -74,6 +74,11 @@ object ProjectStore {
             clip.sounds.forEachIndexed { j, sound ->
                 put("timeline.$i.sounds.$j.id", sound.id); put("timeline.$i.sounds.$j.at", sound.sourceMs)
                 put("timeline.$i.sounds.$j.kind", sound.kind.name); put("timeline.$i.sounds.$j.volume", sound.volume)
+                sound.asset?.let { asset ->
+                    put("timeline.$i.sounds.$j.asset.id", asset.id); put("timeline.$i.sounds.$j.asset.name", asset.name)
+                    put("timeline.$i.sounds.$j.asset.source", asset.source); put("timeline.$i.sounds.$j.asset.duration", asset.durationMs)
+                    put("timeline.$i.sounds.$j.asset.origin", asset.origin); put("timeline.$i.sounds.$j.asset.page", asset.page)
+                }
             }
         }
         file.parentFile?.mkdirs()
@@ -119,7 +124,11 @@ object ProjectStore {
             val soundCount = data.getProperty("timeline.$i.sounds.count", "0").toInt()
             require(soundCount in 0..12) { "Invalid sound effects count" }
             val sounds = (0 until soundCount).map { j -> ClipSound(text("timeline.$i.sounds.$j.id"), number("timeline.$i.sounds.$j.at"),
-                SoundKind.valueOf(text("timeline.$i.sounds.$j.kind")), text("timeline.$i.sounds.$j.volume").toFloat()) }
+                SoundKind.valueOf(text("timeline.$i.sounds.$j.kind")), text("timeline.$i.sounds.$j.volume").toFloat(),
+                    if (data.containsKey("timeline.$i.sounds.$j.asset.id")) SoundAsset(
+                        text("timeline.$i.sounds.$j.asset.id"), text("timeline.$i.sounds.$j.asset.name"),
+                        text("timeline.$i.sounds.$j.asset.source"), number("timeline.$i.sounds.$j.asset.duration"),
+                        text("timeline.$i.sounds.$j.asset.origin"), text("timeline.$i.sounds.$j.asset.page")) else null) }
             TimelineClip(text("timeline.$i.id"), number("timeline.$i.start"), number("timeline.$i.end"),
                 text("timeline.$i.hook"), text("timeline.$i.caption"), number("timeline.$i.captionStart"), number("timeline.$i.captionEnd"),
                 text("timeline.$i.effect"), text("timeline.$i.volume").toFloat(), number("timeline.$i.fadeIn"), number("timeline.$i.fadeOut"), segments("timeline.$i.cues"),
@@ -157,5 +166,6 @@ object ProjectStore {
                 layout = ReferenceLayout.valueOf(data.getProperty("caption.layout", "STANDARD")))).also { it.validate() }
     }
 }
+
 
 

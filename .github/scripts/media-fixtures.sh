@@ -12,3 +12,5 @@ ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=black:size=180x320:r
 ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=cyan:size=180x320:rate=30' -t 1 -c:v libx264 -pix_fmt yuv420p -preset ultrafast app/src/androidTest/assets/transition-cyan.mp4
 ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=red:size=180x320:rate=30' -t 1 -c:v libx264 -pix_fmt yuv420p -preset ultrafast app/src/androidTest/assets/transition-red.mp4
 ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=gray:size=16x16:rate=1' -f lavfi -i 'anullsrc=r=16000:cl=mono' -t 7200 -c:v libx264 -pix_fmt yuv420p -preset ultrafast -c:a aac -b:a 8k app/src/androidTest/assets/two-hours.mp4
+
+ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=1200:sample_rate=44100' -t 0.4 -c:a libmp3lame -b:a 128k app/src/androidTest/assets/sfx-import.mp3

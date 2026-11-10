@@ -28,9 +28,15 @@ object MediaAssets {
             require(clips.filter { it.resolvedSource(primary) == info.uri }.all { it.endMs <= info.durationMs }) { "Trim extends beyond source: ${info.name}" }
             require(kotlin.math.abs(info.durationMs - clip.resolvedDuration(durationMs)) <= 1000) { "Source changed: ${info.name}. Relink the original video." }
         }
+        clips.flatMap { it.sounds }.mapNotNull { it.asset }.distinctBy { it.id }.forEach { asset ->
+            asset.validate()
+            val info = inspect(context, Uri.parse(asset.source), false)
+            require(kotlin.math.abs(info.durationMs - asset.durationMs) <= 100) { "Sound file changed: ${asset.name}. Import it again." }
+        }
         music?.let {
             val info = inspect(context, Uri.parse(it.source), false)
             require(kotlin.math.abs(info.durationMs - it.durationMs) <= 1000) { "Music changed. Replace the music file." }
         }
     }
 }
+

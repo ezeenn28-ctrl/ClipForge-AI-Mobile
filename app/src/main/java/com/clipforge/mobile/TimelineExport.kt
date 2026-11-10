@@ -81,7 +81,7 @@ object TimelineExport {
             val sequence = EditedMediaItemSequence.Builder()
             var cursor = 0L
             sounds.forEach { sound ->
-                val uri = soundAssets[sound.kind] ?: error("Sound effect asset is missing")
+                val uri = sound.asset?.source ?: soundAssets[sound.kind] ?: error("Sound effect asset is missing")
                 if (sound.startMs > cursor) sequence.addGap((sound.startMs - cursor) * 1000)
                 val media = MediaItem.Builder().setUri(Uri.parse(uri)).setClippingConfiguration(
                     MediaItem.ClippingConfiguration.Builder().setEndPositionMs(sound.durationMs).build()).build()
@@ -96,5 +96,6 @@ object TimelineExport {
         return Composition.Builder(sequences).experimentalSetForceAudioTrack(!mute || music != null || sounds.isNotEmpty()).build()
     }
 }
+
 
 
