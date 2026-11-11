@@ -12,7 +12,7 @@ Autosave waits 350 ms after editing pauses. Each successful write preserves the 
 
 **Captions → Speech language** offers Auto / Taglish, English and Filipino. Auto is recommended for mixed speech. Language hints are passed to the bundled multilingual recognizer and retained in paused speech jobs; they do not guarantee transcription accuracy.
 
-**Follow spoken words** advances the highlighted word in both preview and MP4. Word boundaries are estimated inside existing caption timestamps, not forced audio alignment. **Caption timing** allows source in/out corrections, line preview and splitting one line into individually editable word cues. Listen and correct estimated timing. Repeated names or Taglish words can be replaced literally as whole words in the selected transcript. Text is not automatically translated.
+**Follow spoken words** advances the highlighted word in both preview and MP4. Word boundaries are estimated inside existing caption timestamps, not forced audio alignment. **Caption timing** allows source in/out corrections, line preview and splitting one line into individually editable word cues. Line preview converts source time through the selected cut’s trim, speed and timeline offset, clamping inside that cut. Listen and correct estimated timing. Repeated names or Taglish words can be replaced literally as whole words in the selected transcript. Text is not automatically translated.
 
 ## Reusable presets
 

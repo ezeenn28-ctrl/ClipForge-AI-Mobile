@@ -19,6 +19,16 @@ object CaptionTiming {
     fun activeWord(cue: WhisperNative.Segment, sourceMs: Long): Int =
         words(cue).indexOfFirst { sourceMs >= it.startMs && sourceMs < it.endMs }
 
+    /** Convert a source timestamp to the selected cut's output clock, never its neighbor. */
+    fun timelineSeek(clips: List<TimelineClip>, targetId: String, sourceMs: Long): Long? {
+        val index = clips.indexOfFirst { it.id == targetId }
+        if (index < 0) return null
+        val clip = clips[index]
+        val source = sourceMs.coerceIn(clip.startMs, clip.endMs - 1)
+        val local = clip.outputOffsetMs(source - clip.startMs).coerceIn(0, clip.durationMs - 1)
+        return TimelineModel.offset(clips, index) + local
+    }
+
     fun replace(cues: List<WhisperNative.Segment>, index: Int, changed: WhisperNative.Segment, durationMs: Long): List<WhisperNative.Segment> {
         require(index in cues.indices && changed.text.length <= 2000) { "Invalid caption" }
         require(Timecode.validTrim(changed.startMs, changed.endMs, durationMs)) { "Enter valid caption times" }

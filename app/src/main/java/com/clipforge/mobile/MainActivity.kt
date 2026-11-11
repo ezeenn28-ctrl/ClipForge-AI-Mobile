@@ -1369,8 +1369,8 @@ class MainActivity : ComponentActivity() {
                                                     updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(subtitles = cues) else it }))
                                                     if (timelineSubtitleTarget == clip.id) { transcriptSegments = cues; subtitleSegments = cues }
                                                 }, onSeek = { sourceMs ->
-                                                    val index = timeline.clips.indexOfFirst { it.id == clip.id }
-                                                    player.pause(); seekTimeline(TimelineModel.offset(timeline.clips, index) + clip.outputOffsetMs(sourceMs - clip.startMs))
+                                                    player.pause()
+                                                    CaptionTiming.timelineSeek(timeline.clips, clip.id, sourceMs)?.let(seekTimeline)
                                                 }, onMessage = { status = it })
                                             clip?.subtitles?.take(10)?.forEachIndexed { index, cue ->
                                                 OutlinedTextField(cue.text, { text ->
@@ -1893,7 +1893,11 @@ class MainActivity : ComponentActivity() {
                             if (timelineSubtitleTarget.isBlank()) sourceTranscriptSegments = cues
                             if (selectedDraft >= 0 && subtitleDraftIndex == selectedDraft) batchResults = batchResults + (selectedDraft to cues)
                             transcript = cues.joinToString("\n") { it.text }; approved = false
-                        }, onSeek = { sourceMs -> player.pause(); player.seekTo(sourceMs) }, onMessage = { status = it })
+                        }, onSeek = { sourceMs ->
+                            player.pause()
+                            val timelineMs = if (timelineMode) CaptionTiming.timelineSeek(timeline.clips, timelineSubtitleTarget, sourceMs) else null
+                            if (timelineMs != null) seekTimeline(timelineMs) else player.seekTo(sourceMs)
+                        }, onMessage = { status = it })
                     val pageCount = (transcriptSegments.size + 24) / 25
                     val currentPage = subtitlePage.coerceIn(0, pageCount - 1)
                     Row {

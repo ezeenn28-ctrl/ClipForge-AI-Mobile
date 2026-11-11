@@ -46,6 +46,13 @@ class WorkflowUpgradeTest {
     @Test fun impossibleWordSpanDoesNotInventNegativeOrZeroLengthCues() {
         assertTrue(CaptionTiming.words(WhisperNative.Segment(0,1,"a b c")).isEmpty())
     }
+    @Test fun captionSeekUsesSelectedSourceTrimSpeedAndTimelineOffset() {
+        val clips=listOf(TimelineClip("first",0,5000),TimelineClip("second",10000,20000,speed=2f))
+        assertEquals(6000L,CaptionTiming.timelineSeek(clips,"second",12000))
+        assertEquals(5000L,CaptionTiming.timelineSeek(clips,"second",9000))
+        assertEquals(9999L,CaptionTiming.timelineSeek(clips,"second",25000))
+        assertNull(CaptionTiming.timelineSeek(clips,"missing",12000))
+    }
     @Test fun manualTimingRejectsOverlapsAndInvalidSourceBounds() {
         val cues = listOf(WhisperNative.Segment(0,1000,"A"), WhisperNative.Segment(1500,2000,"B"))
         assertThrows(IllegalArgumentException::class.java) { CaptionTiming.replace(cues,1,cues[1].copy(startMs=900),3000) }
