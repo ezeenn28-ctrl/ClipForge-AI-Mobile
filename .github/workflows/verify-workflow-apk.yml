@@ -69,7 +69,7 @@ jobs:
           emulator-boot-timeout: 180
           disable-animations: true
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin --phase full
+          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin --phase queue-tail
       - name: Upload actual release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4

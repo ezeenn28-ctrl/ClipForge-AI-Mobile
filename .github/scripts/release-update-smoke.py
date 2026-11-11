@@ -257,6 +257,49 @@ def verify_mp4(path):
     assert sum(r < 110 and g > 150 and b > 170 for r, g, b in pixels) > 20, "Saved cyan highlight missing"
 
 
+
+def await_queue(before, timeout=240):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        files = list(set(exports()) - before)
+        if files:
+            # Publication and the row's completed state must both finish.
+            locate(text="Saved to Gallery", scroll_axis="vertical", timeout=90)
+            return files
+        time.sleep(.5)
+    raise AssertionError("Approved queue export did not publish an MP4")
+
+
+def exercise_queue_tail(args):
+    open_editor()
+    tap_node(locate(text="Export"))
+    assert locate(text="Export approved MP4", scroll_axis="vertical").get("enabled") == "false"
+    before = set(exports())
+    tap_node(locate(text="I reviewed this edit and approve its export", scroll_axis="vertical"))
+    tap_node(locate(text="Add approved edit to queue", scroll_axis="vertical"))
+    locate(text="Approved snapshot; waiting for Start", scroll_axis="vertical")
+    assert set(exports()) == before, "Queue exported before Start"
+    assert locate(text="Export approved MP4", scroll_axis="vertical").get("enabled") == "false"
+    start = locate(text="Start approved queue", scroll_axis="vertical")
+    assert start.get("enabled") == "true", "Approved snapshot not ready"
+    tap_node(start)
+    new_files = await_queue(before)
+    assert len(new_files) == 1, "Unexpected number of queued exports"
+    verify_mp4(new_files[0])
+    command("ffmpeg", "-v", "error", "-i", str(OUT / "approved-release-export.mp4"), "-f", "null", "-")
+    screenshot("approved-queue-complete")
+    passed("Signed APK exports an explicitly reviewed queued snapshot and the MP4 fully decodes")
+    adb("shell", "am", "force-stop", PACKAGE)
+    adb("shell", "am", "start", "-W", "-n", ACTIVITY, "-f", "0x10008000")
+    tap_node(locate(text="Continue editing", timeout=35))
+    tap_node(locate(text="Export"))
+    locate(text="Export completed", scroll_axis="vertical")
+    assert locate(text="Start approved queue", scroll_axis="vertical").get("enabled") == "false"
+    assert set(exports()) == before | set(new_files), "Queue exported automatically after restart"
+    passed("Completed queue persists across restart and never restarts exports automatically")
+    exercise_clean_install(args)
+
+
 def main(args):
     adb("wait-for-device")
     if args.phase != "update-export":
@@ -282,6 +325,11 @@ def main(args):
     copied = subprocess.run(["adb", "shell", "-T", "run-as", PACKAGE, "sh", "-c", "'cat > files/models/ggml-tiny.bin'"],
         input=args.model.read_bytes(), capture_output=True, timeout=60)
     assert copied.returncode == 0, "Could not seed verified public speech model"
+    if args.phase == "queue-tail":
+        adb("install", "-r", str(args.release))
+        launch()
+        exercise_queue_tail(args)
+        return
     if args.phase == "speech-import":
         adb("install", "-r", str(args.release))
         launch()
@@ -516,15 +564,7 @@ def exercise_speech_import(args):
     before = set(exports())
     assert locate(text="Export approved MP4", scroll_axis="vertical").get("enabled") == "false", "Adding to queue did not clear current approval"
     tap_node(locate(text="Start approved queue", scroll_axis="vertical"))
-    deadline = time.monotonic() + 240
-    while time.monotonic() < deadline:
-        root = hierarchy()
-        if find(root, text="Saved to Gallery") and set(exports()) - before:
-            break
-        scroll(root)
-        time.sleep(.5)
-    else: raise AssertionError("Approved queue export did not finish")
-    new_files = list(set(exports()) - before)
+    new_files = await_queue(before)
     assert len(new_files) == 1, "Queue exported an unexpected number of snapshots"
     local_queue = OUT / "queue-approved.mp4"
     adb("pull", new_files[0], str(local_queue))
@@ -542,6 +582,10 @@ def exercise_speech_import(args):
     assert set(exports()) == before | set(new_files), "Queue automatically exported after restart"
     passed("Completed queue persists across restart and never restarts exports automatically")
 
+    exercise_clean_install(args)
+
+
+def exercise_clean_install(args):
     # Clean-install test resets only this isolated emulator's synthetic app data.
     adb("uninstall", PACKAGE)
     adb("install", str(args.release))
@@ -577,7 +621,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     for name in ("baseline", "release", "seed", "video", "speech", "model"):
         parser.add_argument("--" + name, type=Path, required=True)
-    parser.add_argument("--phase", choices=("full", "speech-import", "update-export"), default="full")
+    parser.add_argument("--phase", choices=("full", "speech-import", "update-export", "queue-tail"), default="full")
     args = parser.parse_args()
     failure = None
     try:
