@@ -113,10 +113,10 @@ def scroll(root, horizontal=False, reverse=False):
         # The timeline consumes center-screen vertical drags. Use the parent's
         # left gutter so the enclosing vertical ScrollView receives the swipe.
         swipe_x = x1 + 2
-        points = (swipe_x, y1 + (y2 - y1) * 4 // 5, swipe_x, y1 + (y2 - y1) // 5)
+        points = (swipe_x, y2 - 8, swipe_x, y1 + 8)
     if reverse:
         points = points[2:] + points[:2]
-    adb("shell", "input", "swipe", *(str(v) for v in points), "350")
+    adb("shell", "input", "swipe", *(str(v) for v in points), "180" if not horizontal else "350")
     time.sleep(.3)
     return True
 
@@ -136,7 +136,7 @@ def editor_top():
 
 
 def locate(text=None, desc=None, contains=False, timeout=30, scroll_axis=None):
-    deadline = time.monotonic() + (max(timeout, 90) if scroll_axis else timeout)
+    deadline = time.monotonic() + (max(timeout, 180) if scroll_axis else timeout)
     previous = None
     stationary = 0
     reverse = False

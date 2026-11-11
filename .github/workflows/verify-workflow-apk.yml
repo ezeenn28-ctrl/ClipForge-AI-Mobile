@@ -1,7 +1,7 @@
 name: Verify immutable workflow APK
 on:
   push:
-    branches: [verify/workflow-apk]
+    branches: [verify/workflow-apk, verify/auto-audio-apk]
   workflow_dispatch:
 jobs:
   release-update:
@@ -19,19 +19,19 @@ jobs:
           java-version: '17'
       - uses: actions/download-artifact@v4
         with:
-          run-id: 42966210010
+          run-id: 43002483783
           name: ClipForge-AI-Mobile-release
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: build/release-under-test
       - uses: actions/download-artifact@v4
         with:
-          run-id: 42966210010
+          run-id: 43002483783
           name: ClipForge-baseline94-compatibility-test-only
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: build/baseline94
-      - name: Require the exact Build 131 installer
+      - name: Require the exact Build 134 installer
         run: |
-          printf '%s  %s\n' f1855d33e289230efba675d19b3648e2725b3b0483aec9b6ae3fc723778f67c6 build/release-under-test/app/build/outputs/apk/release/app-release.apk | sha256sum --check
+          printf '%s  %s\n' 10e84bbb4bfaf679133e313c1290333d47f247a819b32f3c27bee9d66a2c82f3 build/release-under-test/app/build/outputs/apk/release/app-release.apk | sha256sum --check
       - name: Cache verified public speech model
         uses: actions/cache@v4
         with:
@@ -69,7 +69,7 @@ jobs:
           emulator-boot-timeout: 180
           disable-animations: true
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin --phase queue-tail
+          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin --phase speech-import
       - name: Upload actual release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
