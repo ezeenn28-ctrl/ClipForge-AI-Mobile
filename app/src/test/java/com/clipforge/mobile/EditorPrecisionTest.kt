@@ -84,4 +84,14 @@ class EditorPrecisionTest {
         assertFalse(locked.editMusic(bed.copy(locked=false)).music!!.locked)
     }
 
+    @Test fun steppingExcludesTheSameFrameWhenSpeedRoundingMovesTheClockOneMillisecond(){
+        val samples=listOf(0L,33L,67L,100L)
+        assertEquals(33L,EditorPrecision.adjacentSample(samples,68,-1))
+        assertEquals(100L,EditorPrecision.adjacentSample(samples,66,1))
+        assertNull(EditorPrecision.adjacentSample(samples,0,-1))
+        assertNull(EditorPrecision.adjacentSample(samples,101,1))
+        assertEquals(67L,EditorPrecision.adjacentSample(samples,50,1))
+        assertEquals(33L,EditorPrecision.adjacentSample(samples,50,-1))
+    }
+
 }

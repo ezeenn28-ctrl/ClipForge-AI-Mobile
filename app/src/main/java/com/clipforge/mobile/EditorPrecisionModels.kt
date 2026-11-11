@@ -25,6 +25,15 @@ data class SettingsClipboard(val clip:TimelineClip,val captionLook:CaptionLook){
     }
 }
 object EditorPrecision {
+    fun adjacentSample(samples:List<Long>,position:Long,direction:Int):Long? {
+        require(direction==1||direction== -1)
+        val times=samples.distinct().sorted()
+        val nearest=times.minByOrNull{abs(it-position)}
+        // Composition/source rounding at changed speed can put the clock 1ms beside its frame.
+        val anchor=nearest?.takeIf{abs(it-position)<=2}?:position
+        return if(direction>0)times.firstOrNull{it>anchor} else times.lastOrNull{it<anchor}
+    }
+
     fun snapTargets(clips:List<TimelineClip>,music:MusicTrack?):List<Long> = (clips.indices.map{TimelineModel.offset(clips,it)}+TimelineModel.duration(clips)+TimelineModel.subtitles(clips).flatMap{listOf(it.startMs,it.endMs)}+SoundTimeline.events(clips).flatMap{listOf(it.startMs,it.endMs)}+music?.beatMarkers(TimelineModel.duration(clips)).orEmpty()).distinct().sorted()
     fun describe(before:List<TimelineClip>,after:List<TimelineClip>):String {
         if(after.size>before.size)return if(after.size==before.size+1&&after.any{n->before.any{it.copy(id=n.id)==n}})"Duplicate cut" else "Add / split cut"

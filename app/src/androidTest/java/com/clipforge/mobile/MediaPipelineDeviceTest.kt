@@ -212,7 +212,7 @@ class MediaPipelineDeviceTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val snapshot = File(context.cacheDir, "per-cut-placement.properties")
         val appearance = CaptionAppearance(CaptionFont.MONO, .45f, CaptionColor.PINK, CaptionColor.CYAN, CaptionAlignment.LEFT)
-        val originalClip=TimelineClip("caption",0,3000,caption="HELLO #WORLD",captionEndMs=3000,color=ColorAdjustments(brightness=.2f,warmth=.5f),editor=ClipEditorState(placement=TextPlacement(x=.2f,y=.1f),look=CaptionLook(appearance)))
+        val originalClip=TimelineClip("caption",0,3000,caption="HELLO #WORLD",captionEndMs=3000,color=ColorAdjustments(brightness=.2f,warmth=.5f),editor=ClipEditorState(placement=TextPlacement(x=.2f,y=.1f,scale=1.2f),look=CaptionLook(appearance)))
         ProjectStore.write(snapshot,EditorProject(Uri.fromFile(source).toString(),3000,0,3000,timelineClips=listOf(originalClip)))
         val saved=ProjectStore.read(snapshot)!!
         val composition=TimelineExport.composition(Uri.fromFile(source),saved.timelineClips,true,false,false,39f,Color.WHITE)
@@ -275,6 +275,9 @@ class MediaPipelineDeviceTest {
         val second=AdjacentVideoFrame.find(context,uri,first,1,1000,3000)!!
         assertTrue(first>1000&&second>first)
         assertEquals(first,AdjacentVideoFrame.find(context,uri,second,-1,1000,3000))
+        val fast=TimelineClip("fast-frame",1000,3000,speed=2f)
+        val rounded=1000+fast.sourceOffsetMs(fast.outputOffsetMs(second-1000))
+        assertEquals(first,AdjacentVideoFrame.find(context,uri,rounded,-1,1000,3000))
         assertNull(AdjacentVideoFrame.find(context,uri,1000,-1,1000,3000))
         val clip=TimelineClip("wave",1000,3000,source=uri.toString(),sourceDurationMs=6000)
         val result=EditorWaveform.analyze(context,clip,uri.toString())

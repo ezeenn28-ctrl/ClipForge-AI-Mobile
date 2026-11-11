@@ -27,17 +27,15 @@ object AdjacentVideoFrame {
             extractor.selectTrack(track)
             // Include the previous GOP when stepping back at a keyframe.
             extractor.seekTo((if(direction<0)(sourceMs-1).coerceAtLeast(0) else sourceMs)*1000,MediaExtractor.SEEK_TO_PREVIOUS_SYNC)
-            var best:Long?=null
+            val samples=mutableListOf<Long>()
             var count=0
             while(extractor.sampleTime>=0&&count++<10000){
                 val time=(extractor.sampleTime/1000.0).roundToLong()
-                if(time in fromMs until untilMs&&if(direction>0)time>sourceMs else time<sourceMs){
-                    if(best==null||if(direction>0)time<best else time>best)best=time
-                }
+                if(time in fromMs until untilMs)samples.add(time)
                 if(time>sourceMs+1500)break
                 if(!extractor.advance())break
             }
-            return best
+            return EditorPrecision.adjacentSample(samples,sourceMs,direction)
         } finally { extractor.release() }
     }
 }
