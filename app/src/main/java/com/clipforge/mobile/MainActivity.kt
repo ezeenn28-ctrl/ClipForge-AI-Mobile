@@ -1544,7 +1544,7 @@ class MainActivity : ComponentActivity() {
                                 active = busy || modelDownloading,
                                 percent = if (modelDownloading) modelProgress else if (exporting) exportPercent else if (transcribing || batchRunning) speechPercent else -1)
                             if (audioAnalyzing) TextButton(onClick = { autoAudioEnabled = false; audioJob?.cancel(); status = "Auto Audio stopped. Existing edit retained." }) { Text("Stop Auto Audio") }
-                            if (simpleEditor) EditorToolBar(editorTool, !busy) { editorTool = it;toolsVisible=true }
+                            if (simpleEditor) EditorToolBar(editorTool, !busy) { editorTool = it;toolsVisible=true;if(it==EditorTool.CAPTIONS)textHandleHook=false }
                             else StudioNavigation(selectedTab) { selectedTab = it }
                         }
                     }
@@ -1570,13 +1570,13 @@ class MainActivity : ComponentActivity() {
                                             transcript = clip.subtitles.joinToString("\n") { it.text }; subtitleDraftIndex = -1; subtitleSegments = emptyList()
                                         }
                                     }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it }, compact = true, tool = if(editorTool==EditorTool.AUDIO && audioPage!=AudioPage.VOICE)EditorTool.MORE else editorTool, music = music, showTracks = timelineVisible && editorTool == EditorTool.EDIT, showDetails=toolsVisible, waveforms=waveforms,
-                                    onTool={tool,page->editorTool=tool;toolsVisible=true;if(page!=null)audioPage=page})
+                                    onTool={tool,page->editorTool=tool;toolsVisible=true;if(tool==EditorTool.CAPTIONS)textHandleHook=false;if(page!=null)audioPage=page})
                                 Row(Modifier.horizontalScroll(rememberScrollState())){
                                     TextButton(enabled=!busy&&timeline.past.isNotEmpty(),onClick={updateTimeline(timeline.undo())}){Text("Undo ${timeline.undoLabel}")}
                                     TextButton(enabled=!busy&&timeline.future.isNotEmpty(),onClick={updateTimeline(timeline.redo())}){Text("Redo ${timeline.redoLabel}")}
                                 }
                                 timeline.clips.firstOrNull{it.id==selectedTimelineId}?.let{selected->
-                                    if(toolsVisible)EditorTrackControls(selected,music,!busy,onClip={changed->updateTimeline(timeline.edit(timeline.clips.map{if(it.id==selected.id)changed else it}))},onMusic=changeMusic)
+                                    if(toolsVisible)EditorTrackControls(selected,music,!busy,onClip={changed->val safe=if(changed.editor.captionsLocked&&!selected.editor.captionsLocked&&changed.editor.look==null)changed.copy(editor=changed.editor.copy(look=CaptionLook(captionAppearance,subtitleSize,captionPreset.name,subtitleYellow))) else changed;updateTimeline(timeline.edit(timeline.clips.map{if(it.id==selected.id)safe else it}))},onMusic=changeMusic)
                                 }
                                 if(toolsVisible)when (editorTool) {
                                     EditorTool.TEXT -> {
