@@ -13,8 +13,8 @@ object MetadataGate { val lock = Mutex() }
 /** Curated metadata backup. No videos, model weights, signing keys or permissions. */
 object MetadataBackup {
     private val allowed = setOf("projects/last-project.properties", "campaigns/submissions.properties", "speech/last-job.properties")
-    private fun extra(path: String) = path.matches(Regex("(?:editing-presets|export-queue|music-library)/[a-zA-Z0-9-]{1,80}\\.properties")) || path.matches(Regex("sound-library/[a-zA-Z0-9-]{1,80}\\.properties")) || path == "music-favorites.properties"
-    fun paths(root: File): Set<String> = (allowed + ProjectCatalog.backupPaths(root) + listOf("editing-presets", "export-queue", "music-library", "sound-library").flatMap { folder -> File(root, folder).listFiles().orEmpty().map { "$folder/${it.name}" }.filter(::extra) } + listOf("music-favorites.properties")).filter { File(root,it).isFile }.toSet()
+    private fun extra(path: String) = path.matches(Regex("(?:editing-presets|campaign-presets|export-queue|music-library)/[a-zA-Z0-9-]{1,80}\\.properties")) || path.matches(Regex("sound-library/[a-zA-Z0-9-]{1,80}\\.properties")) || path == "music-favorites.properties"
+    fun paths(root: File): Set<String> = (allowed + ProjectCatalog.backupPaths(root) + listOf("editing-presets", "campaign-presets", "export-queue", "music-library", "sound-library").flatMap { folder -> File(root, folder).listFiles().orEmpty().map { "$folder/${it.name}" }.filter(::extra) } + listOf("music-favorites.properties")).filter { File(root,it).isFile }.toSet()
     private const val LIMIT = 50L * 1024 * 1024
     data class Staged(val directory: File, val paths: Set<String>, val hasProject: Boolean, val submissions: Int, val hasSpeech: Boolean, val projectCount: Int = 0, val mediaCount: Int = 0) {
         fun discard() { directory.deleteRecursively() }
@@ -65,7 +65,7 @@ object MetadataBackup {
             for (path in seen.filter(::extra)) {
                 val file = File(directory, path)
                 when {
-                    path.startsWith("editing-presets/") || path.startsWith("export-queue/") || path.startsWith("music-library/") -> {
+                    path.startsWith("editing-presets/") || path.startsWith("campaign-presets/") || path.startsWith("export-queue/") || path.startsWith("music-library/") -> {
                         val record = ProjectStore.read(file) ?: error("Invalid saved audio/preset/queue record")
                         if (path.startsWith("editing-presets/")) require(record.timelineClips.size == 1)
                         ProjectStore.write(file, record.reviewedAgain())

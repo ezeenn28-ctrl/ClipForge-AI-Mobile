@@ -18,6 +18,7 @@ object TimelineExport {
     fun frameProcessorFactory() = DefaultVideoFrameProcessor.Factory.Builder()
         .setSdrWorkingColorSpace(DefaultVideoFrameProcessor.WORKING_COLOR_SPACE_ORIGINAL).build()
     fun audioProcessors(clip: TimelineClip): List<AudioProcessor> = buildList {
+        if (clip.cleanupStrength > 0f) add(SpeechCleanupProcessor { clip.cleanupStrength })
         add(ClipAudioProcessor(clip))
         if (clip.speed != 1f) {
             add(ToInt16PcmAudioProcessor())

@@ -309,6 +309,11 @@ class MainActivity : ComponentActivity() {
         var safeAreaGuide by remember { mutableStateOf(false) }
         var compareOriginal by remember { mutableStateOf(false) }
         val audioPrefs = remember { getSharedPreferences("auto-audio", MODE_PRIVATE) }
+        var audioPage by remember { mutableStateOf(AudioPage.MUSIC) }
+        var hookAuditionEnd by remember { mutableStateOf(-1L) }
+        var previewDetail by remember { mutableStateOf(runCatching { PreviewDetail.valueOf(audioPrefs.getString("preview-detail","BALANCED")!!) }.getOrDefault(PreviewDetail.BALANCED)) }
+        var audioIntensity by remember { mutableStateOf(AudioIntensity.BALANCED) }
+        val previewCleanup = remember { java.util.concurrent.atomic.AtomicReference(0f) }
         val previewVoiceGain = remember { java.util.concurrent.atomic.AtomicReference(1f) }
         val previewActivity = remember { AudioActivityCache() }
         var lastExportedProject by remember { mutableStateOf<EditorProject?>(null) }
@@ -454,7 +459,7 @@ class MainActivity : ComponentActivity() {
         }
         val playbackPrefs = remember { getSharedPreferences("playback", MODE_PRIVATE) }
         var compatiblePreview by remember { mutableStateOf(playbackPrefs.getBoolean("software-preview", false)) }
-        val player = remember(compatiblePreview) { PreviewPlayerFactory.create(this, compatiblePreview) { previewVoiceGain.get() } }
+        val player = remember(compatiblePreview) { PreviewPlayerFactory.create(this, compatiblePreview, cleanup = { previewCleanup.get() }) { previewVoiceGain.get() } }
         val previewPlayback = remember(player) { PreviewPlayback(player) }
         val previewBinding = remember(player) { PreviewSurfaceBinding(player) }
         var playbackError by remember { mutableStateOf("") }
@@ -637,7 +642,7 @@ class MainActivity : ComponentActivity() {
                     appliedSpeechUnits = saved.lastSpeechUnits
                     timeline = TimelineHistory(saved.timelineClips)
                     music = saved.music
-                    autoAudioEnabled = saved.autoAudioEnabled; autoAudioHandled = saved.autoAudioHandled
+                    audioIntensity = saved.audioIntensity; autoAudioEnabled = saved.autoAudioEnabled; autoAudioHandled = saved.autoAudioHandled
                     autoAudioUndo = null; musicAudition = null; compareOriginal = false
                     timelineSubtitleTarget = saved.currentTimelineId
                     timelineMode = saved.timelineMode
@@ -928,7 +933,7 @@ class MainActivity : ComponentActivity() {
             draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits, timelineClips = timeline.clips, timelineMode = timelineMode, selectedTimelineId = selectedTimelineId,
             currentTimelineId = timelineSubtitleTarget.takeIf { id -> timeline.clips.any { it.id == id } }.orEmpty(), music = music, captionPreset = captionPreset.name,
             projectId = projectId, projectName = projectName.ifBlank { sourceName }.filterNot(Char::isISOControl).take(80),
-            captionAppearance = captionAppearance, hookTone = hookTone, autoAudioEnabled = autoAudioEnabled, autoAudioHandled = autoAudioHandled,
+            captionAppearance = captionAppearance, hookTone = hookTone, audioIntensity = audioIntensity, autoAudioEnabled = autoAudioEnabled, autoAudioHandled = autoAudioHandled,
             campaignBrief = CampaignBrief(campaignEnabled, campaignTags, campaignCaption, campaignMin, campaignMax, campaignSource)
         ) else null
         val generateAutoAudio: (List<String>, AudioIntensity, MusicMood?, Boolean, Boolean) -> Unit = { ids, intensity, forcedMood, keepMusic, keepSounds ->
@@ -969,7 +974,7 @@ class MainActivity : ComponentActivity() {
                                 val span = musicBefore.endMs - musicBefore.startMs
                                 musicBefore.copy(volume = minOf(musicBefore.volume, .16f), ducking = true,
                                     loop = span >= 1000 && (total + span - 1) / span <= 1500)
-                            } else MusicLibrary.ensure(filesDir, mood).copy(volume = if (intensity == AudioIntensity.ENERGETIC) .16f else .12f)
+                            } else MusicLibrary.ensure(filesDir, mood, if(intensity==AudioIntensity.MINIMAL)1 else if(intensity==AudioIntensity.ENERGETIC)2 else 0).copy(volume = if (intensity == AudioIntensity.ENERGETIC) .16f else .12f)
                             TimelineModel.validate(changed, duration); bed.validate()
                             Triple(changed, bed, mood)
                         }
@@ -992,18 +997,31 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(autoAudioEnabled, autoAudioHandled, timeline.clips.map { it.id }, busy, appVisible) {
             if (autoAudioEnabled && appVisible && !busy && timelineMode) {
                 val pending = timeline.clips.filter { it.id !in autoAudioHandled }.map { it.id }
-                if (pending.isNotEmpty()) generateAutoAudio(pending, AudioIntensity.BALANCED, null, true, true)
+                if (pending.isNotEmpty()) generateAutoAudio(pending, audioIntensity, null, true, true)
             }
         }
         LaunchedEffect(editorTool) { if (editorTool != EditorTool.FORMAT) compareOriginal = false }
         LaunchedEffect(selectedTab) { if (selectedTab == StudioTab.EXPORT) { compareOriginal = false; musicAudition = null } }
         val stopMusicAudition: () -> Unit = { if (musicAudition != null) { musicAudition = null; musicPlayer.pause(); player.pause() } }
         val audioWorkspace: @Composable () -> Unit = {
+            AudioPageTabs(audioPage) { audioPage = it; stopMusicAudition() }
+            if (audioPage == AudioPage.MUSIC) {
             AutoAudioControls(autoAudioEnabled, !busy, autoAudioUndo != null,
+                intensity = audioIntensity, onIntensity = { audioIntensity=it;approved=false },
                 onAuto = { autoAudioEnabled = it; audioPrefs.edit().putBoolean("auto-new", it).apply(); approved = false },
                 onGenerate = { level, mood, keepBed, keepCues -> generateAutoAudio(timeline.clips.map { it.id }, level, mood, keepBed, keepCues) },
                 onUndo = { autoAudioUndo?.let { undo -> val restored = undo.restore(timeline.clips, music); updateTimeline(timeline.edit(restored.first)); music = restored.second; autoAudioUndo = null; autoAudioNote = ""; status = "Generated audio restored on unchanged cuts. Later manual changes were kept." } })
             if (autoAudioNote.isNotBlank()) Text(autoAudioNote, style = MaterialTheme.typography.bodySmall)
+            OutlinedButton(enabled=!busy && timeline.clips.any { it.subtitles.isNotEmpty() || it.caption.isNotBlank() },onClick={
+                audioAnalyzing=true
+                audioJob=exportScope.launch {
+                    try {
+                        val mood=AudioPlanning.mood(timeline.clips)
+                        val track=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){MusicLibrary.ensure(filesDir,mood,if(audioIntensity==AudioIntensity.MINIMAL)1 else if(audioIntensity==AudioIntensity.ENERGETIC)2 else 0)}
+                        music=track;approved=false;status="Music replaced using current captions: ${mood.label}. Review before export."
+                    }catch(error:Exception){status="Music matching failed: ${error.message}"}finally{audioAnalyzing=false;audioJob=null}
+                }
+            }){Text("Replace music using current captions")}
             MusicLibraryControls(filesDir, !busy,
                 onUse = { musicAudition = null; music = it; approved = false; status = "Music selected. Review the mix." },
                 onPreview = { candidate -> compareOriginal = false; musicAudition = candidate; player.play(); status = "Auditioning music with this clip; project settings are unchanged." },
@@ -1030,7 +1048,14 @@ class MainActivity : ComponentActivity() {
                     }
                 }) { Text("Detect imported music onset guides") }
             }
-            timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
+            }
+            if (audioPage == AudioPage.REVIEW) AudioReviewControls(timeline.clips,music,!busy,
+                onMusic={music=it;approved=false},onChange={updateTimeline(timeline.edit(it))},onReplaceMusic={audioPage=AudioPage.MUSIC},onMessage={status=it})
+            if (audioPage == AudioPage.VOICE) timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
+                StudioCard("Speech cleanup","Optional rumble reduction, soft noise gate and gentle compression. This is not voice isolation; compare before/after and avoid removing quiet words.") {
+                    Row { Switch(clip.cleanupStrength>0f,{value->updateTimeline(timeline.edit(timeline.clips.map{if(it.id==clip.id)it.copy(cleanupStrength=if(value).5f else 0f) else it}))},enabled=!busy);Text("Speech cleanup") }
+                    if(clip.cleanupStrength>0f)Slider(clip.cleanupStrength,{value->updateTimeline(timeline.edit(timeline.clips.map{if(it.id==clip.id)it.copy(cleanupStrength=value) else it}))},valueRange=.1f..1f,enabled=!busy)
+                }
                 AudioDiagnostics(clip, !busy, onAnalyze = {
                     if (!busy) {
                         audioAnalyzing = true; player.pause()
@@ -1061,7 +1086,7 @@ class MainActivity : ComponentActivity() {
             val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
                 if (event == androidx.lifecycle.Lifecycle.Event.ON_START) appVisible = true
                 if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                    appVisible = false; audioJob?.cancel()
+                    appVisible = false; hookAuditionEnd=-1; audioJob?.cancel()
                     queueJob?.cancel()
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                         MetadataGate.lock.withLock { latestBackupProject.get()?.let { snapshot ->
@@ -1136,12 +1161,14 @@ class MainActivity : ComponentActivity() {
                     timelinePosition = TimelineModel.offset(clockClips, clock.index) + local
                     previewPosition = clock.sourceMs
                     player.volume = if (mute) 0f else if (compareOriginal) 1f else TimelineModel.audioGain(clip, local).coerceIn(0f, 1f)
+                    previewCleanup.set(if(compareOriginal)0f else clip.cleanupStrength)
                     previewVoiceGain.set(if (compareOriginal) 1f else clip.voiceGain)
                 } else {
                     if (duration > 0 && player.isPlaying && player.currentPosition >= (duration * end).toLong()) {
                         player.pause(); player.seekTo((duration * start).toLong())
                     }
                     previewPosition = player.currentPosition.coerceAtLeast(0L)
+                    previewCleanup.set(0f)
                     previewVoiceGain.set(1f)
                     player.volume = if (mute) 0f else 1f
                 }
@@ -1159,6 +1186,7 @@ class MainActivity : ComponentActivity() {
                     soundPreview.tick(if (clockTimelineActive && !compareOriginal) SoundTimeline.events(clockClips) else emptyList(),
                         timelinePosition, player.isPlaying && clockTimelineActive, soundAssets)
                 }
+                if(hookAuditionEnd>=0 && timelinePosition>=hookAuditionEnd){player.pause();hookAuditionEnd=-1}
                 previewPlaying = player.isPlaying
                 delay(50)
             }
@@ -1260,6 +1288,7 @@ class MainActivity : ComponentActivity() {
         }
         val previewHeight = if (selectedTab in listOf(StudioTab.EXPORT, StudioTab.CAPTIONS))
             (screen.screenHeightDp * .22f).coerceIn(120f, 180f).dp
+        else if (previewDetail == PreviewDetail.LIGHT || editorTool == EditorTool.AUDIO) (screen.screenHeightDp * .27f).coerceIn(150f,240f).dp
         else (screen.screenHeightDp * .42f).coerceIn(200f, 380f).dp
         val previewPanel: @Composable (Boolean) -> Unit = { expanded ->
             val canvasHeight = if (expanded) (screen.screenHeightDp - 160).coerceAtLeast(170).dp else previewHeight
@@ -1308,9 +1337,9 @@ class MainActivity : ComponentActivity() {
                         val activeWord = if (!renderAppearance.wordHighlight) null else (activeSegment?.let { CaptionTiming.activeWord(it, previewPosition) }
                             ?: if (until > from) CaptionTiming.activeWord(WhisperNative.Segment(from, until, fallback), previewPosition) else null)
                         if (reference != ReferenceLayout.STANDARD || hook.isNotBlank() || displayedCaption.isNotBlank()) {
-                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow, captionPreset, renderAppearance, activeWord) {
+                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow, captionPreset, renderAppearance, activeWord, previewDetail) {
                                 makeCaptionOverlay(hook, displayedCaption, subtitleSize,
-                                    if (subtitleYellow) Color.YELLOW else Color.WHITE, captionPreset, renderAppearance, bitmapScale = .5f, activeWord = activeWord).asImageBitmap()
+                                    if (subtitleYellow) Color.YELLOW else Color.WHITE, captionPreset, renderAppearance, bitmapScale = previewDetail.bitmapScale, activeWord = activeWord).asImageBitmap()
                             }
                             Image(
                                 bitmap = previewBitmap,
@@ -1478,11 +1507,11 @@ class MainActivity : ComponentActivity() {
                                             timelineSubtitleTarget = id; transcriptSegments = clip.subtitles
                                             transcript = clip.subtitles.joinToString("\n") { it.text }; subtitleDraftIndex = -1; subtitleSegments = emptyList()
                                         }
-                                    }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it }, compact = true, tool = editorTool, music = music, showTracks = editorTool == EditorTool.EDIT)
+                                    }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it }, compact = true, tool = if(editorTool==EditorTool.AUDIO && audioPage!=AudioPage.VOICE)EditorTool.MORE else editorTool, music = music, showTracks = editorTool == EditorTool.EDIT)
                                 when (editorTool) {
                                     EditorTool.TEXT -> {
                                         timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
-                                            HookGeneratorControls(clip, !busy, hookTone, { hookTone = it; approved = false }) { hook ->
+                                            HookGeneratorControls(clip, !busy, hookTone, { hookTone = it; approved = false }, onPreview={ val index=timeline.clips.indexOfFirst{it.id==clip.id};val begin=TimelineModel.offset(timeline.clips,index);hookAuditionEnd=begin+minOf(3000,clip.durationMs);seekTimeline(begin);player.play() }) { hook ->
                                                 updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(hook = hook) else it }))
                                             }
                                         }
@@ -1493,13 +1522,13 @@ class MainActivity : ComponentActivity() {
                                     }
                                     EditorTool.AUDIO -> {
                                         audioWorkspace()
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if(audioPage==AudioPage.VOICE) Row(verticalAlignment = Alignment.CenterVertically) {
                                             Switch(checked = mute, enabled = !busy, onCheckedChange = { mute = it; approved = false })
                                             Spacer(Modifier.width(8.dp)); Text("Mute original audio")
                                         }
-                                        MusicTrackEditor(music, TimelineModel.duration(timeline.clips), !busy && timeline.clips.isNotEmpty(),
+                                        if(audioPage==AudioPage.MUSIC) MusicTrackEditor(music, TimelineModel.duration(timeline.clips), !busy && timeline.clips.isNotEmpty(),
                                             onPick = { musicPicker.launch(arrayOf("audio/*")) }, onChange = { music = it; approved = false }, onMessage = { status = it })
-                                        timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
+                                        if(audioPage==AudioPage.SFX) timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
                                             val index = timeline.clips.indexOfFirst { it.id == clip.id }
                                             SoundControls(clip, timelinePosition - TimelineModel.offset(timeline.clips, index),
                                                 timeline.clips.sumOf { it.sounds.size }, !busy, onChange = { changed ->
@@ -1650,6 +1679,7 @@ class MainActivity : ComponentActivity() {
                                                 player.pause(); compatiblePreview = it; playbackPrefs.edit().putBoolean("software-preview", it).apply(); playbackError = ""
                                             }); Text("Compatible preview decoder")
                                         }
+                                        PerformanceControls(this@MainActivity,previewDetail,!busy,TimelineModel.duration(timeline.clips),playbackError) { value->previewDetail=value;audioPrefs.edit().putString("preview-detail",value.name).apply() }
                                         TextButton(onClick = { advancedEditor = true }) { Text("Advanced source tools") }
                                     }
                                     else -> Unit
@@ -1867,7 +1897,7 @@ class MainActivity : ComponentActivity() {
                                                         FilterChip(selected = fillFrame, enabled = !busy, onClick = { fillFrame = !fillFrame; approved = false }, label = { Text(if (fillFrame) "Crop to fill" else "Fit in frame") })
                                                     }
                                                     audioWorkspace()
-                                                    MusicTrackEditor(music, TimelineModel.duration(timeline.clips), !busy && timeline.clips.isNotEmpty(),
+                                                    if(audioPage==AudioPage.MUSIC) MusicTrackEditor(music, TimelineModel.duration(timeline.clips), !busy && timeline.clips.isNotEmpty(),
                                                         onPick = { musicPicker.launch(arrayOf("audio/*")) },
                                                         onChange = { music = it; approved = false }, onMessage = { status = it })
                                                     Button(enabled = !busy && timeline.clips.isNotEmpty(), onClick = { selectedTab = StudioTab.EXPORT }) { Text("Review sequence export") }
@@ -2212,6 +2242,11 @@ class MainActivity : ComponentActivity() {
                                     }
                                     StudioTab.CAMPAIGN -> {
                 Text("Campaign Mode", style = MaterialTheme.typography.titleMedium)
+                CampaignPresetControls(filesDir,projectSnapshot,!busy,onApply={p->
+                    campaignEnabled=p.campaignBrief.enabled;campaignTags=p.campaignBrief.tags;campaignCaption=p.campaignBrief.postingCaption;campaignMin=p.campaignBrief.minimum;campaignMax=p.campaignBrief.maximum;campaignSource=p.campaignBrief.sourceSeconds
+                    captionPreset=CaptionPreset.valueOf(p.captionPreset);captionAppearance=p.captionAppearance;subtitleSize=p.subtitleSize;subtitleYellow=p.subtitleYellow;vertical=p.vertical;fillFrame=p.fillFrame;audioIntensity=p.audioIntensity
+                    sourceVerified=false;rightsVerified=false;approved=false;status="Campaign preset applied. Verify current rules, rights and edit again."
+                },onMessage={status=it})
                 OutlinedButton(enabled = !busy, onClick = { showTracker = !showTracker }) { Text(if (showTracker) "Hide submission tracker" else "Open submission and payout tracker") }
                 if (showTracker) StudioCard("", "") { CampaignTracker(filesDir, enabled = !busy) }
                 Row {

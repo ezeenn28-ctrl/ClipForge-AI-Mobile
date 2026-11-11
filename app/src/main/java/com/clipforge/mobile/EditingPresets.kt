@@ -27,7 +27,7 @@ object EditingPresets {
         val span = clip.sourceSpanMs
         val style = clip.copy(id = "template", startMs = 0, endMs = span, hook = "", caption = "", captionStartMs = 0,
             captionEndMs = span, subtitles = emptyList(), source = "file:///preset-template", sourceDurationMs = span, sourceName = "",
-            speed = 1f, volume = 1f, fadeInMs = 0, fadeOutMs = 0, voiceGain = 1f, audioProfile = ClipAudioProfile(),
+            speed = 1f, volume = 1f, fadeInMs = 0, fadeOutMs = 0, cleanupStrength = 0f, voiceGain = 1f, audioProfile = ClipAudioProfile(),
             sounds = clip.sounds.filter { it.sourceMs in clip.startMs until clip.endMs }.map { it.copy(sourceMs = it.sourceMs - clip.startMs) })
         val template = EditorProject("file:///preset-template", span, 0, span, mode = "Manual Editor", vertical = project.vertical,
             fillFrame = project.fillFrame, subtitleSize = project.subtitleSize, subtitleYellow = project.subtitleYellow,

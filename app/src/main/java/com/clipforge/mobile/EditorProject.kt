@@ -34,7 +34,7 @@ data class EditorProject(
     val captionAppearance: CaptionAppearance = CaptionAppearance(),
     val hookTone: HookTone = HookTone.FUNNY,
     val campaignBrief: CampaignBrief = CampaignBrief(),
-    val autoAudioEnabled: Boolean = false, val autoAudioHandled: List<String> = emptyList()
+    val audioIntensity: AudioIntensity = AudioIntensity.BALANCED, val autoAudioEnabled: Boolean = false, val autoAudioHandled: List<String> = emptyList()
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 

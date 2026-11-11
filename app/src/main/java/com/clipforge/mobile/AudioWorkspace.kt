@@ -22,22 +22,24 @@ object MusicCatalog {
 data class AudioUndo(val before:List<TimelineClip>,val after:List<TimelineClip>,val beforeMusic:MusicTrack?,val afterMusic:MusicTrack?){
     fun restore(clips:List<TimelineClip>,music:MusicTrack?):Pair<List<TimelineClip>,MusicTrack?> = clips.map{clip->val old=before.firstOrNull{it.id==clip.id};val applied=after.firstOrNull{it.id==clip.id};if(old!=null&&applied!=null&&clip.source==applied.source&&clip.sourceDurationMs==applied.sourceDurationMs&&clip.sounds==applied.sounds&&clip.voiceGain==applied.voiceGain&&clip.audioProfile==applied.audioProfile)clip.copy(sounds=old.sounds,voiceGain=old.voiceGain,audioProfile=old.audioProfile,volume=if(clip.volume==applied.volume)old.volume else clip.volume) else clip} to if(music==afterMusic)beforeMusic else music
 }
-@Composable fun AutoAudioControls(auto:Boolean,enabled:Boolean,canUndo:Boolean,onAuto:(Boolean)->Unit,onGenerate:(AudioIntensity,MusicMood?,Boolean,Boolean)->Unit,onUndo:()->Unit){
-    var level by remember{mutableStateOf(AudioIntensity.BALANCED)};var mood by remember{mutableStateOf<MusicMood?>(null)};var keepMusic by remember{mutableStateOf(true)};var keepSounds by remember{mutableStateOf(true)}
+@Composable fun AutoAudioControls(auto:Boolean,enabled:Boolean,canUndo:Boolean,onAuto:(Boolean)->Unit,intensity:AudioIntensity=AudioIntensity.BALANCED,onIntensity:(AudioIntensity)->Unit={},onGenerate:(AudioIntensity,MusicMood?,Boolean,Boolean)->Unit,onUndo:()->Unit){
+    var options by remember{mutableStateOf(false)};var mood by remember{mutableStateOf<MusicMood?>(null)};var keepMusic by remember{mutableStateOf(true)};var keepSounds by remember{mutableStateOf(true)}
     StudioCard("Auto Audio","Audio activity, captions and cut boundaries guide a music/SFX draft. Mood is a local heuristic, not full scene understanding."){
         Row(verticalAlignment=Alignment.CenterVertically){Switch(auto,onAuto,enabled=enabled);Text("Auto Audio for new clips",Modifier.weight(1f))}
         Text("New imports default to Auto Audio. Existing projects remain manual until enabled. Nothing is exported automatically.",style=MaterialTheme.typography.bodySmall)
-        Row(Modifier.horizontalScroll(rememberScrollState())){AudioIntensity.entries.forEach{item->FilterChip(level==item,{level=item},enabled=enabled,label={Text(item.label)})}}
+        TextButton(onClick={options=!options}){Text(if(options)"Hide audio options" else "Audio options")};if(options){
+        Row(Modifier.horizontalScroll(rememberScrollState())){AudioIntensity.entries.forEach{item->FilterChip(intensity==item,{onIntensity(item)},enabled=enabled,label={Text(item.label)})}}
         Row(Modifier.horizontalScroll(rememberScrollState())){FilterChip(mood==null,{mood=null},enabled=enabled,label={Text("Auto mood")});MusicMood.entries.forEach{item->FilterChip(mood==item,{mood=item},enabled=enabled,label={Text(item.label)})}}
         Row(verticalAlignment=Alignment.CenterVertically){Checkbox(keepMusic,{keepMusic=it},enabled=enabled);Text("Keep current music",Modifier.weight(1f))}
         Row(verticalAlignment=Alignment.CenterVertically){Checkbox(keepSounds,{keepSounds=it},enabled=enabled);Text("Keep existing sound effects",Modifier.weight(1f))}
-        Button(enabled=enabled,onClick={onGenerate(level,mood,keepMusic,keepSounds)}){Text("Generate Auto Audio draft")}
+        }
+        Button(enabled=enabled,onClick={onGenerate(intensity,mood,keepMusic,keepSounds)}){Text("Generate Auto Audio draft")}
         TextButton(enabled=enabled&&canUndo,onClick=onUndo){Text("Undo Auto Audio")}
     }
 }
 @Composable fun MusicLibraryControls(root:File,enabled:Boolean,onUse:(MusicTrack)->Unit,onPreview:(MusicTrack)->Unit,onStop:()->Unit,onMessage:(String)->Unit){
     var open by remember{mutableStateOf(false)};var query by remember{mutableStateOf("")};var favoritesOnly by remember{mutableStateOf(false)};var revision by remember{mutableIntStateOf(0)};var favorites by remember{mutableStateOf(emptySet<String>())};var tracks by remember{mutableStateOf(emptyList<MusicTrack>())};var loading by remember{mutableStateOf(false)};val scope=rememberCoroutineScope()
-    LaunchedEffect(open,revision){if(open){loading=true;try{val data=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){Triple(MusicMood.entries.map{MusicLibrary.ensure(root,it)}+MusicCatalog.list(root),MusicCatalog.favorites(root),Unit)};tracks=data.first;favorites=data.second}catch(error:Exception){onMessage(error.message?:"Music library unavailable")}finally{loading=false}}}
+    LaunchedEffect(open,revision){if(open){loading=true;try{val data=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){Triple(MusicMood.entries.flatMap{mood->(0..2).map{MusicLibrary.ensure(root,mood,it)}}+MusicCatalog.list(root),MusicCatalog.favorites(root),Unit)};tracks=data.first;favorites=data.second}catch(error:Exception){onMessage(error.message?:"Music library unavailable")}finally{loading=false}}}
     DisposableEffect(open){onDispose{onStop()}}
     OutlinedButton(enabled=enabled,onClick={open=!open;if(!open)onStop()}){Text(if(open)"Close music library" else "Music library · Original + imported")}
     if(open)StudioCard("Background music","Original procedural instrumentals. Imported tracks keep their source description; verify reuse permission."){

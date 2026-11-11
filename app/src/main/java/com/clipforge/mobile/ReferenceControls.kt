@@ -9,7 +9,8 @@ import androidx.compose.ui.unit.dp
 import java.util.UUID
 
 @Composable
-fun HookGeneratorControls(clip: TimelineClip, enabled: Boolean, initialTone: HookTone = HookTone.FUNNY, onTone: (HookTone) -> Unit = {}, onApply: (String) -> Unit) {
+fun HookGeneratorControls(clip: TimelineClip, enabled: Boolean, initialTone: HookTone = HookTone.FUNNY, onTone: (HookTone) -> Unit = {}, onPreview: () -> Unit = {}, onApply: (String) -> Unit) {
+    var cover by remember(clip.id,clip.hook) { mutableStateOf(clip.hook) }
     var description by remember(clip.id) { mutableStateOf("") }
     var tone by remember(initialTone) { mutableStateOf(initialTone) }
     var suggestions by remember(clip.id) { mutableStateOf(emptyList<String>()) }
@@ -32,6 +33,9 @@ fun HookGeneratorControls(clip: TimelineClip, enabled: Boolean, initialTone: Hoo
             message = if (suggestions.isEmpty()) "Add captions or describe the scene first." else "Tap a suggestion to apply, then edit it in Hook text."
         }) { Text("Generate Hook") }
         if (message.isNotBlank()) Text(message)
+        OutlinedTextField(cover,{cover=it.take(80)},enabled=enabled,label={Text("Editable opening / cover text")},modifier=Modifier.fillMaxWidth())
+        Row { TextButton(enabled=enabled&&cover.isNotBlank(),onClick={onApply(cover)}){Text("Apply cover text")};TextButton(enabled=enabled,onClick=onPreview){Text("Preview first 3 seconds")} }
+        Text("Cover text uses this clip's hook overlay. The three local variants are suggestions, not performance predictions.",style=MaterialTheme.typography.bodySmall)
         suggestions.forEach { hook -> OutlinedButton(enabled = enabled, onClick = { onApply(hook) }, modifier = Modifier.fillMaxWidth()) { Text(hook) } }
     }
 }

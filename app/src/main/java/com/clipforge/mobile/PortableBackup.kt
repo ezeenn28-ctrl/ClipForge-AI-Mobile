@@ -26,7 +26,7 @@ object PortableBackup {
         val root=context.filesDir
         val sources=MetadataBackup.paths(root).flatMap { path ->
             val p=props(File(root,path)); p.stringPropertyNames().filter(::sourceKey).map { p.getProperty(it) }
-        }.filter { it.startsWith("content://") || it.startsWith("file://") }.filterNot { it in listOf("file:///preset-template","file:///music-template") }.distinct()
+        }.filter { it.startsWith("content://") || it.startsWith("file://") }.filterNot { it in listOf("file:///preset-template","file:///music-template","file:///campaign-template") }.distinct()
         require(sources.size<=2000) { "Too many media files" }
         ZipOutputStream(destination.buffered()).use { zip ->
             var used=0L; val manifest=Properties().apply { setProperty("format","clipforge-portable-v1");setProperty("count",sources.size.toString()) }

@@ -1,7 +1,7 @@
 name: Auto Audio checks
 on:
   push:
-    branches: [feature/auto-audio]
+    branches: [feature/auto-audio, feature/studio-upgrade]
   workflow_dispatch:
 concurrency:
   group: auto-audio-check
