@@ -79,7 +79,17 @@ object TimelineExport {
                     val localOffset = cursor
                     val media = MediaItem.Builder().setUri(Uri.parse(track.source)).setClippingConfiguration(
                         MediaItem.ClippingConfiguration.Builder().setStartPositionMs(track.startMs).setEndPositionMs(track.startMs + length).build()).build()
-                    val processor = AudioDspProcessor { sample, ms -> sample * track.gain(track.timelineStartMs + localOffset + ms, total, activity) }
+                    // All channels share the same millisecond envelope. Avoid allocating a
+                    // TimelineClip or scanning activity for every individual PCM sample.
+                    var gainAtMs = Long.MIN_VALUE
+                    var cachedGain = 0f
+                    val processor = AudioDspProcessor { sample, ms ->
+                        if (ms != gainAtMs) {
+                            cachedGain = track.gain(track.timelineStartMs + localOffset + ms, total, activity)
+                            gainAtMs = ms
+                        }
+                        sample * cachedGain
+                    }
                     sequence.addItem(EditedMediaItem.Builder(media).setRemoveVideo(true).setEffects(Effects(listOf(processor), emptyList())).build())
                     cursor += length
                     if (!track.loop) break

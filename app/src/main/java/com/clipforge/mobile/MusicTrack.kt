@@ -30,8 +30,13 @@ data class MusicTrack(
         TimelineClip("music", 0, it, volume = volume, fadeInMs = minOf(fadeInMs, it), fadeOutMs = minOf(fadeOutMs, it))
     }
     fun gain(sequencePositionMs: Long, sequenceMs: Long, activity: List<AudioRegion> = emptyList()): Float {
-        val envelope = envelope(sequenceMs) ?: return 0f
+        val active = activeDuration(sequenceMs)
         val local = sequencePositionMs - timelineStartMs
-        return if (local < 0 || local >= envelope.durationMs) 0f else TimelineModel.audioGain(envelope, local) * if(ducking) AudioPlanning.duck(sequencePositionMs,activity,duckFloor) else 1f
+        if (local < 0 || local >= active) return 0f
+        val fadeIn = minOf(fadeInMs, active)
+        val fadeOut = minOf(fadeOutMs, active)
+        val attack = if (fadeIn > 0) (local.toDouble() / fadeIn).coerceIn(0.0, 1.0) else 1.0
+        val release = if (fadeOut > 0) ((active-local).toDouble() / fadeOut).coerceIn(0.0, 1.0) else 1.0
+        return (volume * minOf(attack, release)).toFloat() * if(ducking) AudioPlanning.duck(sequencePositionMs,activity,duckFloor) else 1f
     }
 }

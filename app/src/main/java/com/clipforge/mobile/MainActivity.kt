@@ -1049,7 +1049,7 @@ class MainActivity : ComponentActivity() {
                     }
                 },
                     onGain = { gain -> updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(voiceGain = gain) else it })) },
-                    onSeek = { ms -> player.pause(); CaptionTiming.timelineSeek(timeline.clips, clip.id, ms)?.let(seekTimeline) },
+                    onSeek = { ms -> CaptionTiming.timelineSeek(timeline.clips, clip.id, ms)?.let { seekTimeline(it); player.play() } },
                     onRemove = { gap -> runCatching { updateTimeline(timeline.edit(EditingChecks.removeSilence(timeline.clips, clip.id, gap))) }.onFailure { status = it.message.orEmpty() } })
                 val originalPeak = VoiceDsp.sample(clip.audioProfile.peak, clip.voiceGain) * clip.volume
                 val headroom = originalPeak + (music?.volume ?: 0f) * .5f + (clip.sounds.maxOfOrNull { it.volume } ?: 0f) * .42f
