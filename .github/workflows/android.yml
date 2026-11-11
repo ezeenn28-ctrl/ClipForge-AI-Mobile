@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, feature/workflow-upgrade, feature/workflow-final, feature/workflow-approval, feature/auto-audio]
+    branches: [main, feature/workflow-upgrade, feature/workflow-final, feature/workflow-approval, feature/auto-audio, feature/studio-upgrade]
   workflow_dispatch:
 concurrency:
   group: clipforge-android-${{ github.ref }}
