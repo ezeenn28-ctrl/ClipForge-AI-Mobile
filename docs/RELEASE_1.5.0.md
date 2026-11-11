@@ -23,11 +23,15 @@ Source commit: `94e390e3f588e89d097625983767ffef1aebe969`.
 | Unit and Compose tests | 183 passed; 0 failures/errors/skipped |
 | Android media integration, API 30 x86_64 emulator | 16 passed; 0 failures/errors/skipped |
 | Native Whisper integration/endurance | Passed; 240 repeated public/synthetic fixture windows |
-| Actual signed APK UI acceptance | First run: 11 checks passed, then navigation timeout before SFX; immutable retry ongoing |
+| Actual signed APK UI acceptance | 27 distinct checks passed across two runs on the unchanged APK; retry passed all 18 remaining/repeated checks |
 | Original signing identity and non-debuggable manifest | Passed |
 | Downloaded APK SHA-256 and ZIP integrity | Passed |
 
 The media tests include real MP4 decoding/export, portrait captions/styles, speed/pitch, mixed imported SFX/music, approved queue rendering, looped music with ducking across repeats, and portable restoration after deleting original fixture media. Long-source testing uses a synthetic two-hour file and repeated speech fixtures; it is not a two-hour phone performance guarantee.
+
+The first full UI run passed 11 checks, then its slow scrolling timed out before reaching the SFX control in the small editor viewport. Only test navigation was changed; the installer was not rebuilt. [Immutable retry 43006105814](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/43006105814) required the exact APK SHA-256 and passed all 18 checks in its speech/import/style/preset/queue/clean-install phase. Two checks overlap the first run, giving 27 distinct signed-APK checks. Both source hashes and the original failed navigation result are retained in Actions evidence.
+
+The retry verified automatic original music/SFX drafting on clean import, persistence after restart, and no automatic exports. It also completed sound search/audition/import/favorites, reference/style editing, presets, word-follow caption controls, recovery, reviewed queue export, and Java/native crash-log checks.
 
 Physical testing of this update on the owner's Nubia Neo 2 5G remains pending. The owner's earlier “All test works” applies to the previous release.
 
