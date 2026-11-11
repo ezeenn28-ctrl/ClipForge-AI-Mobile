@@ -326,14 +326,8 @@ def main(args):
     assert button.get("enabled") == "false", "Export was enabled without review"
     assert not exports(), "Release exported without approval"
     passed("Export remains blocked before explicit approval")
-    root = hierarchy()
-    boxes = [n for n in find(root, class_name="android.widget.CheckBox") if n.get("checkable") == "true" and n.get("checked") == "false"]
-    if not boxes:
-        locate(text="I reviewed this edit and approve its export", scroll_axis="vertical")
-        root = hierarchy()
-        boxes = [n for n in find(root, class_name="android.widget.CheckBox") if n.get("checkable") == "true" and n.get("checked") == "false"]
-    assert boxes, "Review checkbox unavailable"
-    tap_node(boxes[0])
+    # The entire labeled approval row is the app's real toggle target.
+    tap_node(locate(text="I reviewed this edit and approve its export", scroll_axis="vertical"))
     button = locate(text="Export approved MP4", scroll_axis="vertical")
     assert button.get("enabled") == "true"
     tap_node(button)
@@ -516,9 +510,7 @@ def exercise_speech_import(args):
     passed("Signed APK exposes explicit previous-autosave recovery without changing the edit on dismissal")
     tap_node(locate(text="Export"))
     locate(text="I reviewed this edit and approve its export", scroll_axis="vertical")
-    boxes = [n for n in find(hierarchy(), class_name="android.widget.CheckBox") if n.get("checkable") == "true" and n.get("checked") == "false"]
-    assert boxes, "Queue review checkbox unavailable"
-    tap_node(boxes[0])
+    tap_node(locate(text="I reviewed this edit and approve its export", scroll_axis="vertical"))
     tap_node(locate(text="Add approved edit to queue", scroll_axis="vertical"))
     locate(text="Approved snapshot; waiting for Start", scroll_axis="vertical")
     before = set(exports())
