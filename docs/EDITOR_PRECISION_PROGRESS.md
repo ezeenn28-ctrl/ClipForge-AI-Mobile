@@ -22,7 +22,15 @@ Verification checkpoint: final source b62e9cb101b8be829790b1fb744ff3b1c48d63ac p
 Build 142 run: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/43071958042
 Immutable verifier: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/43072841649
 
-18 Android integration tests and actual signed-APK acceptance are still pending at this checkpoint. Do not report them passed until their result artifacts confirm success.
+18 Android media integration tests passed, zero failures/errors/skipped. The two new media tests confirm adjacent source timestamps/speed rounding, decoded waveform, and per-cut caption position/scale/style after save/reopen and encoded export. Native Whisper completed 240/240 windows including reload.
+
+The signed release APK is built and checksum-verified:
+- Version 1.7.0, code 142; source b62e9cb101b8be829790b1fb744ff3b1c48d63ac
+- SHA-256 8874bc066c78ae124a18d1472869312ba8b37ce3507fca2ff551b0915235a6f2
+- 17,748,882 bytes, non-debuggable, original signing identity
+- [APK](https://chatgpt.com/library?file_id=libfile_c21edf9d9f9881918f6235b27523afbe&account_id=personal)
+
+Actual signed-APK full acceptance is still running at this checkpoint. Do not report it passed until result.json confirms success.
 
 Fixed earlier compilation error (missing horizontalScroll import). An FFmpeg upstream response returned HTML, so CI test tooling is now pinned to a dated GitHub release with SHA-256 validation. No signing identity changes.
 
