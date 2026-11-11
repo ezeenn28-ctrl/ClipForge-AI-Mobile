@@ -24,7 +24,8 @@ data class TimelineClip(
     val speed: Float = 1f,
     val color: ColorAdjustments = ColorAdjustments(),
     val transition: CutTransition = CutTransition(),
-    val sounds: List<ClipSound> = emptyList()
+    val sounds: List<ClipSound> = emptyList(),
+    val voiceGain: Float = 1f, val audioProfile: ClipAudioProfile = ClipAudioProfile()
 ) {
     val sourceSpanMs: Long get() = endMs - startMs
     val durationMs: Long get() = (sourceSpanMs / speed.toDouble()).roundToLong().coerceAtLeast(1)
@@ -48,6 +49,8 @@ data class TimelineClip(
         require(sounds.size <= 12 && sounds.map { it.id }.distinct().size == sounds.size) { "Up to 12 unique effects per clip" }
         sounds.forEach { it.validate(sourceDurationMs) }
         visuals.validate()
+        require(voiceGain.isFinite() && voiceGain in .25f..4f)
+        audioProfile.validate(resolvedDuration(sourceDurationMs))
         require(speed.isFinite() && speed in .5f..2f) { "Invalid clip speed" }
         color.validate()
         transition.validate()

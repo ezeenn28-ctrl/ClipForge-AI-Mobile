@@ -29,8 +29,8 @@ class ClipAudioProcessor(private val clip: TimelineClip) : BaseAudioProcessor() 
         repeat(frames) {
             val gain = TimelineModel.audioGain(clip, clip.outputOffsetMs(frame * 1000 / inputAudioFormat.sampleRate))
             repeat(inputAudioFormat.channelCount) {
-                if (sampleBytes == 4) output.putFloat((input.float * gain).coerceIn(-1f, 1f))
-                else output.putShort((input.short * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
+                if (sampleBytes == 4) output.putFloat((VoiceDsp.sample(input.float, clip.voiceGain) * gain).coerceIn(-1f, 1f))
+                else output.putShort((VoiceDsp.sample(input.short / 32768f, clip.voiceGain) * 32768f * gain).toInt().coerceIn(Short.MIN_VALUE.toInt(), Short.MAX_VALUE.toInt()).toShort())
             }
             frame++
         }
