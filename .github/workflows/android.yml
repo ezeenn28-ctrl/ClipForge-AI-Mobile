@@ -204,11 +204,11 @@ jobs:
           text = Path('release-badging.txt').read_text()
           if 'application-debuggable' in text:
               raise SystemExit('Release must not be debuggable')
-          if "versionName='1.5.0'" not in text:
+          if "versionName='1.6.0'" not in text:
               raise SystemExit('Unexpected release version')
           apk = Path('app/build/outputs/apk/release/app-release.apk')
           digest = hashlib.sha256(apk.read_bytes()).hexdigest()
-          record = dict(version='1.5.0', version_code=int(os.environ['GITHUB_RUN_NUMBER']),
+          record = dict(version='1.6.0', version_code=int(os.environ['GITHUB_RUN_NUMBER']),
                         commit=os.environ['GITHUB_SHA'], apk_sha256=digest,
                         signing_certificate_sha256=Path('.github/signing/identity.sha256').read_text().strip(),
                         debuggable=False, abi=['arm64-v8a', 'x86_64'])

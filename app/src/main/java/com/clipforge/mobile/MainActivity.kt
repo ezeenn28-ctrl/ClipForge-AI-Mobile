@@ -2244,7 +2244,7 @@ class MainActivity : ComponentActivity() {
                 Text("Campaign Mode", style = MaterialTheme.typography.titleMedium)
                 CampaignPresetControls(filesDir,projectSnapshot,!busy,onApply={p->
                     campaignEnabled=p.campaignBrief.enabled;campaignTags=p.campaignBrief.tags;campaignCaption=p.campaignBrief.postingCaption;campaignMin=p.campaignBrief.minimum;campaignMax=p.campaignBrief.maximum;campaignSource=p.campaignBrief.sourceSeconds
-                    captionPreset=CaptionPreset.valueOf(p.captionPreset);captionAppearance=p.captionAppearance;subtitleSize=p.subtitleSize;subtitleYellow=p.subtitleYellow;vertical=p.vertical;fillFrame=p.fillFrame;audioIntensity=p.audioIntensity
+                    hookTone=p.hookTone;captionPreset=CaptionPreset.valueOf(p.captionPreset);captionAppearance=p.captionAppearance;subtitleSize=p.subtitleSize;subtitleYellow=p.subtitleYellow;vertical=p.vertical;fillFrame=p.fillFrame;audioIntensity=p.audioIntensity
                     sourceVerified=false;rightsVerified=false;approved=false;status="Campaign preset applied. Verify current rules, rights and edit again."
                 },onMessage={status=it})
                 OutlinedButton(enabled = !busy, onClick = { showTracker = !showTracker }) { Text(if (showTracker) "Hide submission tracker" else "Open submission and payout tracker") }
