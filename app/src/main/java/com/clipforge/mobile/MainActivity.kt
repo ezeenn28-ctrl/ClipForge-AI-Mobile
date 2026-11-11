@@ -1108,7 +1108,9 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        val previewHeight = (screen.screenHeightDp * .42f).coerceIn(200f, 380f).dp
+        val previewHeight = if (selectedTab in listOf(StudioTab.EXPORT, StudioTab.CAPTIONS))
+            (screen.screenHeightDp * .22f).coerceIn(120f, 180f).dp
+        else (screen.screenHeightDp * .42f).coerceIn(200f, 380f).dp
         val previewPanel: @Composable (Boolean) -> Unit = { expanded ->
             val canvasHeight = if (expanded) (screen.screenHeightDp - 160).coerceAtLeast(170).dp else previewHeight
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -2077,9 +2079,9 @@ class MainActivity : ComponentActivity() {
                     campaignIssues, sourceVerified, rightsVerified, !busy,
                     onSource = { sourceVerified = it; approved = false }, onRights = { rightsVerified = it; approved = false },
                     onEdit = { selectedTab = StudioTab.CAMPAIGN })
-                Row {
-                    Checkbox(checked = approved, enabled = !busy && campaignIssues.isEmpty() && exportReady, onCheckedChange = { value -> approved = value; if (selectedDraft in drafts.indices) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
-                    Text("I reviewed this edit and approve its export", modifier = Modifier.weight(1f))
+                ExportApproval(approved, !busy && campaignIssues.isEmpty() && exportReady) { value ->
+                    approved = value
+                    if (selectedDraft in drafts.indices) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) }
                 }
                 Button(enabled = !busy && campaignIssues.isEmpty() && exportReady && approved, onClick = {
                     if (!approved || !exportReady || busy || campaignIssues.isNotEmpty()) return@Button

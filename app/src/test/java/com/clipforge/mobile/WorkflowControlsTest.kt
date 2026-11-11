@@ -49,6 +49,12 @@ class WorkflowControlsTest {
         compose.onNodeWithText("Split line into editable words").performScrollTo().performClick()
         compose.runOnIdle{assertEquals(listOf("Hello","world"),cues.map{it.text});assertEquals(4000L,cues.last().endMs)}
     }
+    @Test fun wholeReviewRowRequiresAndAcceptsAnExplicitApprovalTap() {
+        var approved by mutableStateOf(false)
+        compose.setContent { ClipForgeTheme { ExportApproval(approved,true){approved=it} } }
+        compose.onNode(isToggleable()).assertIsOff().performClick().assertIsOn()
+        compose.runOnIdle{assertTrue(approved)}
+    }
     @Test fun queueButtonsRequireReviewedSnapshotAndNeverStartOnComposition() {
         var starts=0;var adds=0
         compose.setContent { ClipForgeTheme { Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {

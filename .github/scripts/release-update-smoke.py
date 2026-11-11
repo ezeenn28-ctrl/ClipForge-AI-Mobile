@@ -60,7 +60,14 @@ def find(root, text=None, desc=None, contains=False, class_name=None):
         if class_name and node.get("class") != class_name:
             continue
         x1, y1, x2, y2 = bounds(node)
+        parent = parents.get(node)
+        while parent is not None:
+            if parent.get("scrollable") == "true":
+                px1, py1, px2, py2 = bounds(parent)
+                x1, y1, x2, y2 = max(x1, px1), max(y1, py1), min(x2, px2), min(y2, py2)
+            parent = parents.get(parent)
         if x2 > x1 and y2 > y1:
+            node.set("bounds", f"[{x1},{y1}][{x2},{y2}]")
             # Compose may leave a disabled button's TextView enabled. Its
             # clickable ancestor controls whether the action is actually usable.
             ancestor = node
@@ -320,11 +327,11 @@ def main(args):
     assert not exports(), "Release exported without approval"
     passed("Export remains blocked before explicit approval")
     root = hierarchy()
-    boxes = [n for n in root.iter("node") if n.get("checkable") == "true" and n.get("checked") == "false"]
+    boxes = [n for n in find(root, class_name="android.widget.CheckBox") if n.get("checkable") == "true" and n.get("checked") == "false"]
     if not boxes:
         locate(text="I reviewed this edit and approve its export", scroll_axis="vertical")
         root = hierarchy()
-        boxes = [n for n in root.iter("node") if n.get("checkable") == "true" and n.get("checked") == "false"]
+        boxes = [n for n in find(root, class_name="android.widget.CheckBox") if n.get("checkable") == "true" and n.get("checked") == "false"]
     assert boxes, "Review checkbox unavailable"
     tap_node(boxes[0])
     button = locate(text="Export approved MP4", scroll_axis="vertical")
@@ -509,7 +516,7 @@ def exercise_speech_import(args):
     passed("Signed APK exposes explicit previous-autosave recovery without changing the edit on dismissal")
     tap_node(locate(text="Export"))
     locate(text="I reviewed this edit and approve its export", scroll_axis="vertical")
-    boxes = [n for n in hierarchy().iter("node") if n.get("checkable") == "true" and n.get("checked") == "false"]
+    boxes = [n for n in find(hierarchy(), class_name="android.widget.CheckBox") if n.get("checkable") == "true" and n.get("checked") == "false"]
     assert boxes, "Queue review checkbox unavailable"
     tap_node(boxes[0])
     tap_node(locate(text="Add approved edit to queue", scroll_axis="vertical"))

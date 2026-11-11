@@ -1,6 +1,7 @@
 package com.clipforge.mobile
 
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
@@ -135,5 +136,15 @@ fun ExportQueueControls(items: List<QueuedExport>, enabled: Boolean, canAdd: Boo
             }
         }
         if (items.isEmpty()) Text("Queue is empty.", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+fun ExportApproval(approved: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().toggleable(value = approved, enabled = enabled,
+        role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = onChange),
+        verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = approved, onCheckedChange = null, enabled = enabled)
+        Text("I reviewed this edit and approve its export", Modifier.weight(1f))
     }
 }

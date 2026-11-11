@@ -2,7 +2,7 @@
 
 ## Focused editor
 
-Edit keeps the full timeline. Other tools show a compact cut selector and their own controls first; **Show timeline** expands the tracks when needed. The preview is slightly larger. Choosing another cut retains the current tool.
+Edit keeps the full timeline. Other tools show a compact cut selector and their own controls first; **Show timeline** expands the tracks when needed. The editing preview is slightly larger; Export and full Captions use a smaller fixed preview so review/timing controls have room. Full-screen preview remains available. Choosing another cut retains the current tool.
 
 ## Recovery
 
@@ -24,7 +24,7 @@ Speech ranking includes preceding context for short continuations, favors senten
 
 ## Export queue
 
-Preview each edit, complete any active campaign checklist and approve it. In Export, choose **Add approved edit to queue** to freeze that reviewed snapshot. Current-edit approval then clears. Add other reviewed edits, then explicitly press **Start approved queue**. Up to ten snapshots render sequentially; later editor changes do not alter an already queued snapshot.
+Preview each edit, complete any active campaign checklist and approve it. In Export, choose **Add approved edit to queue** to freeze that reviewed snapshot. The approval row is tappable across its full width. Current-edit approval then clears. Add other reviewed edits, then explicitly press **Start approved queue**. Up to ten snapshots render sequentially; later editor changes do not alter an already queued snapshot.
 
 Keep the app open while the queue runs. **Stop queue**, leaving the app or process interruption stops unfinished processing. Unfinished/restored snapshots require **Load for review** (which creates an independent draft), approval and re-adding before another attempt. Completed entries retain their MP4 link. Queue loading never starts an export automatically. Missing source/audio files or a failed render stop the batch. Open completed MP4s from the queue or Gallery. Remove old queue entries when finished.
 
