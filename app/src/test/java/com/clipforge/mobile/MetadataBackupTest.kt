@@ -35,4 +35,22 @@ class MetadataBackupTest {
             assertEquals("keep", existing.readText())
         } finally { root.deleteRecursively() }
     }
+    @Test fun extraCatalogsRoundTripAndQueueMustBeReviewedAgain() {
+        val root=Files.createTempDirectory("audio-backup").toFile();val destination=Files.createTempDirectory("audio-restore").toFile()
+        try {
+            val clip=TimelineClip("a",0,5000,voiceGain=1.5f)
+            val p=EditorProject("file:///video",5000,0,5000,timelineMode=true,timelineClips=listOf(clip))
+            EditingPresets.save(root,"Audio preset",p,clip)
+            val music=MusicCatalog.save(root,MusicTrack("file:///music.wav","Imported",5000,loop=true))
+            MusicCatalog.toggle(root,music)
+            val queued=ExportQueue.add(root,p,true)
+            ExportQueue.record(destination,queued.copy(status=QueueStatus.COMPLETE,uri="content://old/export"))
+            val bytes=ByteArrayOutputStream().also { MetadataBackup.create(root,it) }.toByteArray()
+            MetadataBackup.restore(destination,MetadataBackup.stage(destination,ByteArrayInputStream(bytes)))
+            assertEquals(1,EditingPresets.list(destination).size)
+            assertEquals(music,MusicCatalog.list(destination).single())
+            assertTrue(MusicCatalog.id(music) in MusicCatalog.favorites(destination))
+            assertEquals(QueueStatus.REVIEW,ExportQueue.list(destination).single().status)
+        }finally{root.deleteRecursively();destination.deleteRecursively()}
+    }
 }

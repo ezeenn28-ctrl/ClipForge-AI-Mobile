@@ -50,7 +50,8 @@ object PortableBackup {
             ZipFile(temp).use { zip ->
                 val manifestEntry=zip.getEntry("portable.properties") ?: return temp.inputStream().use { MetadataBackup.stage(context.filesDir,it) }
                 require(manifestEntry.size in 1..2_000_000) { "Invalid portable manifest" }
-                val manifest=Properties().apply { zip.getInputStream(manifestEntry).reader().use { load(it) } }
+                val manifestBytes=ByteArrayOutputStream().also { out -> zip.getInputStream(manifestEntry).use { copy(it,out,2_000_000) } }.toByteArray()
+                val manifest=Properties().apply { manifestBytes.inputStream().reader().use { load(it) } }
                 require(manifest.getProperty("format")=="clipforge-portable-v1")
                 val count=manifest.getProperty("count").toInt();require(count in 0..2000)
                 val expected=(0 until count).map { "media/$it.bin" }.toSet()+setOf("settings.zip","portable.properties")
@@ -69,7 +70,7 @@ object PortableBackup {
                     val file=File(work,"media/$index.bin");val digest=MessageDigest.getInstance("SHA-256")
                     file.inputStream().use { copy(it,object : OutputStream() { override fun write(value: Int) {} override fun write(buffer: ByteArray, offset: Int, length: Int) {} },LIMIT,digest) }
                     require(digest.digest().joinToString("") { "%02x".format(it) }==manifest.getProperty("$index.sha256")) { "Media checksum mismatch" }
-                    MediaAssets.inspect(context,Uri.fromFile(file),false)
+                    runCatching { MediaAssets.inspect(context,Uri.fromFile(file),false) }.getOrElse { MediaAssets.inspect(context,Uri.fromFile(file),true) }
                     val path="portable-media/${UUID.randomUUID().toString().replace("-","")}.bin"
                     file.copyTo(File(result.directory,path).apply { parentFile.mkdirs() })
                     mapping[source]=Uri.fromFile(File(context.filesDir,path)).toString();added+=path

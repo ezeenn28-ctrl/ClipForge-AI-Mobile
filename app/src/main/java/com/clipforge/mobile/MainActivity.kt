@@ -1417,6 +1417,7 @@ class MainActivity : ComponentActivity() {
                                         SpeechJobs.reloadAfterRestore(applicationContext)
                                     }
                                 }
+                                latestBackupProject.set(null)
                                 pendingBackup = null
                                 recreate()
                             } catch (error: Exception) { pendingBackup = null; metadataBusy = false; status = "Restore failed: ${error.message}" }

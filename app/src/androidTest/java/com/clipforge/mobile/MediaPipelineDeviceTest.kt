@@ -672,4 +672,49 @@ class MediaPipelineDeviceTest {
         }
     }
 
+    @Test fun loopedMusicExportDucksDialogueAndEndsWithPicture() {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val source=fixture("landscape.mp4");val music=fixture("music.wav")
+        val clip=TimelineClip("audio-test",0,8000,volume=.01f,voiceGain=1.5f,
+            audioProfile=ClipAudioProfile(true,.1f,.5f,listOf(AudioRegion(1000,2000),AudioRegion(4000,5000))))
+        val track=MusicTrack(Uri.fromFile(music).toString(),"Looped tone",3000,volume=.8f,fadeInMs=0,fadeOutMs=0,loop=true,ducking=true,duckFloor=.25f)
+        val output=File(context.cacheDir,"auto-audio-mix.mp4").apply{delete()};val wav=File(context.cacheDir,"auto-audio-mix.wav")
+        val done=CountDownLatch(1);val failure=AtomicReference<Throwable?>(null);lateinit var transformer:Transformer
+        val composition=TimelineExport.composition(Uri.fromFile(source),listOf(clip),true,false,false,39f,Color.WHITE,track)
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            transformer=Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory()).addListener(object:Transformer.Listener {
+                override fun onCompleted(c:Composition,result:ExportResult){done.countDown()}
+                override fun onError(c:Composition,result:ExportResult,error:ExportException){failure.set(error);done.countDown()}
+            }).build();transformer.start(composition,output.path)
+        }
+        try {
+            assertTrue("Auto Audio export timeout",done.await(180,TimeUnit.SECONDS));failure.get()?.let{throw AssertionError("Auto Audio export failed",it)}
+            val retriever=MediaMetadataRetriever()
+            try {retriever.setDataSource(output.path);assertEquals(8000.0,retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toDouble(),180.0)}finally{retriever.release()}
+            OfflineAudioPreparer.extractWav(context,Uri.fromFile(output),wav)
+            val bytes=wav.readBytes();val data=java.nio.ByteBuffer.wrap(bytes).order(java.nio.ByteOrder.LITTLE_ENDIAN);val rate=data.getInt(24)
+            fun rms(from:Int,to:Int):Double {val first=from*rate/1000;val last=minOf(to*rate/1000,(bytes.size-44)/2);assertTrue(last>first);var sum=0.0;for(n in first until last){val x=data.getShort(44+n*2).toDouble();sum+=x*x};return kotlin.math.sqrt(sum/(last-first))}
+            val loud=rms(2500,2800);assertTrue("Music missing",loud>1000)
+            assertTrue("First dialogue was not ducked",rms(1300,1800)<loud*.4)
+            assertTrue("Repeated music lost ducking",rms(4300,4800)<loud*.4)
+            assertTrue("Music did not loop past six seconds",rms(6500,7000)>loud*.8)
+        }finally{InstrumentationRegistry.getInstrumentation().runOnMainSync{transformer.cancel()};output.delete();wav.delete()}
+    }
+    @Test fun portableBackupReopensEmbeddedVideoAndMusicAfterOriginalRemoval() {
+        val original=InstrumentationRegistry.getInstrumentation().targetContext
+        val folder=File(original.cacheDir,"portable-test-${System.nanoTime()}").apply{mkdirs()}
+        val context=object:android.content.ContextWrapper(original){override fun getFilesDir()=File(folder,"files").apply{mkdirs()};override fun getCacheDir()=File(folder,"cache").apply{mkdirs()}}
+        try {
+            val source=fixture("landscape.mp4").copyTo(File(folder,"input.mp4"));val music=fixture("music.wav").copyTo(File(folder,"music.wav"))
+            val project=EditorProject(Uri.fromFile(source).toString(),8000,0,4000,music=MusicTrack(Uri.fromFile(music).toString(),"Portable music",3000,loop=true))
+            ProjectStore.write(File(context.filesDir,"projects/last-project.properties"),project)
+            val bytes=java.io.ByteArrayOutputStream().also{PortableBackup.create(context,it)}.toByteArray()
+            source.delete();music.delete()
+            val staged=PortableBackup.stage(context,java.io.ByteArrayInputStream(bytes));assertEquals(2,staged.mediaCount)
+            MetadataBackup.restore(context.filesDir,staged)
+            val restored=ProjectStore.read(File(context.filesDir,"projects/last-project.properties"))!!
+            MediaAssets.inspect(context,Uri.parse(restored.source),true);MediaAssets.inspect(context,Uri.parse(restored.music!!.source),false)
+            assertNotEquals(project.source,restored.source)
+        }finally{folder.deleteRecursively()}
+    }
 }
