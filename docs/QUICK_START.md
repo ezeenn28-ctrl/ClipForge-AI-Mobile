@@ -1,8 +1,8 @@
-# ClipForge AI 1.4.0 — personal Android release
+# ClipForge AI 1.6.0 — personal Android release
 
 ## Install
 
-Download [ClipForge-AI-1.4.0-universal.apk](https://chatgpt.com/library?file_id=libfile_6b37b0eaf9308191806a7297fbfc0b94&account_id=personal).
+Download the attached **ClipForge-AI-1.6.0-universal.apk** (Build 136).
 It includes ARM64 for the Nubia Neo 2 and x86_64 for acceptance testing.
 Install as an update. Keep the existing app installed so its
 projects and saved media grants remain available. This release retains the
@@ -18,7 +18,7 @@ Build 94 signing certificate; its version code increases with the verified build
    setting is shared across the outgoing/incoming halves and shortened for tiny cuts.
 5. Use **Captions** to download the offline model once, generate captions and
    correct the words. English, Filipino and Taglish accuracy varies; review the result.
-6. Use **Audio** for the original sound and one local music bed. Music keeps its
+6. Use **Audio → Music** for Auto Audio and one music bed. Music keeps its
    own speed and timeline placement. Original-audio fades remain separate from
    the video boundary transition.
 7. Play and seek through the full edit. Export opens the review page; explicitly
@@ -33,9 +33,18 @@ Open **Format** for eight reference templates plus Original canvas. Open **Effec
 
 Open **More** for saved editing presets and previous-autosave recovery. **Captions** adds language hints, editable line/word timings and estimated word-follow highlights. The Export page shows project-local campaign checks and an explicitly started approved export queue. See [Workflow guide](WORKFLOW_UPGRADE.md) for operation and limits.
 
+## Studio audio and opening text
+
+- **Music** has 21 original procedural choices: three variations for each of seven moods. Search, preview with the clip, favorite or import local music.
+- **SFX** adds sounds at the playhead and controls cue timing/volume.
+- **Voice** offers optional speech cleanup plus audio analysis and leveling. Cleanup reduces rumble, gates soft noise and compresses gently; listen for quiet words. It is not voice isolation.
+- **Review** lets you keep, replace or remove individual cues and the music bed. Replacing a cue cycles the built-in sound type while retaining its anchor and volume.
+- **Text** offers three local hook ideas, editable opening/cover text and **Preview first 3 seconds**. Apply edited text before previewing. This preview button does not set a three-second text duration in the export.
+- **More → Device performance and diagnostics** offers Light/Balanced/Sharp preview detail, storage/RAM/battery status and a diagnostic share sheet. The diagnostic excludes media, project names, paths and transcript. Light lowers preview overlay resolution; source decoding and export quality do not change.
+
 ## More sound effects
 
-Open **Audio → Sound library · 18+** for built-in search/audition, favorites, local MP3 import and the Myinstants tab. Download an individual sound, preview it in **My sounds**, choose **Use sound**, then **Add SFX at playhead**. See [Sound library guide](SOUND_LIBRARY.md) for limits and source permissions.
+Open **Audio → SFX → Sound library · 18+** for built-in search/audition, favorites, local MP3 import and the Myinstants tab. Download an individual sound, preview it in **My sounds**, choose **Use sound**, then **Add SFX at playhead**. See [Sound library guide](SOUND_LIBRARY.md) for limits and source permissions.
 
 ## Find clips and long sources
 
@@ -53,10 +62,13 @@ unlimited processing. A pause finishes the current audio window before stopping.
 
 Edits autosave locally. Rename projects in **More** and reopen them from Home.
 **Save metadata backup** includes projects, campaign records and speech progress.
-It excludes source video/music, model weights and media permissions. Preserve
+The optional portable-media backup can include accessible local media (1 GB limit). Metadata-only backups exclude source video/music, model weights and media permissions. Preserve
 your original files separately. Restored projects always require a fresh review.
 
 ## Campaign Mode
+
+Save a named campaign preset in **More → Campaign tools**. Presets retain framing, caption appearance, hook tone, duration/tag rules and audio intensity. Applying one clears source/rights confirmations and export approval; verify the current campaign rules again. Presets are included in metadata backups.
+
 
 Record submissions, status, platform-reported views, audience percentages, CPM,
 payout thresholds and actual paid amounts. The tracker supports TikTok, Instagram,
@@ -71,7 +83,7 @@ rights or duplicate-submission eligibility; enter and verify those yourself.
 - Up to 60 cuts and six hours of output, one music track, 1080p portrait/landscape.
 - Boundary transitions are dip-to-black and zoom cuts. Overlapping video tracks,
   cross-dissolves, speed ramps, subject tracking, background removal and advanced
-  audio cleanup are future additions.
+  voice isolation are future additions.
 - SDR color controls are tested; device-specific HDR matching is not promised.
 - No cloud provider, required account, ads or paid service is included.
 

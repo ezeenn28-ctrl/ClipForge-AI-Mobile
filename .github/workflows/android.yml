@@ -111,7 +111,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ClipForge-baseline94-compatibility-test-only
-          github-token: ${{ secrets.GITHUB_TOKEN }}
           path: build/baseline94-test-only.apk
           retention-days: 7
           if-no-files-found: error
@@ -278,8 +277,7 @@ jobs:
           gradle-version: '8.9'
       - name: Install synthetic fixture generator
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          source .github/scripts/prepare-media-tools.sh
       - name: Prepare test-only signing identity and fixtures
         run: |
           mkdir -p "$HOME/.android"
@@ -359,8 +357,7 @@ jobs:
           key: whisper-tiny-be07e048e1e599ad-v1
       - name: Prepare synthetic media and screenshot tools
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg python3-pil
+          source .github/scripts/prepare-media-tools.sh
           bash .github/scripts/media-fixtures.sh
           mkdir -p .ci-models
           if [ ! -s .ci-models/ggml-tiny.bin ]; then
