@@ -33,11 +33,13 @@ data class EditorProject(
     val projectName: String = "",
     val captionAppearance: CaptionAppearance = CaptionAppearance(),
     val hookTone: HookTone = HookTone.FUNNY,
-    val campaignBrief: CampaignBrief = CampaignBrief()
+    val campaignBrief: CampaignBrief = CampaignBrief(),
+    val autoAudioEnabled: Boolean = false, val autoAudioHandled: List<String> = emptyList()
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 
     fun validate() {
+        require(autoAudioHandled.size<=500 && autoAudioHandled.all { it.matches(Regex("[A-Za-z0-9-]{1,80}")) })
         captionAppearance.validate()
         campaignBrief.validate()
         require(projectId.isEmpty() || projectId.matches(Regex("[a-f0-9]{32}"))) { "Invalid project identity" }

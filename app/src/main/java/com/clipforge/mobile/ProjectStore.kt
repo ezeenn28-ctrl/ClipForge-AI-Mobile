@@ -20,6 +20,7 @@ object ProjectStore {
             }
         }
         put("format", "clipforge-project-v1")
+        put("autoAudio.enabled",safe.autoAudioEnabled);put("autoAudio.handled",safe.autoAudioHandled.joinToString(","))
         put("hookTone", safe.hookTone.name)
         put("brief.enabled", safe.campaignBrief.enabled); put("brief.tags", safe.campaignBrief.tags)
         put("brief.caption", safe.campaignBrief.postingCaption); put("brief.minimum", safe.campaignBrief.minimum)
@@ -66,6 +67,7 @@ object ProjectStore {
             val v = clip.visuals
             put("timeline.$i.speed", clip.speed)
             put("timeline.$i.voiceGain",clip.voiceGain);put("timeline.$i.audio.analyzed",clip.audioProfile.analyzed);put("timeline.$i.audio.rms",clip.audioProfile.rms);put("timeline.$i.audio.peak",clip.audioProfile.peak)
+            put("timeline.$i.audio.sampled",clip.audioProfile.sampled);put("timeline.$i.audio.visual",clip.audioProfile.visualActivity)
             put("timeline.$i.audio.activity",clip.audioProfile.activity.joinToString(","){"${it.startMs}:${it.endMs}"})
             put("timeline.$i.transition.kind", clip.transition.kind.name); put("timeline.$i.transition.duration", clip.transition.durationMs)
             put("timeline.$i.color.brightness", clip.color.brightness); put("timeline.$i.color.contrast", clip.color.contrast)
@@ -172,7 +174,7 @@ object ProjectStore {
                     data.getProperty("timeline.$i.color.saturation", "1").toFloat(),
                     data.getProperty("timeline.$i.color.warmth", "0").toFloat()),
                 sounds = sounds, voiceGain=data.getProperty("timeline.$i.voiceGain","1").toFloat(),
-                audioProfile=ClipAudioProfile(data.getProperty("timeline.$i.audio.analyzed","false").toBooleanStrict(),data.getProperty("timeline.$i.audio.rms","0").toFloat(),data.getProperty("timeline.$i.audio.peak","0").toFloat(),data.getProperty("timeline.$i.audio.activity","").split(',').filter(String::isNotBlank).map{entry->val pair=entry.split(':');require(pair.size==2);AudioRegion(pair[0].toLong(),pair[1].toLong())}),
+                audioProfile=ClipAudioProfile(data.getProperty("timeline.$i.audio.analyzed","false").toBooleanStrict(),data.getProperty("timeline.$i.audio.rms","0").toFloat(),data.getProperty("timeline.$i.audio.peak","0").toFloat(),data.getProperty("timeline.$i.audio.activity","").split(',').filter(String::isNotBlank).map{entry->val pair=entry.split(':');require(pair.size==2);AudioRegion(pair[0].toLong(),pair[1].toLong())},data.getProperty("timeline.$i.audio.sampled","false").toBooleanStrict(),data.getProperty("timeline.$i.audio.visual","-1").toInt()),
                 transition = CutTransition(CutTransitionKind.valueOf(data.getProperty("timeline.$i.transition.kind", "CUT")),
                     data.getProperty("timeline.$i.transition.duration", "400").toLong()))
         }
@@ -189,6 +191,7 @@ object ProjectStore {
             currentTimelineId = data.getProperty("timeline.current", ""), music = music, captionPreset = data.getProperty("captionPreset", "BOLD"),
             projectId = data.getProperty("project.id", ""), projectName = data.getProperty("project.name", ""),
             hookTone = HookTone.valueOf(data.getProperty("hookTone", "FUNNY")),
+            autoAudioEnabled=data.getProperty("autoAudio.enabled","false").toBooleanStrict(),autoAudioHandled=data.getProperty("autoAudio.handled","").split(',').filter(String::isNotBlank),
             campaignBrief = CampaignBrief(data.getProperty("brief.enabled", "false").toBooleanStrict(),
                 data.getProperty("brief.tags", ""), data.getProperty("brief.caption", ""), data.getProperty("brief.minimum", "15"),
                 data.getProperty("brief.maximum", "30"), data.getProperty("brief.source", "0")),

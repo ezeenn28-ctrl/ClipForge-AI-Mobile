@@ -16,6 +16,15 @@ fun MusicTrackEditor(track: MusicTrack?, sequenceMs: Long, enabled: Boolean,
         OutlinedButton(enabled = enabled, onClick = onPick) { Text(if (track == null) "Add local music" else "Replace or relink music") }
         if (track != null) {
             Text(track.name, maxLines = 2)
+            Text(track.origin,style=MaterialTheme.typography.bodySmall)
+            Row(horizontalArrangement=Arrangement.spacedBy(6.dp)) {
+                FilterChip(selected=track.loop,enabled=enabled,onClick={
+                    val next=track.copy(loop=!track.loop)
+                    runCatching { next.validate();require(!next.loop || (next.activeDuration(sequenceMs)+next.endMs-next.startMs-1)/(next.endMs-next.startMs)<=1500);onChange(next) }.onFailure { onMessage(it.message?:"Choose a longer music range") }
+                },label={Text("Fit / loop music")})
+                FilterChip(selected=track.ducking,enabled=enabled,onClick={onChange(track.copy(ducking=!track.ducking))},label={Text("Dialogue ducking")})
+            }
+            if(track.ducking){Text("Music level under dialogue · ${(track.duckFloor*100).toInt()}%");Slider(track.duckFloor,{onChange(track.copy(duckFloor=it))},enabled=enabled,valueRange=.05f.. .6f)}
             val accent = MaterialTheme.colorScheme.primary
             val background = MaterialTheme.colorScheme.surfaceVariant
             Canvas(Modifier.fillMaxWidth().height(24.dp)) {
@@ -42,13 +51,14 @@ fun MusicTrackEditor(track: MusicTrack?, sequenceMs: Long, enabled: Boolean,
                     onChange(changed)
                 } catch (error: Exception) { onMessage(error.message ?: "Invalid music range") }
             }) { Text("Apply music timing") }
+            if (track.bpm > 0 || track.beats.isNotEmpty()) Text("${track.beatMarkers(sequenceMs).size} beat/onset guides · pink timeline ticks (up to 300)",style=MaterialTheme.typography.bodySmall)
             Text("Music volume · ${(track.volume * 100).toInt()}%")
             Slider(value = track.volume, onValueChange = { onChange(track.copy(volume = it)) }, valueRange = 0f..1f, enabled = enabled)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(selected = track.fadeInMs > 0, onClick = { onChange(track.copy(fadeInMs = if (track.fadeInMs > 0) 0 else 1000)) }, enabled = enabled, label = { Text("Music fade in") })
                 FilterChip(selected = track.fadeOutMs > 0, onClick = { onChange(track.copy(fadeOutMs = if (track.fadeOutMs > 0) 0 else 1000)) }, enabled = enabled, label = { Text("Music fade out") })
             }
-            Text("Music plays once and stops at its trim or the sequence end. It does not extend the video.", style = MaterialTheme.typography.bodySmall)
+            Text("Fit/loop repeats the selected range and ends with the video. Original instrumentals have short seam fades. Preview the joins of imported tracks.", style = MaterialTheme.typography.bodySmall)
             TextButton(enabled = enabled, onClick = { onChange(null) }) { Text("Remove music") }
         }
     }

@@ -65,15 +65,25 @@ object TimelineExport {
         val sequences = mutableListOf(EditedMediaItemSequence.Builder(items).build())
         music?.let { track ->
             track.validate()
-            track.envelope(TimelineModel.duration(clips))?.let { envelope ->
-                val media = MediaItem.Builder().setUri(Uri.parse(track.source)).setClippingConfiguration(
-                    MediaItem.ClippingConfiguration.Builder().setStartPositionMs(track.startMs)
-                        .setEndPositionMs(track.startMs + envelope.durationMs).build()).build()
-                val audio = EditedMediaItem.Builder(media).setRemoveVideo(true)
-                    .setEffects(Effects(listOf(ClipAudioProcessor(envelope)), emptyList())).build()
+            val total = TimelineModel.duration(clips)
+            val active = track.activeDuration(total)
+            if (active > 0) {
+                val period = track.endMs - track.startMs
+                require(!track.loop || (active + period - 1) / period <= 1500) { "Music loop is too short for this timeline" }
+                val activity = if (mute) emptyList() else AudioPlanning.activity(clips)
                 val sequence = EditedMediaItemSequence.Builder()
                 if (track.timelineStartMs > 0) sequence.addGap(track.timelineStartMs * 1000)
-                sequence.addItem(audio)
+                var cursor = 0L
+                while (cursor < active) {
+                    val length = minOf(period, active - cursor)
+                    val localOffset = cursor
+                    val media = MediaItem.Builder().setUri(Uri.parse(track.source)).setClippingConfiguration(
+                        MediaItem.ClippingConfiguration.Builder().setStartPositionMs(track.startMs).setEndPositionMs(track.startMs + length).build()).build()
+                    val processor = AudioDspProcessor { sample, ms -> sample * track.gain(track.timelineStartMs + localOffset + ms, total, activity) }
+                    sequence.addItem(EditedMediaItem.Builder(media).setRemoveVideo(true).setEffects(Effects(listOf(processor), emptyList())).build())
+                    cursor += length
+                    if (!track.loop) break
+                }
                 sequences.add(sequence.build())
             }
         }

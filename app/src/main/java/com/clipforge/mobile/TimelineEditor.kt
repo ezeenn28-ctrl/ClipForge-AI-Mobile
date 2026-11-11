@@ -67,8 +67,13 @@ fun TimelineEditor(
     val accent = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val outline = MaterialTheme.colorScheme.outlineVariant
+    val beatMarkers = remember(music, total) { music?.beatMarkers(total).orEmpty() }
     fun scrub(time: Long) {
-        seekRequests.trySend(TimelineTouch.seek(clips, time, snapping, minOf(150L, (8 / scale).toLong())))
+        val tolerance = minOf(150L, (8 / scale).toLong())
+        val base = TimelineTouch.seek(clips, time, snapping, tolerance)
+        val beat = if (snapping) beatMarkers.minByOrNull { kotlin.math.abs(it-time) } else null
+        val target = if (beat != null && kotlin.math.abs(beat-time)<=tolerance && (base==time || kotlin.math.abs(beat-time)<kotlin.math.abs(base-time))) beat else base
+        seekRequests.trySend(target)
     }
     fun edit(next: List<TimelineClip>) {
         try { TimelineModel.validate(next, sourceDurationMs); onHistory(history.edit(next)) }
@@ -129,6 +134,10 @@ fun TimelineEditor(
                     val tickSeconds = intervals.firstOrNull { it * scale * 1000 >= 12 } ?: 3600
                     val labelSeconds = intervals.firstOrNull { it >= tickSeconds && it % tickSeconds == 0 && it * scale * 1000 >= 64 } ?: 3600
                     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = android.graphics.Color.LTGRAY; textSize = 9.sp.toPx() }
+                    beatMarkers.forEach { beat ->
+                        val x = beat * scale * density.density
+                        drawLine(Color(0xFFFF8AD8), Offset(x, size.height - 13.dp.toPx()), Offset(x, size.height), 2.dp.toPx())
+                    }
                     var second = 0L
                     while (second * 1000 <= total) {
                         val x = second * 1000 * scale * density.density
