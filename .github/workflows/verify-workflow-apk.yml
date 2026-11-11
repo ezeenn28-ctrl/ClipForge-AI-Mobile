@@ -39,7 +39,7 @@ jobs:
           key: whisper-tiny-be07e048e1e599ad-v1
       - name: Prepare synthetic media and screenshot tools
         run: |
-          bash .github/scripts/prepare-media-tools.sh
+          source .github/scripts/prepare-media-tools.sh
           bash .github/scripts/media-fixtures.sh
           mkdir -p .ci-models
           if [ ! -s .ci-models/ggml-tiny.bin ]; then
@@ -94,7 +94,7 @@ jobs:
           gradle-version: '8.9'
       - name: Install synthetic fixture generator
         run: |
-          bash .github/scripts/prepare-media-tools.sh
+          source .github/scripts/prepare-media-tools.sh
       - name: Prepare test-only signing identity and fixtures
         run: |
           mkdir -p "$HOME/.android"
