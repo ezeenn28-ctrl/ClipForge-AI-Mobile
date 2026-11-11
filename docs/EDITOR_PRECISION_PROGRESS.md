@@ -17,7 +17,12 @@ All ten requested areas are implemented:
 
 Additional state persists via backward-compatible optional project keys. Restores do not restore export approval. Derived waveform data and preview-only controls are transient.
 
-Verification checkpoint: 202 unit/Compose tests passed on the preceding editor commit. Final suite adds a changed-speed frame regression (203 expected); direct resize and edge-handle tests were strengthened. 18 Android integration tests and actual signed-APK acceptance are pending for the final build. Do not report these pending tests passed.
+Verification checkpoint: final source b62e9cb101b8be829790b1fb744ff3b1c48d63ac passed 203 unit/Compose tests, zero failures/errors/skipped. This includes changed-speed frame rounding, two-finger pinch, direct drag/resize at the preview edge and music/cut undo. Unit run: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/43071958015
+
+Build 142 run: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/43071958042
+Immutable verifier: https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/43072841649
+
+18 Android integration tests and actual signed-APK acceptance are still pending at this checkpoint. Do not report them passed until their result artifacts confirm success.
 
 Fixed earlier compilation error (missing horizontalScroll import). An FFmpeg upstream response returned HTML, so CI test tooling is now pinned to a dated GitHub release with SHA-256 validation. No signing identity changes.
 
