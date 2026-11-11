@@ -18,6 +18,7 @@ class WorkflowUpgradeTest {
             assertEquals("Before", ProjectStore.previous(file)!!.projectName)
             file.writeText("truncated")
             assertEquals("Before", ProjectStore.read(file)!!.projectName)
+            assertTrue(ProjectStore.readWithStatus(file).second)
             ProjectStore.write(file, project("Recovered"))
             assertEquals("Before", ProjectStore.previous(file)!!.projectName)
             assertEquals("Recovered", ProjectStore.read(file)!!.projectName)
@@ -83,6 +84,9 @@ class WorkflowUpgradeTest {
             assertThrows(IllegalArgumentException::class.java){ExportQueue.add(root,project(),false)}
             val item=ExportQueue.add(root,project("Approved"),true)
             assertEquals(QueueStatus.READY,item.status)
+            val review=ExportQueue.forReview(item)
+            assertNotEquals(item.project.projectId,review.projectId)
+            assertEquals(item.project.timelineClips,review.timelineClips)
             val changed=project("Later edits");assertNotEquals(changed.projectName,item.project.projectName)
             assertEquals("Approved",ExportQueue.list(root).single().project.projectName)
             assertEquals(QueueStatus.REVIEW,ExportQueue.list(root).single().status)

@@ -320,6 +320,7 @@ class MainActivity : ComponentActivity() {
         var hookTone by remember { mutableStateOf(HookTone.FUNNY) }
         var speechLanguage by remember { mutableStateOf("auto") }
         var recoveryCandidate by remember { mutableStateOf<EditorProject?>(null) }
+        var recoveryNotice by remember { mutableStateOf(false) }
         LaunchedEffect(Unit) {
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 ExportQueue.list(filesDir) to EditingPresets.list(filesDir)
@@ -878,7 +879,8 @@ class MainActivity : ComponentActivity() {
         val projectFile = remember { File(filesDir, "projects/last-project.properties") }
         LaunchedEffect(Unit) {
             try {
-                val saved = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ProjectStore.read(projectFile) }
+                val restored = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ProjectStore.readWithStatus(projectFile) }
+                val saved = restored.first
                 if (saved != null) {
                     pendingRelink = saved
                     val source = Uri.parse(saved.source)
@@ -887,6 +889,7 @@ class MainActivity : ComponentActivity() {
                         contentResolver.openAssetFileDescriptor(source, "r")?.use { } ?: error("Saved source is unavailable")
                     }
                     applySavedProject(saved, source)
+                    recoveryNotice = restored.second
                 } else projectMessage = "Edits save locally after a short pause."
             } catch (cancelled: kotlinx.coroutines.CancellationException) {
                 throw cancelled
@@ -1230,6 +1233,10 @@ class MainActivity : ComponentActivity() {
             approved = false
             drafts = drafts.map { it.copy(approved = false) }
         }
+        if (recoveryNotice) AlertDialog(onDismissRequest = { recoveryNotice = false },
+            title = { Text("Previous autosave recovered") },
+            text = { Text("The newest project snapshot was missing or unreadable. ClipForge opened its previous validated save. Review recent changes before exporting.") },
+            confirmButton = { TextButton(onClick = { recoveryNotice = false }) { Text("Review recovered edit") } })
         recoveryCandidate?.let { saved ->
             AlertDialog(onDismissRequest = { recoveryCandidate = null }, title = { Text("Recover previous autosave?") },
                 text = { Text("Restore the previous saved edit for this project. Your current save becomes the recovery generation after autosave. Export approval stays cleared.") },
@@ -2189,8 +2196,18 @@ class MainActivity : ComponentActivity() {
                         }
                     }, onStop = { queueJob?.cancel(); status = "Queue stopped. Unfinished snapshots need review." },
                     onReview = { item ->
-                        applySavedProject(item.project, Uri.parse(item.project.source)); selectedTab = StudioTab.STUDIO; studioEditing = true
-                        status = "Queue snapshot loaded. Preview and approve, then add it again. Remove the old queue entry when finished."
+                        metadataBusy = true
+                        exportScope.launch {
+                            try {
+                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    MetadataGate.lock.withLock { latestBackupProject.get()?.let { ProjectCatalog.save(filesDir, it) } }
+                                    contentResolver.openAssetFileDescriptor(Uri.parse(item.project.source), "r")?.use { } ?: error("Queued source is unavailable")
+                                }
+                                applySavedProject(ExportQueue.forReview(item), Uri.parse(item.project.source)); selectedTab = StudioTab.STUDIO; studioEditing = true
+                                status = "Queue snapshot opened as an independent draft. Review and approve before re-adding it; remove the old queue entry."
+                            } catch (error: Exception) { status = "Queue review failed: ${error.message}" }
+                            finally { metadataBusy = false }
+                        }
                     }, onRemove = { item ->
                         metadataBusy = true
                         exportScope.launch {

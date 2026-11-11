@@ -27,6 +27,8 @@ object ExportQueue {
             captionEndMs = p.drafts.getOrNull(p.selectedDraft)?.captionEndMs ?: p.endMs, effect = p.effect,
             subtitles = if (p.selectedDraft >= 0 && p.subtitleDraftIndex == p.selectedDraft) p.currentSegments else emptyList(),
             source = p.source, sourceDurationMs = p.durationMs))
+    fun forReview(item: QueuedExport): EditorProject = item.project.reviewedAgain().copy(
+        projectId = ProjectCatalog.newId(), projectName = (item.project.projectName.take(60) + " queue review").trim()).also { it.validate() }
     @Synchronized fun add(root: File, project: EditorProject, approved: Boolean): QueuedExport {
         require(approved) { "Review and approve before adding to the queue" }
         require(list(root).size < LIMIT) { "Queue holds up to $LIMIT snapshots" }

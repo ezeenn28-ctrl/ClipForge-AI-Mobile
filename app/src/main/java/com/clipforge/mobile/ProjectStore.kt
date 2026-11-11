@@ -112,9 +112,12 @@ object ProjectStore {
 
     fun previousFile(file: File): File = File(file.parentFile, file.name + ".previous")
     @Synchronized fun previous(file: File): EditorProject? = readStrict(previousFile(file))
-    @Synchronized fun read(file: File): EditorProject? {
-        return try { readStrict(file) ?: readStrict(previousFile(file)) }
-        catch (primary: Exception) { runCatching { readStrict(previousFile(file)) }.getOrNull() ?: throw primary }
+    @Synchronized fun read(file: File): EditorProject? = readWithStatus(file).first
+    @Synchronized fun readWithStatus(file: File): Pair<EditorProject?, Boolean> {
+        val primary = runCatching { readStrict(file) }
+        primary.getOrNull()?.let { return it to false }
+        runCatching { readStrict(previousFile(file)) }.getOrNull()?.let { return it to true }
+        return primary.getOrThrow() to false
     }
     private fun readStrict(file: File): EditorProject? {
         if (!file.exists()) return null
