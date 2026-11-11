@@ -425,6 +425,11 @@ def exercise_speech_import(args):
     generated_hook = hook_node.get("text")
     tap_node(hook_node)
     passed("Actual signed APK generates and applies a contextual editable hook from captions")
+    tap_node(locate(text="Preview first 3 seconds", scroll_axis="vertical"))
+    time.sleep(4)
+    locate(desc="Play", timeout=15)
+    passed("Signed Studio APK previews the opening text and stops at the three-second boundary")
+
     tap_node(locate(text="Format", scroll_axis="horizontal"))
     tap_node(locate(text="White square crop", scroll_axis="vertical"))
     tap_node(locate(text="Audio", scroll_axis="horizontal"))
