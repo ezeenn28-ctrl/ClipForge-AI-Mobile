@@ -605,11 +605,23 @@ def exercise_clean_install(args):
     root = hierarchy()
     assert find(root, desc="Play") or find(root, desc="Pause"), "Clean import did not open editor"
     screenshot("clean-release-import")
+    before_auto = set(exports())
+    tap_node(locate(text="Audio", scroll_axis="horizontal"))
+    locate(text="music ·", contains=True, timeout=90, scroll_axis="vertical")
+    locate(text="Chill · Original instrumental", timeout=35, scroll_axis="vertical")
+    assert set(exports()) == before_auto, "Auto Audio unexpectedly exported a video"
+    screenshot("clean-auto-audio-draft")
+    passed("Clean signed import automatically drafts original music and SFX without exporting")
     time.sleep(1.5)  # Exercise the documented one-second autosave debounce.
     adb("shell", "am", "force-stop", PACKAGE)
     adb("shell", "am", "start", "-W", "-n", ACTIVITY, "-f", "0x10008000")
     locate(text="ClipForgeImportFixture", contains=True, timeout=35)
     passed("Clean signed install imports through system picker and retains its new project after restart")
+    tap_node(locate(text="Continue editing", timeout=35))
+    tap_node(locate(text="Audio", scroll_axis="horizontal"))
+    locate(text="Chill · Original instrumental", timeout=35, scroll_axis="vertical")
+    assert set(exports()) == before_auto, "Saved audio draft automatically exported after restart"
+    passed("Generated music persists across restart and never starts an export automatically")
     logs = adb("logcat", "-d", "-v", "brief")
     (OUT / "logcat.txt").write_text(logs)
     assert not re.search(r"FATAL EXCEPTION[\s\S]{0,1500}Process: com\.clipforge\.mobile", logs), "App crash in release log"

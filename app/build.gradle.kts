@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = ciBuildNumber
-        versionName = "1.4.0"
+        versionName = "1.5.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += when {
             providers.gradleProperty("mediaDeviceTests").orNull == "true" -> listOf("x86_64")

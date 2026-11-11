@@ -1002,7 +1002,7 @@ class MainActivity : ComponentActivity() {
             AutoAudioControls(autoAudioEnabled, !busy, autoAudioUndo != null,
                 onAuto = { autoAudioEnabled = it; audioPrefs.edit().putBoolean("auto-new", it).apply(); approved = false },
                 onGenerate = { level, mood, keepBed, keepCues -> generateAutoAudio(timeline.clips.map { it.id }, level, mood, keepBed, keepCues) },
-                onUndo = { autoAudioUndo?.let { undo -> val restored = undo.restore(timeline.clips, music); updateTimeline(timeline.edit(restored.first)); music = restored.second; autoAudioUndo = null; status = "Generated audio restored on unchanged cuts. Later manual changes were kept." } })
+                onUndo = { autoAudioUndo?.let { undo -> val restored = undo.restore(timeline.clips, music); updateTimeline(timeline.edit(restored.first)); music = restored.second; autoAudioUndo = null; autoAudioNote = ""; status = "Generated audio restored on unchanged cuts. Later manual changes were kept." } })
             if (autoAudioNote.isNotBlank()) Text(autoAudioNote, style = MaterialTheme.typography.bodySmall)
             MusicLibraryControls(filesDir, !busy,
                 onUse = { musicAudition = null; music = it; approved = false; status = "Music selected. Review the mix." },
