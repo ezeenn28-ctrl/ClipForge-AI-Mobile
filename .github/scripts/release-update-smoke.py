@@ -365,6 +365,7 @@ def exercise_speech_import(args):
     locate(text="ClipForgeSpeechFixture", contains=True, timeout=40)
     locate(desc="Play", timeout=40)
     tap_node(locate(text="Captions", scroll_axis="horizontal"))
+    tap_node(locate(text="English", scroll_axis="vertical"))
     tap_node(locate(text="Generate captions", scroll_axis="vertical"))
     locate(text="country", contains=True, timeout=150, scroll_axis="vertical")
     screenshot("signed-release-auto-captions")
@@ -470,6 +471,77 @@ def exercise_speech_import(args):
     assert locate(text="Export approved MP4", scroll_axis="vertical").get("enabled") == "false"
     passed("New frame, caption style and video look survive restart without restoring export approval")
 
+
+    # New workflow checks use only this emulator's public speech/test-pattern project.
+    adb("shell", "input", "keyevent", "4")
+    tap_node(locate(text="More", scroll_axis="horizontal"))
+    tap_node(locate(text="Preset name", scroll_axis="vertical"))
+    adb("shell", "input", "text", "WorkflowPreset")
+    adb("shell", "input", "keyevent", "4")
+    tap_node(locate(text="Save editing preset", scroll_axis="vertical"))
+    locate(text="WorkflowPreset", scroll_axis="vertical")
+    tap_node(locate(text="Effects", scroll_axis="horizontal"))
+    editor_top()
+    tap_node(locate(text="None", scroll_axis="vertical"))
+    tap_node(locate(text="More", scroll_axis="horizontal"))
+    tap_node(locate(text="Apply", scroll_axis="vertical"))
+    tap_node(locate(text="Effects", scroll_axis="horizontal"))
+    editor_top()
+    locate(text="Selected look: Warm film", scroll_axis="vertical")
+    passed("Signed APK saves and reapplies a reusable editing preset")
+    tap_node(locate(text="Captions", scroll_axis="horizontal"))
+    toggle_label = locate(text="Follow spoken words", scroll_axis="vertical")
+    _, ty1, _, ty2 = bounds(toggle_label)
+    toggles = [n for n in hierarchy().iter("node") if n.get("checkable") == "true"]
+    assert toggles, "Word-follow switch unavailable"
+    toggle = min(toggles, key=lambda n: abs((bounds(n)[1]+bounds(n)[3])-(ty1+ty2)))
+    assert abs((bounds(toggle)[1]+bounds(toggle)[3])-(ty1+ty2)) < 100
+    if toggle.get("checked") != "true": tap_node(toggle)
+    locate(text="Word timing is estimated", contains=True, scroll_axis="vertical")
+    tap_node(locate(text="Split line into editable words", scroll_axis="vertical"))
+    locate(text="Caption in", scroll_axis="vertical")
+    locate(text="Caption out", scroll_axis="vertical")
+    passed("Signed APK enables word-follow captions and exposes editable word timing")
+    tap_node(locate(text="More", scroll_axis="horizontal"))
+    tap_node(locate(text="Recover previous autosave", scroll_axis="vertical"))
+    locate(text="Recover previous autosave?", timeout=15)
+    tap_node(locate(text="Keep current edit"))
+    passed("Signed APK exposes explicit previous-autosave recovery without changing the edit on dismissal")
+    tap_node(locate(text="Export"))
+    locate(text="I reviewed this edit and approve its export", scroll_axis="vertical")
+    boxes = [n for n in hierarchy().iter("node") if n.get("checkable") == "true" and n.get("checked") == "false"]
+    assert boxes, "Queue review checkbox unavailable"
+    tap_node(boxes[0])
+    tap_node(locate(text="Add approved edit to queue", scroll_axis="vertical"))
+    locate(text="Approved snapshot; waiting for Start", scroll_axis="vertical")
+    before = set(exports())
+    assert locate(text="Export approved MP4", scroll_axis="vertical").get("enabled") == "false", "Adding to queue did not clear current approval"
+    tap_node(locate(text="Start approved queue", scroll_axis="vertical"))
+    deadline = time.monotonic() + 240
+    while time.monotonic() < deadline:
+        root = hierarchy()
+        if find(root, text="Saved to Gallery") and set(exports()) - before:
+            break
+        scroll(root)
+        time.sleep(.5)
+    else: raise AssertionError("Approved queue export did not finish")
+    new_files = list(set(exports()) - before)
+    assert len(new_files) == 1, "Queue exported an unexpected number of snapshots"
+    local_queue = OUT / "queue-approved.mp4"
+    adb("pull", new_files[0], str(local_queue))
+    probe = json.loads(command("ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "json", str(local_queue)))
+    assert float(probe["format"]["duration"]) > 1, "Queue MP4 is empty"
+    command("ffmpeg", "-v", "error", "-i", str(local_queue), "-f", "null", "-")
+    screenshot("approved-queue-complete")
+    passed("Signed APK exports an explicitly reviewed queued snapshot and the MP4 fully decodes")
+    adb("shell", "am", "force-stop", PACKAGE)
+    adb("shell", "am", "start", "-W", "-n", ACTIVITY, "-f", "0x10008000")
+    tap_node(locate(text="Continue editing", timeout=35))
+    tap_node(locate(text="Export"))
+    locate(text="Export completed", scroll_axis="vertical")
+    assert locate(text="Start approved queue", scroll_axis="vertical").get("enabled") == "false"
+    assert set(exports()) == before | set(new_files), "Queue automatically exported after restart"
+    passed("Completed queue persists across restart and never restarts exports automatically")
 
     # Clean-install test resets only this isolated emulator's synthetic app data.
     adb("uninstall", PACKAGE)

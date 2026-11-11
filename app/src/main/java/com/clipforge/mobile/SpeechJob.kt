@@ -16,10 +16,12 @@ data class SpeechJob(
     val status: SpeechJobStatus = SpeechJobStatus.QUEUED,
     val results: Map<String, List<WhisperNative.Segment>> = emptyMap(),
     val elapsedMs: Long = 0,
-    val message: String = "Ready to transcribe"
+    val message: String = "Ready to transcribe",
+    val language: String = "auto"
 ) {
     val active: Boolean get() = status == SpeechJobStatus.QUEUED || status == SpeechJobStatus.RUNNING
     fun validate() {
+        require(language in listOf("auto", "en", "tl")) { "Unsupported speech language" }
         require(id.matches(Regex("[A-Za-z0-9-]{1,80}"))) { "Invalid speech job ID" }
         require(source.startsWith("content://") || source.startsWith("file://")) { "Speech source must be local" }
         require(durationMs in 1..86_400_000 && elapsedMs >= 0) { "Invalid speech duration" }

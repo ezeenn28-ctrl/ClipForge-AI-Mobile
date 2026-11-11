@@ -9,9 +9,9 @@ import androidx.compose.ui.unit.dp
 import java.util.UUID
 
 @Composable
-fun HookGeneratorControls(clip: TimelineClip, enabled: Boolean, onApply: (String) -> Unit) {
+fun HookGeneratorControls(clip: TimelineClip, enabled: Boolean, initialTone: HookTone = HookTone.FUNNY, onTone: (HookTone) -> Unit = {}, onApply: (String) -> Unit) {
     var description by remember(clip.id) { mutableStateOf("") }
-    var tone by remember { mutableStateOf(HookTone.FUNNY) }
+    var tone by remember(initialTone) { mutableStateOf(initialTone) }
     var suggestions by remember(clip.id) { mutableStateOf(emptyList<String>()) }
     var message by remember(clip.id) { mutableStateOf("") }
     StudioCard("Hook ideas", "Offline text suggestions. Review the meaning before applying.") {
@@ -19,7 +19,7 @@ fun HookGeneratorControls(clip: TimelineClip, enabled: Boolean, onApply: (String
             enabled = enabled, label = { Text("What happens? (optional)") }, modifier = Modifier.fillMaxWidth())
         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             HookTone.entries.forEach { item ->
-                FilterChip(selected = tone == item, onClick = { tone = item; suggestions = emptyList() }, enabled = enabled,
+                FilterChip(selected = tone == item, onClick = { tone = item; onTone(item); suggestions = emptyList() }, enabled = enabled,
                     label = { Text(item.label) })
             }
         }

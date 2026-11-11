@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, feature/style-pack]
+    branches: [main, feature/workflow-upgrade]
   workflow_dispatch:
 concurrency:
   group: clipforge-android-${{ github.ref }}
@@ -204,11 +204,11 @@ jobs:
           text = Path('release-badging.txt').read_text()
           if 'application-debuggable' in text:
               raise SystemExit('Release must not be debuggable')
-          if "versionName='1.3.0'" not in text:
+          if "versionName='1.4.0'" not in text:
               raise SystemExit('Unexpected release version')
           apk = Path('app/build/outputs/apk/release/app-release.apk')
           digest = hashlib.sha256(apk.read_bytes()).hexdigest()
-          record = dict(version='1.3.0', version_code=int(os.environ['GITHUB_RUN_NUMBER']),
+          record = dict(version='1.4.0', version_code=int(os.environ['GITHUB_RUN_NUMBER']),
                         commit=os.environ['GITHUB_SHA'], apk_sha256=digest,
                         signing_certificate_sha256=Path('.github/signing/identity.sha256').read_text().strip(),
                         debuggable=False, abi=['arm64-v8a', 'x86_64'])
@@ -332,7 +332,7 @@ jobs:
     name: Actual signed release complete acceptance
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    timeout-minutes: 45
     permissions:
       contents: read
       actions: read

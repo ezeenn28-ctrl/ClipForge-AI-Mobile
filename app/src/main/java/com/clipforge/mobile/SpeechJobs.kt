@@ -73,7 +73,7 @@ object SpeechJobs {
             val running = initial.copy(status = SpeechJobStatus.RUNNING)
             SpeechJobStore.write(file(context), running); mutable.value = State(running, phase = "Preparing audio")
             val model = File(context.filesDir, "models/ggml-tiny.bin")
-            finished = WhisperNative.withSession {
+            finished = WhisperNative.withSession(initial.language) {
                 SpeechJobRunner.run(running, { pauseRequested.get() || shouldPause() }, { unit ->
                     progress("Clip ${unit.clipIndex + 1} · preparing audio", -1); updateNotification(mutable.value)
                     OfflineTranscriber.range(context, Uri.parse(initial.source), model, unit.startMs, unit.endMs) { phase, percent ->

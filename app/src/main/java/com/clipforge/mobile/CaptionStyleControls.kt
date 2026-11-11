@@ -21,6 +21,12 @@ fun CaptionStyleControls(preset: CaptionPreset, size: Float, appearance: Caption
             FilterChip(selected = panel == item, enabled = enabled, onClick = { panel = item }, label = { Text(item.label) })
         }
     }
+    Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Switch(checked = appearance.wordHighlight, enabled = enabled,
+            onCheckedChange = { onAppearance(appearance.copy(wordHighlight = it)) })
+        Text("Follow spoken words", modifier = Modifier.weight(1f))
+    }
+    if (appearance.wordHighlight) Text("Word timing is estimated inside each caption. Use Edit timing or Split into words to correct it.", style = MaterialTheme.typography.bodySmall)
     when (panel) {
         CaptionPanel.STYLE -> {
             CaptionPresetPicker(preset, enabled, onPreset)
@@ -61,7 +67,7 @@ fun CaptionStyleControls(preset: CaptionPreset, size: Float, appearance: Caption
             }
         }
     }
-    TextButton(enabled = enabled, onClick = { onAppearance(CaptionThemes.apply(preset, CaptionAppearance(positionY = appearance.layout.captionY, layout = appearance.layout))) }) { Text("Reset font, color & position") }
+    TextButton(enabled = enabled, onClick = { onAppearance(CaptionThemes.apply(preset, CaptionAppearance(positionY = appearance.layout.captionY, layout = appearance.layout, wordHighlight = appearance.wordHighlight))) }) { Text("Reset font, color & position") }
 }
 
 @Composable

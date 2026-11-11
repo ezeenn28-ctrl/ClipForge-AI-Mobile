@@ -182,6 +182,8 @@ fun ClipReviewCard(index: Int, draft: HighlightDraft, active: Boolean, score: In
                 Text("${Timecode.format(draft.startMs)} — ${Timecode.format(draft.endMs)}", fontWeight = FontWeight.SemiBold)
                 Text(draft.hook.ifBlank { "${(draft.endMs - draft.startMs) / 1000}s moment · Coverage $score/100" }, maxLines = 2,
                     overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (draft.reasons.isNotEmpty()) Text(draft.reasons.joinToString(" · "), maxLines = 3,
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
             }
             Text(if (draft.approved) "Approved" else if (active) "Editing" else "Review", fontSize = 11.sp,
                 color = if (active || draft.approved) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)

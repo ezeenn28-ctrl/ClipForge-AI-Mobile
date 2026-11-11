@@ -14,6 +14,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import kotlinx.coroutines.*
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
@@ -610,4 +611,65 @@ class MediaPipelineDeviceTest {
             InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() };output.delete()
         }
     }
+    @Test fun approvedQueueRendersTwoIndependentSnapshotsAndMovingWordHighlight() {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val context = instrumentation.targetContext
+        val source = fixture("transition-red.mp4")
+        val root = File(context.cacheDir,"queue-test-${System.nanoTime()}").apply { mkdirs() }
+        val sourceUri = Uri.fromFile(source).toString()
+        val clip = TimelineClip("queue-cut",0,1000,subtitles=listOf(WhisperNative.Segment(0,1000,"HELLO WORLD")),source=sourceUri,sourceDurationMs=1000)
+        val project = EditorProject(sourceUri,1000,0,1000,mode="Manual Editor",mute=true,timelineMode=true,timelineClips=listOf(clip),
+            captionAppearance=CaptionAppearance(wordHighlight=true),projectName="First queue fixture")
+        val first=ExportQueue.add(root,project,true)
+        val second=ExportQueue.add(root,project.copy(projectName="Second queue fixture",timelineClips=listOf(clip.copy(effect="Monochrome"))),true)
+        val done=CountDownLatch(1);val failure=AtomicReference<Throwable?>(null)
+        val outputs=java.util.Collections.synchronizedList(mutableListOf<Uri>())
+        val scope=CoroutineScope(Dispatchers.Main+SupervisorJob())
+        instrumentation.runOnMainSync {
+            scope.launch {
+                try {
+                    for(item in listOf(first,second)) {
+                        val output=QueueExporter.render(context,item.project){}
+                        outputs.add(output.uri)
+                        withContext(Dispatchers.IO){ExportQueue.record(root,item.copy(status=QueueStatus.COMPLETE,uri=output.uri.toString()))}
+                    }
+                }catch(error:Throwable){failure.set(error)}finally{done.countDown()}
+            }
+        }
+        try {
+            assertTrue("Queue render timeout",done.await(180,TimeUnit.SECONDS))
+            failure.get()?.let{throw AssertionError("Queue failed",it)}
+            assertEquals(2,outputs.size);assertNotEquals(outputs[0],outputs[1])
+            assertTrue(ExportQueue.list(root).all{it.status==QueueStatus.COMPLETE})
+            fun readFrame(uri:Uri,time:Long):Bitmap {
+                val retriever=MediaMetadataRetriever()
+                try {
+                    retriever.setDataSource(context,uri)
+                    assertEquals(1000.0,retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toDouble(),120.0)
+                    val raw=retriever.getFrameAtTime(time,MediaMetadataRetriever.OPTION_CLOSEST)!!
+                    val rotation=retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt()?:0
+                    return if(raw.width>raw.height&&rotation in listOf(90,270)) Bitmap.createBitmap(raw,0,0,raw.width,raw.height,android.graphics.Matrix().apply{postRotate(rotation.toFloat())},true).also{if(it!==raw)raw.recycle()} else raw
+                }finally{retriever.release()}
+            }
+            val early=readFrame(outputs[0],200000);val late=readFrame(outputs[0],800000);val mono=readFrame(outputs[1],200000)
+            try {
+                val red=early.getPixel(early.width/2,early.height/2);assertTrue(Color.red(red)>180&&Color.green(red)<80)
+                val gray=mono.getPixel(mono.width/2,mono.height/2);assertTrue(kotlin.math.abs(Color.red(gray)-Color.green(gray))<15&&kotlin.math.abs(Color.red(gray)-Color.blue(gray))<15)
+                fun highlightX(frame:Bitmap):Double {
+                    var sum=0L;var count=0
+                    for(y in frame.height*7/10 until frame.height*9/10 step 2)for(x in frame.width/10 until frame.width*9/10 step 2){
+                        val c=frame.getPixel(x,y)
+                        if(Color.red(c)>170&&Color.green(c)>150&&Color.blue(c)<100){sum+=x;count++}
+                    }
+                    assertTrue("Active word highlight missing",count>20)
+                    return sum.toDouble()/count
+                }
+                assertTrue("Word highlight did not advance",highlightX(late)>highlightX(early)+20)
+            }finally{early.recycle();late.recycle();mono.recycle()}
+        }finally{
+            instrumentation.runOnMainSync{scope.cancel()}
+            outputs.forEach{runCatching{context.contentResolver.delete(it,null,null)}};root.deleteRecursively()
+        }
+    }
+
 }

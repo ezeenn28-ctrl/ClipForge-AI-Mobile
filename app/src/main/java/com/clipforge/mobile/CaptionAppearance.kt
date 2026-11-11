@@ -20,7 +20,8 @@ data class CaptionAppearance(
     val color: CaptionColor = CaptionColor.INHERIT,
     val highlight: CaptionColor = CaptionColor.YELLOW,
     val alignment: CaptionAlignment = CaptionAlignment.CENTER,
-    val layout: ReferenceLayout = ReferenceLayout.STANDARD
+    val layout: ReferenceLayout = ReferenceLayout.STANDARD,
+    val wordHighlight: Boolean = false
 ) {
     fun validate() { require(positionY.isFinite() && positionY in .35f.. .85f) { "Caption position must stay inside the safe area" } }
     fun textColor(preset: CaptionPreset, legacyColor: Int): Int =

@@ -10,9 +10,12 @@ object WhisperNative {
     fun interface ProgressListener { fun onProgress(percent: Int) }
     external fun transcribeSegmentsNative(modelPath: String, audio: FloatArray, listener: ProgressListener): String
     private external fun releaseModelNative()
+    private external fun configureLanguageNative(language: String)
 
     /** Reuse model weights across a batch, then release even on errors/cancellation. */
-    fun <T> withSession(block: () -> T): T = synchronized(this) {
+    fun <T> withSession(language: String = "auto", block: () -> T): T = synchronized(this) {
+        require(language in listOf("auto", "en", "tl")) { "Unsupported speech language" }
+        configureLanguageNative(language)
         try { block() } finally { releaseModelNative() }
     }
     data class Segment(val startMs: Long, val endMs: Long, val text: String)

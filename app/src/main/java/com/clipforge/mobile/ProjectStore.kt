@@ -20,6 +20,10 @@ object ProjectStore {
             }
         }
         put("format", "clipforge-project-v1")
+        put("hookTone", safe.hookTone.name)
+        put("brief.enabled", safe.campaignBrief.enabled); put("brief.tags", safe.campaignBrief.tags)
+        put("brief.caption", safe.campaignBrief.postingCaption); put("brief.minimum", safe.campaignBrief.minimum)
+        put("brief.maximum", safe.campaignBrief.maximum); put("brief.source", safe.campaignBrief.sourceSeconds)
         put("project.id", safe.projectId); put("project.name", safe.projectName)
         put("fillFrame", safe.fillFrame)
         put("speechJob", safe.lastSpeechJobId); put("speechUnits", safe.lastSpeechUnits)
@@ -33,6 +37,7 @@ object ProjectStore {
         put("caption.color", safe.captionAppearance.color.name); put("caption.highlight", safe.captionAppearance.highlight.name)
         put("caption.align", safe.captionAppearance.alignment.name)
         put("caption.layout", safe.captionAppearance.layout.name)
+        put("caption.wordHighlight", safe.captionAppearance.wordHighlight)
         put("subtitleYellow", safe.subtitleYellow); put("subtitleDraft", safe.subtitleDraftIndex)
         put("drafts.count", safe.drafts.size)
         safe.drafts.forEachIndexed { i, draft ->
@@ -40,6 +45,7 @@ object ProjectStore {
             put("drafts.$i.visual", draft.visualScore ?: -1)
             put("drafts.$i.hook", draft.hook); put("drafts.$i.caption", draft.caption)
             put("drafts.$i.effect", draft.effect)
+            put("drafts.$i.rank", draft.rankScore ?: -1); put("drafts.$i.reasons", draft.reasons.joinToString("|"))
             put("drafts.$i.captionStart", draft.captionStartMs); put("drafts.$i.captionEnd", draft.captionEndMs)
             segments("drafts.$i.segments", safe.draftSegments[i].orEmpty())
         }
@@ -91,11 +97,26 @@ object ProjectStore {
                 require(temporary.length() <= 20L * 1024 * 1024) { "Project exceeds 20 MB limit" }
                 stream.fd.sync()
             }
+            // Keep a validated prior generation; a corrupt primary must never replace it.
+            if (file.isFile && runCatching { readStrict(file) }.getOrNull() != null) {
+                val previous = previousFile(file)
+                val previousTemp = File(file.parentFile, file.name + ".previous.partial")
+                try {
+                    file.inputStream().use { input -> previousTemp.outputStream().use { output -> input.copyTo(output); output.fd.sync() } }
+                    check(previousTemp.renameTo(previous)) { "Could not preserve previous autosave" }
+                } finally { previousTemp.delete() }
+            }
             check(temporary.renameTo(file)) { "Could not save local project" }
         } finally { temporary.delete() }
     }
 
+    fun previousFile(file: File): File = File(file.parentFile, file.name + ".previous")
+    @Synchronized fun previous(file: File): EditorProject? = readStrict(previousFile(file))
     @Synchronized fun read(file: File): EditorProject? {
+        return try { readStrict(file) ?: readStrict(previousFile(file)) }
+        catch (primary: Exception) { runCatching { readStrict(previousFile(file)) }.getOrNull() ?: throw primary }
+    }
+    private fun readStrict(file: File): EditorProject? {
         if (!file.exists()) return null
         require(file.length() <= 20L * 1024 * 1024) { "Project exceeds 20 MB limit" }
         val data = Properties().apply { file.reader(Charsets.UTF_8).use { load(it) } }
@@ -115,7 +136,9 @@ object ProjectStore {
             HighlightDraft(number("drafts.$i.start"), number("drafts.$i.end"), approved = false,
                 visualScore = integer("drafts.$i.visual").takeIf { it >= 0 }, hook = text("drafts.$i.hook"),
                 caption = text("drafts.$i.caption"), effect = text("drafts.$i.effect"),
-                captionStartMs = number("drafts.$i.captionStart"), captionEndMs = number("drafts.$i.captionEnd"))
+                captionStartMs = number("drafts.$i.captionStart"), captionEndMs = number("drafts.$i.captionEnd"),
+                rankScore = data.getProperty("drafts.$i.rank", "-1").toInt().takeIf { it in 0..100 },
+                reasons = data.getProperty("drafts.$i.reasons", "").split("|").filter(String::isNotBlank).take(8))
         }
         val draftSegments = (0 until count).associateWith { segments("drafts.$it.segments") }.filterValues { it.isNotEmpty() }
         val timelineCount = data.getProperty("timeline.count", "0").toInt()
@@ -157,13 +180,18 @@ object ProjectStore {
             timelineClips = timeline, timelineMode = data.getProperty("timeline.mode", "false").toBooleanStrict(), selectedTimelineId = data.getProperty("timeline.selected", ""),
             currentTimelineId = data.getProperty("timeline.current", ""), music = music, captionPreset = data.getProperty("captionPreset", "BOLD"),
             projectId = data.getProperty("project.id", ""), projectName = data.getProperty("project.name", ""),
+            hookTone = HookTone.valueOf(data.getProperty("hookTone", "FUNNY")),
+            campaignBrief = CampaignBrief(data.getProperty("brief.enabled", "false").toBooleanStrict(),
+                data.getProperty("brief.tags", ""), data.getProperty("brief.caption", ""), data.getProperty("brief.minimum", "15"),
+                data.getProperty("brief.maximum", "30"), data.getProperty("brief.source", "0")),
             captionAppearance = CaptionAppearance(
                 font = CaptionFont.valueOf(data.getProperty("caption.font", "SANS")),
                 positionY = data.getProperty("caption.y", (970f / 1280f).toString()).toFloat(),
                 color = CaptionColor.valueOf(data.getProperty("caption.color", "INHERIT")),
                 highlight = CaptionColor.valueOf(data.getProperty("caption.highlight", "YELLOW")),
                 alignment = CaptionAlignment.valueOf(data.getProperty("caption.align", "CENTER")),
-                layout = ReferenceLayout.valueOf(data.getProperty("caption.layout", "STANDARD")))).also { it.validate() }
+                layout = ReferenceLayout.valueOf(data.getProperty("caption.layout", "STANDARD")),
+                wordHighlight = data.getProperty("caption.wordHighlight", "false").toBooleanStrict())).also { it.validate() }
     }
 }
 

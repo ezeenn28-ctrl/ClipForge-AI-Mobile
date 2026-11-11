@@ -10,7 +10,7 @@ import android.graphics.Typeface
  * Highlight is a visual emphasis rule, not word-level speech alignment. */
 fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
                        subtitleColor: Int = Color.WHITE, preset: CaptionPreset = CaptionPreset.BOLD,
-                       appearance: CaptionAppearance = CaptionAppearance(), bitmapScale: Float = 1f): Bitmap {
+                       appearance: CaptionAppearance = CaptionAppearance(), bitmapScale: Float = 1f, activeWord: Int? = null): Bitmap {
     appearance.validate()
     require(bitmapScale.isFinite() && bitmapScale in .25f..1f) { "Invalid caption bitmap scale" }
     val bitmap = Bitmap.createBitmap((720 * bitmapScale).toInt(), (1280 * bitmapScale).toInt(), Bitmap.Config.ARGB_8888)
@@ -35,7 +35,7 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
         typeface = Typeface.create(Typeface.DEFAULT, if (preset == CaptionPreset.CLEAN) Typeface.NORMAL else Typeface.BOLD)
         setShadowLayer(5f, 2f, 3f, Color.BLACK)
     }
-    data class Word(val text: String, val marked: Boolean)
+    data class Word(val text: String, val marked: Boolean, val index: Int)
     listOf(hook.take(65), caption.take(100)).forEachIndexed { index, text ->
         if (text.isBlank()) return@forEachIndexed
         val body = index == 1
@@ -46,9 +46,9 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
         if (body && preset in listOf(CaptionPreset.STICKER, CaptionPreset.CAPSULE)) paint.clearShadowLayer()
         val baseSize = if (index == 0) if (reference) 38f else 45f else subtitleSize
         paint.textSize = baseSize
-        val words = (if (body && preset == CaptionPreset.COMIC) text.uppercase(java.util.Locale.ROOT) else text).split(Regex("\\s+")).filter { it.isNotEmpty() }.map {
+        val words = (if (body && preset == CaptionPreset.COMIC) text.uppercase(java.util.Locale.ROOT) else text).split(Regex("\\s+")).filter { it.isNotEmpty() }.mapIndexed { wordIndex, it ->
             val marked = it.startsWith("#") && it.length > 1
-            Word(if (marked) it.drop(1) else it, marked)
+            Word(if (marked) it.drop(1) else it, marked, wordIndex)
         }
         val rows = mutableListOf<List<Word>>()
         var current = mutableListOf<Word>()
@@ -108,9 +108,9 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
             var prefix = ""
             line.forEachIndexed { wordIndex, word ->
                 val autoHighlight = index == 1 && preset in listOf(CaptionPreset.HIGHLIGHT, CaptionPreset.NEON, CaptionPreset.COMIC) &&
-                    !explicitHighlights && wordIndex == line.lastIndex
+                    activeWord == null && !explicitHighlights && wordIndex == line.lastIndex
                 paint.color = when {
-                    word.marked || autoHighlight -> appearance.highlightColor()
+                    word.marked || autoHighlight || (body && activeWord == word.index) -> appearance.highlightColor()
                     index == 0 && reference -> appearance.layout.hookColor
                     index == 0 -> Color.WHITE
                     else -> appearance.textColor(preset, subtitleColor)

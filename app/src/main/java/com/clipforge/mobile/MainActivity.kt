@@ -48,6 +48,7 @@ import androidx.media3.transformer.*
 import androidx.media3.effect.Presentation
 import androidx.media3.common.Effect
 import java.io.File
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
@@ -116,7 +117,7 @@ fun downloadOfflineModel(destination: File, model: OfflineModel, progress: (Int)
     }
 }
 
-data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false, val visualScore: Int? = null, val hook: String = "", val caption: String = "", val effect: String = "None", val captionStartMs: Long = 0L, val captionEndMs: Long = 0L)
+data class HighlightDraft(val startMs: Long, val endMs: Long, val approved: Boolean = false, val visualScore: Int? = null, val hook: String = "", val caption: String = "", val effect: String = "None", val captionStartMs: Long = 0L, val captionEndMs: Long = 0L, val rankScore: Int? = null, val reasons: List<String> = emptyList())
 
 /** Transparent baseline ranking. These scores describe segment duration and coverage,
  * not measured speech, visual action, or predicted engagement. */
@@ -167,11 +168,16 @@ fun timedCaptionOverlay(
     val fromUs = (startMs - trimStartMs).coerceAtLeast(0L) * 1000L
     val untilUs = (endMs - trimStartMs).coerceAtLeast(0L) * 1000L
     val clock = ClipPresentationClock()
+    var cachedWord = -2
     return object : CaptionBitmapOverlay() {
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val timeUs = if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs
             return if (untilUs <= fromUs || timeUs in fromUs until untilUs) {
-                withCaption ?: makeCaptionOverlay(hook, caption, subtitleSize, subtitleColor, preset, appearance).also { withCaption = it }
+                val word = if (appearance.wordHighlight && endMs > startMs)
+                    CaptionTiming.activeWord(WhisperNative.Segment(startMs, endMs, caption), trimStartMs + timeUs / 1000) else -2
+                if (word != cachedWord) { withCaption?.recycle(); withCaption = null; cachedWord = word }
+                withCaption ?: makeCaptionOverlay(hook, caption, subtitleSize, subtitleColor, preset, appearance,
+                    activeWord = word.takeIf { appearance.wordHighlight && endMs > startMs }).also { withCaption = it }
             } else withoutCaption ?: makeCaptionOverlay(hook, "", subtitleSize, subtitleColor, preset, appearance).also { withoutCaption = it }
         }
         override fun release() {
@@ -187,16 +193,19 @@ fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, 
     // Retain only the current subtitle bitmap, independent of transcript length.
     val clock = ClipPresentationClock()
     var cachedIndex = -1
+    var cachedWord = -2
     var cachedBitmap: Bitmap? = null
     return object : CaptionBitmapOverlay() {
         override fun getBitmap(presentationTimeUs: Long): Bitmap {
             val absoluteMs = SubtitleTimeline.sourcePositionMs(trimStartMs, if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs)
             val index = SubtitleTimeline.activeSegmentIndex(segments, absoluteMs)
             if (index < 0) return empty ?: makeCaptionOverlay(hook, "", subtitleSize, subtitleColor, preset, appearance).also { empty = it }
-            if (cachedIndex != index) {
+            val word = if (appearance.wordHighlight) CaptionTiming.activeWord(segments[index], absoluteMs) else -2
+            if (cachedIndex != index || cachedWord != word) {
                 cachedBitmap?.recycle()
-                cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor, preset, appearance)
-                cachedIndex = index
+                cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor, preset, appearance,
+                    activeWord = word.takeIf { appearance.wordHighlight })
+                cachedIndex = index; cachedWord = word
             }
             return cachedBitmap ?: (empty ?: makeCaptionOverlay(hook, "", subtitleSize, subtitleColor, preset, appearance).also { empty = it })
         }
@@ -303,6 +312,19 @@ class MainActivity : ComponentActivity() {
         var link by remember { mutableStateOf("") }
         var downloading by remember { mutableStateOf(false) }
         var exporting by remember { mutableStateOf(false) }
+        var queueRunning by remember { mutableStateOf(false) }
+        var queueProgress by remember { mutableIntStateOf(0) }
+        var queueItems by remember { mutableStateOf<List<QueuedExport>>(emptyList()) }
+        var queueJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+        var editingPresets by remember { mutableStateOf<List<EditingPreset>>(emptyList()) }
+        var hookTone by remember { mutableStateOf(HookTone.FUNNY) }
+        var speechLanguage by remember { mutableStateOf("auto") }
+        var recoveryCandidate by remember { mutableStateOf<EditorProject?>(null) }
+        LaunchedEffect(Unit) {
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                ExportQueue.list(filesDir) to EditingPresets.list(filesDir)
+            }.let { (queue, presets) -> queueItems = queue; editingPresets = presets }
+        }
         var lastExportUri by remember { mutableStateOf<Uri?>(null) }
         val exportScope = rememberCoroutineScope()
         var activeExportToken by remember { mutableStateOf<Any?>(null) }
@@ -364,7 +386,7 @@ class MainActivity : ComponentActivity() {
         var projectLoading by remember { mutableStateOf(true) }
         var projectMessage by remember { mutableStateOf("Checking saved project…") }
         var expectedRestoredDuration by remember { mutableLongStateOf(0L) }
-        val busy = assetImporting || projectLoading || metadataBusy || speechStarting || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
+        val busy = queueRunning || assetImporting || projectLoading || metadataBusy || speechStarting || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
         val deliveryDuration = if (timelineMode) TimelineModel.duration(timeline.clips) else (duration * end).toLong() - (duration * start).toLong()
         val exportReady = video != null && duration > 0 && if (timelineMode) timeline.clips.isNotEmpty() else (editingMode != "AI Draft" || selectedDraft >= 0)
         val campaignIssues = if (campaignEnabled) CampaignRules(campaignTags,
@@ -403,7 +425,7 @@ class MainActivity : ComponentActivity() {
             val source = selected?.resolvedSource(video?.toString().orEmpty())?.let(Uri::parse) ?: video
             val speechDuration = selected?.resolvedDuration(duration) ?: duration
             if (source != null && speechDuration > 0) {
-                val request = SpeechJob(java.util.UUID.randomUUID().toString(), source.toString(), speechDuration, mode, ranges, target)
+                val request = SpeechJob(java.util.UUID.randomUUID().toString(), source.toString(), speechDuration, mode, ranges, target, language = speechLanguage)
                 val preferences = getSharedPreferences("processing", MODE_PRIVATE)
                 if (android.os.Build.VERSION.SDK_INT >= 33 &&
                     androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED &&
@@ -620,6 +642,10 @@ class MainActivity : ComponentActivity() {
                     subtitleYellow = saved.subtitleYellow
                     captionPreset = CaptionPreset.valueOf(saved.captionPreset)
                     captionAppearance = saved.captionAppearance
+                    hookTone = saved.hookTone
+                    campaignEnabled = saved.campaignBrief.enabled; campaignTags = saved.campaignBrief.tags
+                    campaignCaption = saved.campaignBrief.postingCaption; campaignMin = saved.campaignBrief.minimum
+                    campaignMax = saved.campaignBrief.maximum; campaignSource = saved.campaignBrief.sourceSeconds
                     subtitleDraftIndex = saved.subtitleDraftIndex
                     transcriptSegments = saved.currentSegments
                     sourceTranscriptSegments = saved.sourceSegments
@@ -879,12 +905,28 @@ class MainActivity : ComponentActivity() {
             draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits, timelineClips = timeline.clips, timelineMode = timelineMode, selectedTimelineId = selectedTimelineId,
             currentTimelineId = timelineSubtitleTarget.takeIf { id -> timeline.clips.any { it.id == id } }.orEmpty(), music = music, captionPreset = captionPreset.name,
             projectId = projectId, projectName = projectName.ifBlank { sourceName }.filterNot(Char::isISOControl).take(80),
-            captionAppearance = captionAppearance
+            captionAppearance = captionAppearance, hookTone = hookTone,
+            campaignBrief = CampaignBrief(campaignEnabled, campaignTags, campaignCaption, campaignMin, campaignMax, campaignSource)
         ) else null
         SideEffect { latestBackupProject.set(projectSnapshot) }
+        DisposableEffect(Unit) {
+            val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+                if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                    queueJob?.cancel()
+                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+                        MetadataGate.lock.withLock { latestBackupProject.get()?.let { snapshot ->
+                            runCatching { ProjectCatalog.save(filesDir, snapshot) }
+                        } }
+                    }
+                }
+            }
+            lifecycle.addObserver(observer)
+            onDispose { lifecycle.removeObserver(observer) }
+        }
+
         LaunchedEffect(projectSnapshot, projectLoading, metadataBusy) {
             if (projectSnapshot != null && !projectLoading && !metadataBusy) {
-                delay(1000)
+                delay(350)
                 try {
                     kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         MetadataGate.lock.withLock { ProjectCatalog.save(filesDir, projectSnapshot) }
@@ -1063,7 +1105,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-        val previewHeight = (screen.screenHeightDp * .38f).coerceIn(200f, 380f).dp
+        val previewHeight = (screen.screenHeightDp * .42f).coerceIn(200f, 380f).dp
         val previewPanel: @Composable (Boolean) -> Unit = { expanded ->
             val canvasHeight = if (expanded) (screen.screenHeightDp - 160).coerceAtLeast(170).dp else previewHeight
             Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1108,10 +1150,12 @@ class MainActivity : ComponentActivity() {
                         val until = playing?.captionEndMs ?: drafts.getOrNull(selectedDraft)?.captionEndMs ?: 0
                         val fallback = if (cues.isNotEmpty()) "" else if (until <= from || previewPosition in from until until) caption else ""
                         val displayedCaption = activeSegment?.text ?: fallback
+                        val activeWord = if (!renderAppearance.wordHighlight) null else (activeSegment?.let { CaptionTiming.activeWord(it, previewPosition) }
+                            ?: if (until > from) CaptionTiming.activeWord(WhisperNative.Segment(from, until, fallback), previewPosition) else null)
                         if (reference != ReferenceLayout.STANDARD || hook.isNotBlank() || displayedCaption.isNotBlank()) {
-                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow, captionPreset, renderAppearance) {
+                            val previewBitmap = remember(hook, displayedCaption, subtitleSize, subtitleYellow, captionPreset, renderAppearance, activeWord) {
                                 makeCaptionOverlay(hook, displayedCaption, subtitleSize,
-                                    if (subtitleYellow) Color.YELLOW else Color.WHITE, captionPreset, renderAppearance, bitmapScale = .5f).asImageBitmap()
+                                    if (subtitleYellow) Color.YELLOW else Color.WHITE, captionPreset, renderAppearance, bitmapScale = .5f, activeWord = activeWord).asImageBitmap()
                             }
                             Image(
                                 bitmap = previewBitmap,
@@ -1185,6 +1229,12 @@ class MainActivity : ComponentActivity() {
         val revokeCaptionApproval: () -> Unit = {
             approved = false
             drafts = drafts.map { it.copy(approved = false) }
+        }
+        recoveryCandidate?.let { saved ->
+            AlertDialog(onDismissRequest = { recoveryCandidate = null }, title = { Text("Recover previous autosave?") },
+                text = { Text("Restore the previous saved edit for this project. Your current save becomes the recovery generation after autosave. Export approval stays cleared.") },
+                confirmButton = { TextButton(onClick = { applySavedProject(saved, Uri.parse(saved.source)); recoveryCandidate = null; approved = false }) { Text("Restore previous edit") } },
+                dismissButton = { TextButton(onClick = { recoveryCandidate = null }) { Text("Keep current edit") } })
         }
         val simpleEditor = selectedTab == StudioTab.STUDIO && studioEditing && video != null && !advancedEditor
         LaunchedEffect(simpleEditor) {
@@ -1261,16 +1311,16 @@ class MainActivity : ComponentActivity() {
                                 }
                                 TimelineEditor(this@MainActivity, video, duration, timeline, selectedTimelineId, timelinePosition, !busy,
                                     onHistory = updateTimeline, onSelect = { id ->
-                                        selectedTimelineId = id; editorTool = EditorTool.EDIT
+                                        selectedTimelineId = id
                                         timeline.clips.firstOrNull { it.id == id }?.let { clip ->
                                             timelineSubtitleTarget = id; transcriptSegments = clip.subtitles
                                             transcript = clip.subtitles.joinToString("\n") { it.text }; subtitleDraftIndex = -1; subtitleSegments = emptyList()
                                         }
-                                    }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it }, compact = true, tool = editorTool, music = music)
+                                    }, onSeek = seekTimeline, onAddSelection = addTimelineSelection, onMessage = { status = it }, compact = true, tool = editorTool, music = music, showTracks = editorTool == EditorTool.EDIT)
                                 when (editorTool) {
                                     EditorTool.TEXT -> {
                                         timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
-                                            HookGeneratorControls(clip, !busy) { hook ->
+                                            HookGeneratorControls(clip, !busy, hookTone, { hookTone = it; approved = false }) { hook ->
                                                 updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(hook = hook) else it }))
                                             }
                                         }
@@ -1297,6 +1347,7 @@ class MainActivity : ComponentActivity() {
                                     EditorTool.CAPTIONS -> {
                                         val clip = timeline.clips.firstOrNull { it.id == selectedTimelineId }
                                         StudioCard("Auto captions", "Generate on this phone, then tap a line to correct it.") {
+                                            SpeechLanguageControls(speechLanguage, !busy) { speechLanguage = it }
                                             Button(enabled = !busy && clip != null, onClick = {
                                                 if (!modelReady) { selectedTab = StudioTab.CAPTIONS; status = "Download the speech model once, then return to the editor." }
                                                 else if (clip != null) launchSpeech(SpeechJobMode.TIMELINE, listOf(SpeechRange(0, clip.startMs, clip.endMs)), clip.id)
@@ -1306,6 +1357,14 @@ class MainActivity : ComponentActivity() {
                                                 onPreset = { captionPreset = it; captionAppearance = CaptionThemes.apply(it, captionAppearance); revokeCaptionApproval() },
                                                 onSize = { subtitleSize = it; revokeCaptionApproval() },
                                                 onAppearance = { captionAppearance = it; revokeCaptionApproval() })
+                                            if (clip != null) CaptionTimingEditor(clip.subtitles, clip.resolvedDuration(duration), !busy,
+                                                onChange = { cues ->
+                                                    updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(subtitles = cues) else it }))
+                                                    if (timelineSubtitleTarget == clip.id) { transcriptSegments = cues; subtitleSegments = cues }
+                                                }, onSeek = { sourceMs ->
+                                                    val index = timeline.clips.indexOfFirst { it.id == clip.id }
+                                                    player.pause(); seekTimeline(TimelineModel.offset(timeline.clips, index) + clip.outputOffsetMs(sourceMs - clip.startMs))
+                                                }, onMessage = { status = it })
                                             clip?.subtitles?.take(10)?.forEachIndexed { index, cue ->
                                                 OutlinedTextField(cue.text, { text ->
                                                     val changed = clip.copy(subtitles = clip.subtitles.mapIndexed { i, item -> if (i == index) item.copy(text = text) else item })
@@ -1347,6 +1406,58 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                     EditorTool.MORE -> StudioCard("Project tools") {
+                                        PresetControls(editingPresets, !busy, onSave = { name ->
+                                            val snapshot = projectSnapshot
+                                            val clip = timeline.clips.firstOrNull { it.id == selectedTimelineId }
+                                            if (snapshot != null && clip != null) {
+                                                metadataBusy = true
+                                                exportScope.launch {
+                                                    try {
+                                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { EditingPresets.save(filesDir, name, snapshot, clip) }
+                                                        editingPresets = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { EditingPresets.list(filesDir) }
+                                                        status = "Editing preset saved"
+                                                    } catch (error: Exception) { status = "Preset save failed: ${error.message}" }
+                                                    finally { metadataBusy = false }
+                                                }
+                                            }
+                                        }, onApply = { preset ->
+                                            val clip = timeline.clips.firstOrNull { it.id == selectedTimelineId }
+                                            if (clip != null) {
+                                                val count = timeline.clips.filter { it.id != clip.id }.sumOf { it.sounds.size } + preset.apply(clip).sounds.size
+                                                if (count > 120) status = "Preset would exceed 120 sound cues"
+                                                else {
+                                                    updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) preset.apply(it) else it }))
+                                                    val template = preset.template
+                                                    captionPreset = CaptionPreset.valueOf(template.captionPreset); captionAppearance = template.captionAppearance
+                                                    subtitleSize = template.subtitleSize; subtitleYellow = template.subtitleYellow
+                                                    vertical = template.vertical; fillFrame = template.fillFrame; hookTone = template.hookTone
+                                                    approved = false; status = "Preset applied to selected cut; captions/canvas apply project-wide. Review again."
+                                                }
+                                            }
+                                        }, onDelete = { preset ->
+                                            metadataBusy = true
+                                            exportScope.launch {
+                                                try {
+                                                    editingPresets = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                        EditingPresets.remove(filesDir, preset.id); EditingPresets.list(filesDir)
+                                                    }
+                                                } catch (error: Exception) { status = "Preset removal failed: ${error.message}" }
+                                                finally { metadataBusy = false }
+                                            }
+                                        })
+                                        TextButton(enabled = !busy, onClick = {
+                                            metadataBusy = true
+                                            exportScope.launch {
+                                                try {
+                                                    recoveryCandidate = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                                        ProjectStore.previous(File(filesDir, "projects/catalog/$projectId.properties"))
+                                                    }
+                                                    if (recoveryCandidate == null) status = "No previous autosave for this project yet"
+                                                } catch (error: Exception) { status = "Recovery unavailable: ${error.message}" }
+                                                finally { metadataBusy = false }
+                                            }
+                                        }) { Text("Recover previous autosave") }
+
                                         OutlinedTextField(value = projectName, onValueChange = { projectName = it.filterNot(Char::isISOControl).take(80) },
                                             enabled = !busy, singleLine = true, label = { Text("Project name") },
                                             placeholder = { Text(sourceName) }, modifier = Modifier.fillMaxWidth())
@@ -1518,12 +1629,12 @@ class MainActivity : ComponentActivity() {
                     Text("Visual activity measures frame changes, not semantic scene quality. Speech ranking is available after transcription.", style = MaterialTheme.typography.bodySmall)
                     }
                     Text("Your clip shortlist", style = MaterialTheme.typography.titleMedium)
-                    Text("Coverage scores reflect duration and position. They are not predictions of views or engagement.", style = MaterialTheme.typography.bodySmall)
-                    drafts.withIndex().sortedByDescending { (baselineDraftScore(it.value, duration).balanced * 3 + (it.value.visualScore ?: 50)) / 4 }.forEach { (index, draft) ->
+                    Text("Speech-ranked clips explain coverage, opening and ending. Coverage-only candidates are labeled separately; neither predicts views.", style = MaterialTheme.typography.bodySmall)
+                    drafts.withIndex().sortedByDescending { it.value.rankScore ?: (baselineDraftScore(it.value, duration).balanced * 3 + (it.value.visualScore ?: 50)) / 4 }.forEach { (index, draft) ->
                         val active = selectedDraft == index
                         val sourceFrame = rememberClipThumbnail(this@MainActivity, video, draft.startMs, enabled = !busy)
                         ClipReviewCard(index = index, draft = draft, active = active, thumbnail = sourceFrame,
-                            score = (baselineDraftScore(draft, duration).balanced * 3 + (draft.visualScore ?: 50)) / 4,
+                            score = draft.rankScore ?: (baselineDraftScore(draft, duration).balanced * 3 + (draft.visualScore ?: 50)) / 4,
                             enabled = !busy,
                             onClick = {
                                 selectedDraft = index
@@ -1741,6 +1852,7 @@ class MainActivity : ComponentActivity() {
                     }.start()
                 }) { Text(if (audioPreparing) "Preparing audio…" else "Check source audio") }
                 }
+                SpeechLanguageControls(speechLanguage, !busy) { speechLanguage = it }
                 Button(enabled = !busy && video != null && modelReady && !transcribing && !batchRunning && !audioPreparing, onClick = {
                     launchSpeech(SpeechJobMode.FIRST_30, listOf(SpeechRange(0, 0, minOf(duration, 30_000))), "")
                 }) { Text(if (transcribing) "Transcribing offline…" else "Transcribe first 30 seconds") }
@@ -1766,6 +1878,15 @@ class MainActivity : ComponentActivity() {
                         onSize = { subtitleSize = it; revokeCaptionApproval() },
                         onAppearance = { captionAppearance = it; revokeCaptionApproval() })
 
+                    CaptionTimingEditor(transcriptSegments,
+                        timeline.clips.firstOrNull { it.id == timelineSubtitleTarget }?.resolvedDuration(duration) ?: duration, !busy,
+                        onChange = { cues ->
+                            transcriptSegments = cues; subtitleSegments = cues
+                            timeline = timeline.edit(timeline.clips.map { if (it.id == timelineSubtitleTarget) it.copy(subtitles = cues) else it })
+                            if (timelineSubtitleTarget.isBlank()) sourceTranscriptSegments = cues
+                            if (selectedDraft >= 0 && subtitleDraftIndex == selectedDraft) batchResults = batchResults + (selectedDraft to cues)
+                            transcript = cues.joinToString("\n") { it.text }; approved = false
+                        }, onSeek = { sourceMs -> player.pause(); player.seekTo(sourceMs) }, onMessage = { status = it })
                     val pageCount = (transcriptSegments.size + 24) / 25
                     val currentPage = subtitlePage.coerceIn(0, pageCount - 1)
                     Row {
@@ -1901,7 +2022,7 @@ class MainActivity : ComponentActivity() {
                         }
                     }.start()
                 }) { Text("Find speech highlights") }
-                Text("Speech ranking uses density, vocabulary and hook words. It does not predict engagement.", style = MaterialTheme.typography.bodySmall)
+                Text("Speech ranking uses density, vocabulary, hook words, sentence endings and long-pause penalties. It does not predict engagement.", style = MaterialTheme.typography.bodySmall)
 
                                         }
                                     }
@@ -1915,8 +2036,8 @@ class MainActivity : ComponentActivity() {
                 }
                 if (campaignEnabled) {
                     Text("Enter the current brief. Checks use your inputs; platform standing, geography, engagement and payout eligibility require manual verification.", style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(enabled = !busy, value = campaignTags, onValueChange = { campaignTags = it; approved = false }, label = { Text("Required @mentions and #hashtags") })
-                    OutlinedTextField(enabled = !busy, value = campaignCaption, onValueChange = { campaignCaption = it; approved = false }, label = { Text("Posting caption (not burned into video)") })
+                    OutlinedTextField(enabled = !busy, value = campaignTags, onValueChange = { campaignTags = it.take(2000); approved = false }, label = { Text("Required @mentions and #hashtags") })
+                    OutlinedTextField(enabled = !busy, value = campaignCaption, onValueChange = { campaignCaption = it.take(10000); approved = false }, label = { Text("Posting caption (not burned into video)") })
                     OutlinedTextField(enabled = !busy, value = campaignMin, onValueChange = { campaignMin = it.filter(Char::isDigit).take(4); approved = false }, label = { Text("Minimum clip seconds") })
                     OutlinedTextField(enabled = !busy, value = campaignMax, onValueChange = { campaignMax = it.filter(Char::isDigit).take(4); approved = false }, label = { Text("Maximum clip seconds") })
                     OutlinedTextField(enabled = !busy, value = campaignSource, onValueChange = { campaignSource = it.filter(Char::isDigit).take(4); approved = false }, label = { Text("Required source footage seconds") })
@@ -1941,6 +2062,10 @@ class MainActivity : ComponentActivity() {
                                         StudioCard("Ready when you are") {
                 Text("Export review", style = MaterialTheme.typography.titleMedium)
                 Text("Check framing, audio and subtitle timing in the preview. Approval applies to this edit and is cleared when you change it.", style = MaterialTheme.typography.bodySmall)
+                CampaignExportChecklist(campaignEnabled, campaignTags, campaignCaption, deliveryDuration, campaignMin, campaignMax,
+                    campaignIssues, sourceVerified, rightsVerified, !busy,
+                    onSource = { sourceVerified = it; approved = false }, onRights = { rightsVerified = it; approved = false },
+                    onEdit = { selectedTab = StudioTab.CAMPAIGN })
                 Row {
                     Checkbox(checked = approved, enabled = !busy && campaignIssues.isEmpty() && exportReady, onCheckedChange = { value -> approved = value; if (selectedDraft in drafts.indices) drafts = drafts.toMutableList().also { it[selectedDraft] = it[selectedDraft].copy(approved = value) } })
                     Text("I reviewed this edit and approve its export", modifier = Modifier.weight(1f))
@@ -2012,6 +2137,72 @@ class MainActivity : ComponentActivity() {
                     catch (e: Exception) { activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; approved = false; status = "Export failed: ${e.message}" }
                     }
                 }) { Text(if (exporting) "Exporting approved clip…" else "Export approved MP4") }
+                ExportQueueControls(queueItems, !busy, approved && campaignIssues.isEmpty() && exportReady, queueRunning, queueProgress,
+                    onAdd = {
+                        val snapshot = projectSnapshot
+                        if (snapshot != null && approved && campaignIssues.isEmpty() && exportReady && !busy) {
+                            metadataBusy = true
+                            exportScope.launch {
+                                try {
+                                    val item = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ExportQueue.add(filesDir, snapshot, true) }
+                                    queueItems = queueItems + item; approved = false
+                                    status = "Approved edit added as a frozen snapshot. Start the queue when ready."
+                                } catch (error: Exception) { status = "Queue add failed: ${error.message}" }
+                                finally { metadataBusy = false }
+                            }
+                        }
+                    }, onStart = {
+                        if (!busy) {
+                            val ready = queueItems.filter { it.status == QueueStatus.READY }
+                            if (ready.isNotEmpty()) {
+                                queueRunning = true; player.pause(); musicPlayer.pause(); soundPlayer.pause()
+                                queueJob = exportScope.launch {
+                                    try {
+                                        for (item in ready) {
+                                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                                            queueProgress = 0
+                                            val running = item.copy(status = QueueStatus.RENDERING, message = "Rendering approved snapshot")
+                                            queueItems = queueItems.map { if (it.id == item.id) running else it }
+                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ExportQueue.record(filesDir, running) }
+                                            try {
+                                                val output = QueueExporter.render(this@MainActivity, item.project) { queueProgress = it }
+                                                lastExportUri = output.uri
+                                                val complete = item.copy(status = QueueStatus.COMPLETE, message = if (output.inGallery) "Saved to Gallery" else "Saved privately", uri = output.uri.toString())
+                                                queueItems = queueItems.map { if (it.id == item.id) complete else it }
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ExportQueue.record(filesDir, complete) }
+                                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                                            catch (error: Exception) {
+                                                val failed = item.copy(status = QueueStatus.FAILED, message = "${error.message}. Load for review before retrying.")
+                                                queueItems = queueItems.map { if (it.id == item.id) failed else it }
+                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ExportQueue.record(filesDir, failed) }
+                                                status = "Queue stopped: ${error.message}"; break
+                                            }
+                                        }
+                                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                                    catch (error: Exception) { status = "Queue stopped: ${error.message}" }
+                                    finally {
+                                        queueItems = queueItems.map { if (it.status in listOf(QueueStatus.READY, QueueStatus.RENDERING)) it.copy(status = QueueStatus.REVIEW, message = "Stopped: load for review before continuing") else it }
+                                        queueRunning = false; queueJob = null
+                                    }
+                                }
+                            }
+                        }
+                    }, onStop = { queueJob?.cancel(); status = "Queue stopped. Unfinished snapshots need review." },
+                    onReview = { item ->
+                        applySavedProject(item.project, Uri.parse(item.project.source)); selectedTab = StudioTab.STUDIO; studioEditing = true
+                        status = "Queue snapshot loaded. Preview and approve, then add it again. Remove the old queue entry when finished."
+                    }, onRemove = { item ->
+                        metadataBusy = true
+                        exportScope.launch {
+                            try { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ExportQueue.remove(filesDir, item.id) }; queueItems = queueItems.filter { it.id != item.id } }
+                            catch (error: Exception) { status = "Queue removal failed: ${error.message}" }
+                            finally { metadataBusy = false }
+                        }
+                    }, onOpen = { item ->
+                        runCatching { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(item.uri), "video/mp4").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
+                            .onFailure { status = "Could not open queued MP4: ${it.message}" }
+                    })
+                Text("Keep ClipForge open while the queue runs. Leaving the app stops unfinished exports for a fresh review.", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(enabled = !busy && approved && campaignIssues.isEmpty() && (if (timelineMode) TimelineModel.subtitles(timeline.clips).isNotEmpty() else subtitleDraftIndex == selectedDraft && selectedDraft >= 0 && subtitleSegments.isNotEmpty()), onClick = {
                     pendingSrt = if (timelineMode) SubtitleSrt.render(TimelineModel.subtitles(timeline.clips), 0, TimelineModel.duration(timeline.clips))
                         else SubtitleSrt.render(subtitleSegments, (duration * start).toLong(), (duration * end).toLong())

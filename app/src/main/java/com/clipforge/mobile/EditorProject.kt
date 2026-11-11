@@ -31,12 +31,15 @@ data class EditorProject(
     val captionPreset: String = "BOLD",
     val projectId: String = "",
     val projectName: String = "",
-    val captionAppearance: CaptionAppearance = CaptionAppearance()
+    val captionAppearance: CaptionAppearance = CaptionAppearance(),
+    val hookTone: HookTone = HookTone.FUNNY,
+    val campaignBrief: CampaignBrief = CampaignBrief()
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 
     fun validate() {
         captionAppearance.validate()
+        campaignBrief.validate()
         require(projectId.isEmpty() || projectId.matches(Regex("[a-f0-9]{32}"))) { "Invalid project identity" }
         require(projectName.length <= 80 && projectName.none { it.isISOControl() }) { "Invalid project name" }
         require(source.startsWith("content://") || source.startsWith("file://")) { "Project source must be a local video" }

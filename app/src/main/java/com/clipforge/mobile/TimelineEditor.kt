@@ -41,13 +41,16 @@ fun TimelineEditor(
     onMessage: (String) -> Unit,
     compact: Boolean = false,
     tool: EditorTool = EditorTool.EDIT,
-    music: MusicTrack? = null
+    music: MusicTrack? = null,
+    showTracks: Boolean = true
 ) {
     val seekRequests = remember { kotlinx.coroutines.channels.Channel<Long>(kotlinx.coroutines.channels.Channel.CONFLATED) }
     val latestSeek by rememberUpdatedState(onSeek)
     LaunchedEffect(seekRequests) {
         for (position in seekRequests) { latestSeek(position); kotlinx.coroutines.delay(33) }
     }
+    var tracksExpanded by remember(tool) { mutableStateOf(false) }
+    val tracksVisible = showTracks || tracksExpanded
     var snapping by remember { mutableStateOf(true) }
     val clips = history.clips
     val soundEvents = remember(clips) { SoundTimeline.events(clips) }
@@ -72,6 +75,16 @@ fun TimelineEditor(
         catch (error: Exception) { onMessage(error.message ?: "Timeline change failed") }
     }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        if (compact && !showTracks) {
+            Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                clips.forEachIndexed { index, clip ->
+                    FilterChip(selected = clip.id == selected?.id, enabled = enabled,
+                        onClick = { onSelect(clip.id); onSeek(TimelineModel.offset(clips, index)) }, label = { Text("Clip ${index + 1}") })
+                }
+                TextButton(onClick = { tracksExpanded = !tracksExpanded }) { Text(if (tracksExpanded) "Hide timeline" else "Show timeline") }
+            }
+        }
+        if (tracksVisible) {
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
             Text("Timeline", style = MaterialTheme.typography.titleMedium)
             Text("${Timecode.precise(total)} · ${clips.size} cuts", style = MaterialTheme.typography.bodySmall,
@@ -203,6 +216,7 @@ fun TimelineEditor(
             Text("Zoom", style = MaterialTheme.typography.bodySmall)
             Slider(value = zoom, onValueChange = { zoom = it }, valueRange = 4f..40f, modifier = Modifier.weight(1f), enabled = enabled)
         }
+        }
         if (!compact || tool == EditorTool.EDIT) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(enabled = enabled, onClick = {
                 try { edit(TimelineModel.split(clips, playheadMs)) }
@@ -215,7 +229,7 @@ fun TimelineEditor(
             OutlinedButton(enabled = enabled && selectedIndex > 0, onClick = { edit(TimelineModel.move(clips, selectedIndex, -1)) }) { Text("Earlier") }
             OutlinedButton(enabled = enabled && selectedIndex >= 0 && selectedIndex < clips.lastIndex, onClick = { edit(TimelineModel.move(clips, selectedIndex, 1)) }) { Text("Later") }
         }
-        selected?.takeIf { !compact || tool in listOf(EditorTool.EDIT, EditorTool.AUDIO, EditorTool.TEXT, EditorTool.EFFECTS, EditorTool.SPEED) }?.let { clip ->
+        selected?.takeIf { !compact || tool in listOf(EditorTool.EDIT, EditorTool.AUDIO, EditorTool.TEXT, EditorTool.SPEED) }?.let { clip ->
             var from by remember(clip.id, clip.startMs) { mutableStateOf(Timecode.precise(clip.startMs)) }
             var until by remember(clip.id, clip.endMs) { mutableStateOf(Timecode.precise(clip.endMs)) }
             fun update(changed: TimelineClip) = edit(clips.map { if (it.id == clip.id) changed else it })

@@ -11,6 +11,7 @@ object SpeechJobStore {
         fun put(key: String, value: Any) { data.setProperty(key, value.toString()) }
         put("format", "clipforge-speech-v1"); put("id", job.id); put("source", job.source)
         put("duration", job.durationMs); put("mode", job.mode.name); put("target", job.targetId)
+        put("language", job.language)
         put("status", job.status.name); put("elapsed", job.elapsedMs); put("message", job.message)
         put("range.count", job.ranges.size)
         job.ranges.forEachIndexed { i, range -> put("range.$i.index", range.index); put("range.$i.start", range.startMs); put("range.$i.end", range.endMs) }
@@ -48,6 +49,6 @@ object SpeechJobStore {
             }
         }
         return SpeechJob(text("id"), text("source"), text("duration").toLong(), SpeechJobMode.valueOf(text("mode")), ranges,
-            text("target"), SpeechJobStatus.valueOf(text("status")), results, text("elapsed").toLong(), text("message")).also { it.validate() }
+            text("target"), SpeechJobStatus.valueOf(text("status")), results, text("elapsed").toLong(), text("message"), data.getProperty("language", "auto")).also { it.validate() }
     }
 }

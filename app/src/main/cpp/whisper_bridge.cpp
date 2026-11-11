@@ -8,6 +8,7 @@ namespace {
 std::mutex model_mutex;
 whisper_context* cached_context = nullptr;
 std::string cached_path;
+std::string configured_language = "auto";
 
 struct ProgressTarget {
     JavaVM* vm;
@@ -41,6 +42,17 @@ Java_com_clipforge_mobile_WhisperNative_releaseModelNative(JNIEnv*, jobject) {
     if (cached_context) whisper_free(cached_context);
     cached_context = nullptr;
     cached_path.clear();
+    configured_language = "auto";
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_clipforge_mobile_WhisperNative_configureLanguageNative(JNIEnv* env, jobject, jstring language) {
+    std::lock_guard<std::mutex> guard(model_mutex);
+    const char* value = env->GetStringUTFChars(language, nullptr);
+    if (!value) return;
+    std::string requested(value);
+    env->ReleaseStringUTFChars(language, value);
+    configured_language = (requested == "en" || requested == "tl") ? requested : "auto";
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -74,7 +86,7 @@ Java_com_clipforge_mobile_WhisperNative_transcribeSegmentsNative(JNIEnv* env, jo
     params.max_len = 42;
     params.split_on_word = true;
     params.translate = false;
-    params.language = "auto";
+    params.language = configured_language.c_str();
     params.n_threads = 4;
     JavaVM* vm = nullptr;
     env->GetJavaVM(&vm);

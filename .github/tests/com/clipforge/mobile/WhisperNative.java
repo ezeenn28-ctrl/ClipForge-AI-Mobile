@@ -12,6 +12,7 @@ public final class WhisperNative {
     interface ProgressListener { void onProgress(int percent); }
     native String transcribeSegmentsNative(String model, float[] audio, ProgressListener listener);
     native void releaseModelNative();
+    native void configureLanguageNative(String language);
 
     public static void main(String[] args) throws Exception {
         System.loadLibrary("clipforge_whisper");
@@ -35,6 +36,7 @@ public final class WhisperNative {
         try {
             for (int pass = 0; pass < 2; pass++) {
                 long started = System.nanoTime();
+                bridge.configureLanguageNative(pass == 0 ? "en" : "auto");
                 String result = bridge.transcribeSegmentsNative(args[0], samples, listener);
                 if (result == null || result.startsWith("ERROR:") || !result.contains("\t"))
                     throw new AssertionError("Inference did not return timed speech: " + result);
