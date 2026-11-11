@@ -44,6 +44,7 @@ class MetadataBackupTest {
             val music=MusicCatalog.save(root,MusicTrack("file:///music.wav","Imported",5000,loop=true))
             MusicCatalog.toggle(root,music)
             val queued=ExportQueue.add(root,p,true)
+            File(destination,"export-queue").mkdirs()
             ExportQueue.record(destination,queued.copy(status=QueueStatus.COMPLETE,uri="content://old/export"))
             val bytes=ByteArrayOutputStream().also { MetadataBackup.create(root,it) }.toByteArray()
             MetadataBackup.restore(destination,MetadataBackup.stage(destination,ByteArrayInputStream(bytes)))
