@@ -10,8 +10,8 @@ import android.graphics.Typeface
  * Highlight is a visual emphasis rule, not word-level speech alignment. */
 fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
                        subtitleColor: Int = Color.WHITE, preset: CaptionPreset = CaptionPreset.BOLD,
-                       appearance: CaptionAppearance = CaptionAppearance(), bitmapScale: Float = 1f, activeWord: Int? = null): Bitmap {
-    appearance.validate()
+                       appearance: CaptionAppearance = CaptionAppearance(), bitmapScale: Float = 1f, activeWord: Int? = null, placement:TextPlacement=TextPlacement()): Bitmap {
+    appearance.validate(); placement.validate()
     require(bitmapScale.isFinite() && bitmapScale in .25f..1f) { "Invalid caption bitmap scale" }
     val bitmap = Bitmap.createBitmap((720 * bitmapScale).toInt(), (1280 * bitmapScale).toInt(), Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap).apply { scale(bitmapScale, bitmapScale) }
@@ -44,7 +44,7 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
         paint.setShadowLayer(5f, 2f, 3f, Color.BLACK)
         if (body && preset == CaptionPreset.NEON) paint.setShadowLayer(12f, 0f, 0f, appearance.highlightColor())
         if (body && preset in listOf(CaptionPreset.STICKER, CaptionPreset.CAPSULE)) paint.clearShadowLayer()
-        val baseSize = if (index == 0) if (reference) 38f else 45f else subtitleSize
+        val baseSize = (if (index == 0) if (reference) 38f else 45f else subtitleSize) * if(index==0)placement.hookScale else placement.scale
         paint.textSize = baseSize
         val words = (if (body && preset == CaptionPreset.COMIC) text.uppercase(java.util.Locale.ROOT) else text).split(Regex("\\s+")).filter { it.isNotEmpty() }.mapIndexed { wordIndex, it ->
             val marked = it.startsWith("#") && it.length > 1
@@ -67,15 +67,16 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
             val naturalWidth = paint.measureText(clean)
             if (naturalWidth > 624f) paint.textSize = baseSize * 624f / naturalWidth
             val width = paint.measureText(clean)
-            val left = if (index == 0) (720f - width) / 2f else when (appearance.alignment) {
+            val defaultLeft = if (index == 0) (720f - width) / 2f else when (appearance.alignment) {
                 CaptionAlignment.LEFT -> 48f
                 CaptionAlignment.CENTER -> (720f - width) / 2f
                 CaptionAlignment.RIGHT -> 672f - width
             }
+            val left=(defaultLeft+(if(body)placement.x else placement.hookX)*720f).coerceIn(24f,(696f-width).coerceAtLeast(24f))
             val lineStep = if (body && preset in listOf(CaptionPreset.OUTLINE, CaptionPreset.NEON, CaptionPreset.CAPSULE, CaptionPreset.STICKER, CaptionPreset.COMIC, CaptionPreset.EDITORIAL)) maxOf(55f, subtitleSize + 28f) else 55f
             val newStyle = body && preset in listOf(CaptionPreset.OUTLINE, CaptionPreset.NEON, CaptionPreset.CAPSULE, CaptionPreset.STICKER, CaptionPreset.COMIC, CaptionPreset.EDITORIAL)
             val captionY = if (newStyle) minOf(appearance.positionY * 1280f, 1240f - (minOf(3, rows.size) - 1) * lineStep) else appearance.positionY * 1280f
-            val y = (if (index == 0) if (reference) appearance.layout.videoTop - 100f else 210f else captionY) + row * lineStep
+            val y = ((if (index == 0) if (reference) appearance.layout.videoTop - 100f else 210f else captionY)+(if(body)placement.y else placement.hookY)*1280f).coerceIn(baseSize+20f,1240f-(minOf(3,rows.size)-1)*lineStep) + row * lineStep
             if (body && preset in listOf(CaptionPreset.CAPSULE, CaptionPreset.STICKER)) {
                 val card = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                     color = if (preset == CaptionPreset.STICKER) Color.WHITE else Color.argb(235, 8, 12, 20)
@@ -122,5 +123,6 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
     }
     return bitmap
 }
+
 
 

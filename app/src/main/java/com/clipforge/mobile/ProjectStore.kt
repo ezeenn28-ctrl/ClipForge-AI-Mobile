@@ -57,6 +57,7 @@ object ProjectStore {
         put("timeline.current", safe.currentTimelineId)
         put("music.present", safe.music != null)
         safe.music?.let { music ->
+            put("music.muted",music.muted);put("music.locked",music.locked)
             put("music.source", music.source); put("music.name", music.name); put("music.duration", music.durationMs)
             put("music.start", music.startMs); put("music.end", music.endMs); put("music.offset", music.timelineStartMs)
             put("music.loop",music.loop);put("music.duck",music.ducking);put("music.duckFloor",music.duckFloor)
@@ -64,6 +65,7 @@ object ProjectStore {
             put("music.volume", music.volume); put("music.fadeIn", music.fadeInMs); put("music.fadeOut", music.fadeOutMs)
         }
         safe.timelineClips.forEachIndexed { i, clip ->
+            EditorStateStore.write(data,"timeline.$i.editor",clip.editor)
             val v = clip.visuals
             put("timeline.$i.speed", clip.speed)
             put("timeline.$i.cleanup",clip.cleanupStrength);put("timeline.$i.voiceGain",clip.voiceGain);put("timeline.$i.audio.analyzed",clip.audioProfile.analyzed);put("timeline.$i.audio.rms",clip.audioProfile.rms);put("timeline.$i.audio.peak",clip.audioProfile.peak)
@@ -173,14 +175,14 @@ object ProjectStore {
                     data.getProperty("timeline.$i.color.contrast", "1").toFloat(),
                     data.getProperty("timeline.$i.color.saturation", "1").toFloat(),
                     data.getProperty("timeline.$i.color.warmth", "0").toFloat()),
-                sounds = sounds, cleanupStrength=data.getProperty("timeline.$i.cleanup","0").toFloat(), voiceGain=data.getProperty("timeline.$i.voiceGain","1").toFloat(),
+                editor=EditorStateStore.read(data,"timeline.$i.editor"), sounds = sounds, cleanupStrength=data.getProperty("timeline.$i.cleanup","0").toFloat(), voiceGain=data.getProperty("timeline.$i.voiceGain","1").toFloat(),
                 audioProfile=ClipAudioProfile(data.getProperty("timeline.$i.audio.analyzed","false").toBooleanStrict(),data.getProperty("timeline.$i.audio.rms","0").toFloat(),data.getProperty("timeline.$i.audio.peak","0").toFloat(),data.getProperty("timeline.$i.audio.activity","").split(',').filter(String::isNotBlank).map{entry->val pair=entry.split(':');require(pair.size==2);AudioRegion(pair[0].toLong(),pair[1].toLong())},data.getProperty("timeline.$i.audio.sampled","false").toBooleanStrict(),data.getProperty("timeline.$i.audio.visual","-1").toInt()),
                 transition = CutTransition(CutTransitionKind.valueOf(data.getProperty("timeline.$i.transition.kind", "CUT")),
                     data.getProperty("timeline.$i.transition.duration", "400").toLong()))
         }
         val music = if (data.getProperty("music.present", "false").toBooleanStrict()) MusicTrack(
             text("music.source"), text("music.name"), number("music.duration"), number("music.start"), number("music.end"),
-            number("music.offset"), text("music.volume").toFloat(), number("music.fadeIn"), number("music.fadeOut"),loop=data.getProperty("music.loop","false").toBooleanStrict(),ducking=data.getProperty("music.duck","false").toBooleanStrict(),duckFloor=data.getProperty("music.duckFloor",".25").toFloat(),bpm=data.getProperty("music.bpm","0").toInt(),origin=data.getProperty("music.origin","Imported local music · verify reuse permission"),mood=data.getProperty("music.mood",""),beats=data.getProperty("music.beats","").split(',').filter(String::isNotBlank).map(String::toLong),libraryId=data.getProperty("music.libraryId","")) else null
+            number("music.offset"), text("music.volume").toFloat(), number("music.fadeIn"), number("music.fadeOut"),loop=data.getProperty("music.loop","false").toBooleanStrict(),ducking=data.getProperty("music.duck","false").toBooleanStrict(),duckFloor=data.getProperty("music.duckFloor",".25").toFloat(),bpm=data.getProperty("music.bpm","0").toInt(),origin=data.getProperty("music.origin","Imported local music · verify reuse permission"),mood=data.getProperty("music.mood",""),beats=data.getProperty("music.beats","").split(',').filter(String::isNotBlank).map(String::toLong),libraryId=data.getProperty("music.libraryId",""),muted=data.getProperty("music.muted","false").toBooleanStrict(),locked=data.getProperty("music.locked","false").toBooleanStrict()) else null
         return EditorProject(text("source"), number("duration"), number("start"), number("end"),
             text("mode"), bool("vertical"), bool("mute"), drafts, integer("selected"), text("hook"), text("caption"),
             text("effect"), text("subtitleSize").toFloat(), bool("subtitleYellow"), integer("subtitleDraft"),
@@ -205,6 +207,7 @@ object ProjectStore {
                 wordHighlight = data.getProperty("caption.wordHighlight", "false").toBooleanStrict())).also { it.validate() }
     }
 }
+
 
 
 

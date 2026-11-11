@@ -24,7 +24,7 @@ object AudioPlanning {
     }
     fun merge(regions:List<AudioRegion>):List<AudioRegion>{val out=mutableListOf<AudioRegion>();regions.sortedBy{it.startMs}.forEach{r->val last=out.lastOrNull();if(last!=null&&r.startMs<=last.endMs+120)out[out.lastIndex]=AudioRegion(last.startMs,maxOf(last.endMs,r.endMs)) else out.add(r)};return out}
     fun activity(clips:List<TimelineClip>):List<AudioRegion> = merge(clips.flatMapIndexed{index,clip->
-        if(clip.volume<=.001f)return@flatMapIndexed emptyList<AudioRegion>()
+        if(clip.editor.voiceMuted||clip.volume<=.001f)return@flatMapIndexed emptyList<AudioRegion>()
         val offset=TimelineModel.offset(clips,index)
         val regions=(if(clip.audioProfile.sampled && clip.audioProfile.activity.isNotEmpty())listOf(AudioRegion(clip.startMs,clip.endMs)) else clip.audioProfile.activity)+clip.subtitles.map{AudioRegion(it.startMs,it.endMs)}
         regions.mapNotNull{r->val a=maxOf(r.startMs,clip.startMs);val b=minOf(r.endMs,clip.endMs);if(b<=a)null else AudioRegion(offset+clip.outputOffsetMs(a-clip.startMs),offset+clip.outputOffsetMs(b-clip.startMs)).takeIf{it.endMs>it.startMs}}
@@ -66,3 +66,4 @@ object AudioInspection {
         return ClipAudioProfile(true,sqrt(profiles.sumOf{it.first.rms.toDouble().pow(2)*it.second}/duration).toFloat(),profiles.maxOfOrNull{it.first.peak}?:0f,regions,sampled,visual)
     }
 }
+

@@ -12,7 +12,7 @@ android {
         minSdk = 26
         targetSdk = 35
         versionCode = ciBuildNumber
-        versionName = "1.6.0"
+        versionName = "1.7.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         ndk { abiFilters += when {
             providers.gradleProperty("mediaDeviceTests").orNull == "true" -> listOf("x86_64")
@@ -91,3 +91,4 @@ tasks.register<JavaExec>("writeReleaseUpgradeSeed") {
     doFirst { classpath = tasks.named<org.gradle.api.tasks.testing.Test>("testDebugUnitTest").get().classpath }
     args(layout.buildDirectory.dir("outputs/release-update-seed").get().asFile.absolutePath)
 }
+

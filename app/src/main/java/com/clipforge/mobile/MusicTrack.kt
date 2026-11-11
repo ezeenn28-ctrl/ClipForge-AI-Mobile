@@ -7,7 +7,7 @@ data class MusicTrack(
     val volume: Float = .25f, val fadeInMs: Long = 500, val fadeOutMs: Long = 500,
     val loop: Boolean = false, val ducking: Boolean = false, val duckFloor: Float = .25f,
     val bpm: Int = 0, val origin: String = "Imported local music · verify reuse permission", val mood: String = "",
-    val beats: List<Long> = emptyList(), val libraryId: String = ""
+    val beats: List<Long> = emptyList(), val libraryId: String = "", val muted:Boolean=false, val locked:Boolean=false
 ) {
     fun validate() {
         require(source.startsWith("content://") || source.startsWith("file://")) { "Music must be a local file" }
@@ -27,9 +27,10 @@ data class MusicTrack(
         while(cursor<activeDuration(sequenceMs)&&out.size<300){base.filter{it in startMs until endMs}.forEach{t->val at=timelineStartMs+cursor+t-startMs;if(at<timelineStartMs+activeDuration(sequenceMs)&&out.size<300)out.add(at)};if(!loop)break;cursor+=endMs-startMs};return out
     }
     fun envelope(sequenceMs: Long): TimelineClip? = activeDuration(sequenceMs).takeIf { it > 0 }?.let {
-        TimelineClip("music", 0, it, volume = volume, fadeInMs = minOf(fadeInMs, it), fadeOutMs = minOf(fadeOutMs, it))
+        TimelineClip("music", 0, it, volume = if(muted)0f else volume, fadeInMs = minOf(fadeInMs, it), fadeOutMs = minOf(fadeOutMs, it))
     }
     fun gain(sequencePositionMs: Long, sequenceMs: Long, activity: List<AudioRegion> = emptyList()): Float {
+        if(muted)return 0f
         val active = activeDuration(sequenceMs)
         val local = sequencePositionMs - timelineStartMs
         if (local < 0 || local >= active) return 0f
@@ -40,3 +41,4 @@ data class MusicTrack(
         return (volume * minOf(attack, release)).toFloat() * if(ducking) AudioPlanning.duck(sequencePositionMs,activity,duckFloor) else 1f
     }
 }
+

@@ -1,7 +1,7 @@
 name: Auto Audio checks
 on:
   push:
-    branches: [feature/auto-audio, feature/studio-upgrade]
+    branches: [feature/auto-audio, feature/studio-upgrade, feature/editor-precision]
   workflow_dispatch:
 concurrency:
   group: auto-audio-check
@@ -31,3 +31,4 @@ jobs:
         with:
           name: auto-audio-unit-reports
           path: app/build/test-results/testDebugUnitTest/
+

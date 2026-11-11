@@ -25,7 +25,7 @@ data class TimelineClip(
     val color: ColorAdjustments = ColorAdjustments(),
     val transition: CutTransition = CutTransition(),
     val sounds: List<ClipSound> = emptyList(),
-    val cleanupStrength: Float = 0f, val voiceGain: Float = 1f, val audioProfile: ClipAudioProfile = ClipAudioProfile()
+    val cleanupStrength: Float = 0f, val voiceGain: Float = 1f, val audioProfile: ClipAudioProfile = ClipAudioProfile(), val editor: ClipEditorState = ClipEditorState()
 ) {
     val sourceSpanMs: Long get() = endMs - startMs
     val durationMs: Long get() = (sourceSpanMs / speed.toDouble()).roundToLong().coerceAtLeast(1)
@@ -48,7 +48,7 @@ data class TimelineClip(
         require(sourceDurationMs in 1..86_400_000) { "Invalid timeline source duration" }
         require(sounds.size <= 12 && sounds.map { it.id }.distinct().size == sounds.size) { "Up to 12 unique effects per clip" }
         sounds.forEach { it.validate(sourceDurationMs) }
-        visuals.validate()
+        visuals.validate(); editor.validate()
         require(cleanupStrength.isFinite() && cleanupStrength in 0f..1f)
         require(voiceGain.isFinite() && voiceGain in .25f..4f)
         audioProfile.validate(resolvedDuration(sourceDurationMs))
@@ -107,7 +107,7 @@ object TimelineModel {
     }
     fun subtitles(clips: List<TimelineClip>): List<WhisperNative.Segment> = clips.flatMapIndexed { index, clip ->
         val offset = offset(clips, index)
-        val cues = if (clip.subtitles.isNotEmpty()) clip.subtitles else if (clip.caption.isNotBlank()) listOf(
+        val cues = if (clip.editor.captionsMuted) emptyList() else if (clip.subtitles.isNotEmpty()) clip.subtitles else if (clip.caption.isNotBlank()) listOf(
             WhisperNative.Segment(if (clip.captionEndMs > clip.captionStartMs) clip.captionStartMs else clip.startMs,
                 if (clip.captionEndMs > clip.captionStartMs) clip.captionEndMs else clip.endMs, clip.caption)
         ) else emptyList()
@@ -120,6 +120,7 @@ object TimelineModel {
         }
     }
     fun audioGain(clip: TimelineClip, localMs: Long): Float {
+        if (clip.editor.voiceMuted) return 0f
         val fadeIn = if (clip.fadeInMs > 0) (localMs.toDouble() / clip.fadeInMs).coerceIn(0.0, 1.0) else 1.0
         val fadeOut = if (clip.fadeOutMs > 0) ((clip.durationMs - localMs).toDouble() / clip.fadeOutMs).coerceIn(0.0, 1.0) else 1.0
         return (clip.volume * minOf(fadeIn, fadeOut)).toFloat()
@@ -129,12 +130,16 @@ object TimelineModel {
 data class TimelineHistory(
     val clips: List<TimelineClip> = emptyList(),
     val past: List<List<TimelineClip>> = emptyList(),
-    val future: List<List<TimelineClip>> = emptyList()
+    val future: List<List<TimelineClip>> = emptyList(),
+    val pastLabels: List<String> = emptyList(), val futureLabels: List<String> = emptyList(), val rejection:String=""
 ) {
-    fun edit(next: List<TimelineClip>) = if (next == clips) this else TimelineHistory(next, (past + listOf(clips)).takeLast(30), emptyList())
-    fun undo() = if (past.isEmpty()) this else TimelineHistory(past.last(), past.dropLast(1), listOf(clips) + future)
-    fun redo() = if (future.isEmpty()) this else TimelineHistory(future.first(), (past + listOf(clips)).takeLast(30), future.drop(1))
+    val undoLabel: String get() = pastLabels.lastOrNull() ?: "Edit"
+    val redoLabel: String get() = futureLabels.firstOrNull() ?: "Edit"
+    fun edit(next: List<TimelineClip>, label: String = EditorPrecision.describe(clips,next)): TimelineHistory {
+        if(next==clips)return this
+        try { EditorPrecision.validateLocks(clips,next) } catch(e:IllegalArgumentException){ return copy(rejection=e.message?:"Track is locked") }
+        return TimelineHistory(next,(past+listOf(clips)).takeLast(30),emptyList(),(pastLabels+label).takeLast(30),emptyList())
+    }
+    fun undo() = if(past.isEmpty())this else TimelineHistory(past.last(),past.dropLast(1),listOf(clips)+future,pastLabels.dropLast(1),listOf(undoLabel)+futureLabels)
+    fun redo() = if(future.isEmpty())this else TimelineHistory(future.first(),(past+listOf(clips)).takeLast(30),future.drop(1),(pastLabels+redoLabel).takeLast(30),futureLabels.drop(1))
 }
-
-
-

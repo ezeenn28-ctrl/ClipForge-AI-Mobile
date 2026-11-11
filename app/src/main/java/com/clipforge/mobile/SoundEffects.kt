@@ -32,7 +32,7 @@ object SoundTimeline {
     fun events(clips: List<TimelineClip>): List<TimedSound> {
         val raw = clips.flatMapIndexed { index, clip ->
             val offset = TimelineModel.offset(clips, index)
-            clip.sounds.filter { it.sourceMs in clip.startMs until clip.endMs && it.volume > 0 }.mapNotNull { cue ->
+            clip.sounds.filter { !clip.editor.sfxMuted && it.sourceMs in clip.startMs until clip.endMs && it.volume > 0 }.mapNotNull { cue ->
                 val local = clip.outputOffsetMs(cue.sourceMs - clip.startMs)
                 val available = clip.durationMs - local
                 if (available <= 0) null else TimedSound(clip.id + ":" + cue.id, offset + local,
@@ -123,4 +123,5 @@ object SoundAssets {
         return out.array()
     }
 }
+
 

@@ -42,7 +42,10 @@ fun TimelineEditor(
     compact: Boolean = false,
     tool: EditorTool = EditorTool.EDIT,
     music: MusicTrack? = null,
-    showTracks: Boolean = true
+    showTracks: Boolean = true,
+    showDetails:Boolean=true,
+    waveforms:Map<String,WaveformResult> = emptyMap(),
+    onTool:(EditorTool,AudioPage?)->Unit={_,_->}
 ) {
     val seekRequests = remember { kotlinx.coroutines.channels.Channel<Long>(kotlinx.coroutines.channels.Channel.CONFLATED) }
     val latestSeek by rememberUpdatedState(onSeek)
@@ -64,13 +67,17 @@ fun TimelineEditor(
     val scale = minOf(maxOf(zoom, fitZoom), if (total > 0) 8_000_000f / total else zoom) / 1000f
     val trackWidth = (total * scale).coerceAtLeast(viewportDp).dp
     val trackScroll = rememberScrollState()
+    val scope=rememberCoroutineScope()
+    var zoomAnchor by remember{mutableStateOf<Pair<Long,Float>?>(null)}
+    LaunchedEffect(zoom){zoomAnchor?.let{(at,x)->androidx.compose.runtime.withFrameNanos{};trackScroll.scrollTo((at*scale*density.density-x).toInt().coerceAtLeast(0));zoomAnchor=null}}
+    val anchors=remember(clips,music){EditorPrecision.snapTargets(clips,music)}
     val accent = MaterialTheme.colorScheme.primary
     val surface = MaterialTheme.colorScheme.surface
     val outline = MaterialTheme.colorScheme.outlineVariant
     val beatMarkers = remember(music, total) { music?.beatMarkers(total).orEmpty() }
     fun scrub(time: Long) {
         val tolerance = minOf(150L, (8 / scale).toLong())
-        val base = TimelineTouch.seek(clips, time, snapping, tolerance)
+        val base = if(snapping) TimelineTouch.snap(time,anchors,tolerance).coerceIn(0,total) else time.coerceIn(0,total)
         val beat = if (snapping) beatMarkers.minByOrNull { kotlin.math.abs(it-time) } else null
         val target = if (beat != null && kotlin.math.abs(beat-time)<=tolerance && (base==time || kotlin.math.abs(beat-time)<kotlin.math.abs(base-time))) beat else base
         seekRequests.trySend(target)
@@ -99,7 +106,7 @@ fun TimelineEditor(
             FilterChip(selected = snapping, onClick = { snapping = !snapping }, enabled = enabled, label = { Text("Snap") })
             TextButton(enabled = enabled, onClick = { zoom = (zoom / 1.5f).coerceAtLeast(4f) },
                 modifier = Modifier.semantics { contentDescription = "Zoom out" }) { Text("−") }
-            TextButton(enabled = enabled, onClick = { zoom = (zoom * 1.5f).coerceAtMost(40f) },
+            TextButton(enabled = enabled, onClick = { zoom = (zoom * 1.5f).coerceAtMost(600f) },
                 modifier = Modifier.semantics { contentDescription = "Zoom in" }) { Text("+") }
             if (!compact) OutlinedButton(enabled = enabled, onClick = onAddSelection) { Text("Add selection") }
             if (!compact) OutlinedButton(enabled = enabled && history.past.isNotEmpty(), onClick = { onHistory(history.undo()) }) { Text("Undo") }
@@ -119,7 +126,7 @@ fun TimelineEditor(
                 if (soundEvents.isNotEmpty()) Box(Modifier.height(28.dp), contentAlignment = androidx.compose.ui.Alignment.Center) { Text("FX", fontSize = 10.sp, color = accent) }
             }
         Box(Modifier.weight(1f).onSizeChanged { viewportDp = it.width / density.density }
-            .background(surface, RoundedCornerShape(14.dp)).horizontalScroll(trackScroll)) {
+            .background(surface, RoundedCornerShape(14.dp)).precisionPinch(enabled){factor,center->zoomAnchor=((trackScroll.value+center.x)/density.density/scale).toLong() to center.x;zoom=(zoom*factor).coerceIn(4f,600f)}.horizontalScroll(trackScroll)) {
             Column(Modifier.width(trackWidth).padding(vertical = 6.dp)) {
                 Canvas(Modifier.fillMaxWidth().height(30.dp)
                     .pointerInput(total, scale, enabled, snapping, clips) {
@@ -156,7 +163,7 @@ fun TimelineEditor(
                             rememberClipThumbnail(context, clip.source.takeIf { it.isNotBlank() }?.let(Uri::parse) ?: source,
                                 clip.startMs + clip.sourceSpanMs * tile / tiles, enabled && visible)
                         }
-                        Surface(onClick = { onSelect(clip.id); onSeek(TimelineModel.offset(clips, index)) }, enabled = enabled,
+                        Surface(onClick = { onSelect(clip.id); onSeek(TimelineModel.offset(clips, index));onTool(EditorTool.EDIT,null) }, enabled = enabled,
                             modifier = Modifier.width((clip.durationMs * scale).dp).height(64.dp), shape = RoundedCornerShape(8.dp),
                             color = if (clip.id == selected?.id) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
                             border = BorderStroke(if (clip.id == selected?.id) 2.dp else 1.dp, if (clip.id == selected?.id) accent else outline)) {
@@ -173,7 +180,7 @@ fun TimelineEditor(
                         }
                     }
                 }
-                Canvas(Modifier.fillMaxWidth().height(32.dp)) {
+                Canvas(Modifier.fillMaxWidth().height(32.dp).semantics{contentDescription="Select captions track"}.pointerInput(clips,scale,enabled){detectTapGestures{if(enabled){val time=(it.x/density.density/scale).toLong();TimelineModel.position(clips,time)?.let{p->onSelect(clips[p.index].id);onSeek(time);onTool(EditorTool.CAPTIONS,null)}}}}) {
                     drawRect(outline.copy(alpha = .4f))
                     TimelineModel.subtitles(clips).forEach { cue ->
                         drawRoundRect(Color(0xFFFFD76A).copy(alpha = .85f), Offset(cue.startMs * scale * density.density, 7.dp.toPx()),
@@ -181,14 +188,16 @@ fun TimelineEditor(
                     }
                 }
                 Row {
-                    clips.forEach { clip ->
-                        Box(Modifier.width((clip.durationMs * scale).dp).height(28.dp).background(Color(0xFF0D414A)).border(1.dp, outline)) {
-                            Text(if (clip.volume == 0f) "Muted" else "Original audio", Modifier.padding(5.dp), fontSize = 9.sp, maxLines = 1)
+                    clips.forEachIndexed { index,clip ->
+                        Box(Modifier.width((clip.durationMs * scale).dp).height(28.dp).background(Color(0xFF0D414A)).border(1.dp, outline).clickable(enabled=enabled){onSelect(clip.id);onSeek(TimelineModel.offset(clips,index));onTool(EditorTool.AUDIO,AudioPage.VOICE)}) {
+                            val waveform=waveforms[EditorWaveform.key(clip,source?.toString().orEmpty())]
+                            if(waveform!=null)Canvas(Modifier.fillMaxSize()) { waveform.peaks.forEach{p->val x=clip.outputOffsetMs(p.sourceMs-clip.startMs).toFloat()/clip.durationMs*size.width;val amp=p.amplitude*size.height*.45f;drawLine(accent,Offset(x,size.height/2-amp),Offset(x,size.height/2+amp),1.dp.toPx())} }
+                            else Text(if (clip.volume == 0f||clip.editor.voiceMuted) "Muted" else "Original audio", Modifier.padding(5.dp), fontSize = 9.sp, maxLines = 1)
                         }
                     }
                 }
                 music?.let { track ->
-                    Canvas(Modifier.fillMaxWidth().height(28.dp).semantics { contentDescription = "Music track: " + track.name }) {
+                    Canvas(Modifier.fillMaxWidth().height(28.dp).semantics { contentDescription = "Music track: " + track.name }.pointerInput(enabled){detectTapGestures{if(enabled)onTool(EditorTool.AUDIO,AudioPage.MUSIC)}}) {
                         drawRect(outline.copy(alpha = .25f))
                         val active = track.activeDuration(total)
                         if (active > 0) {
@@ -204,8 +213,9 @@ fun TimelineEditor(
                         }
                     }
                 }
+                if(soundEvents.isNotEmpty())Spacer(Modifier.height(28.dp))
             }
-            if (soundEvents.isNotEmpty()) Canvas(Modifier.width(trackWidth).height(28.dp).align(androidx.compose.ui.Alignment.BottomStart).semantics { contentDescription = "Sound effects track" }) {
+            if (soundEvents.isNotEmpty()) Canvas(Modifier.width(trackWidth).height(28.dp).align(androidx.compose.ui.Alignment.BottomStart).semantics { contentDescription = "Sound effects track" }.pointerInput(soundEvents,scale,enabled){detectTapGestures{if(enabled){val time=(it.x/density.density/scale).toLong();soundEvents.minByOrNull{kotlin.math.abs(it.startMs-time)}?.let{cue->onSelect(cue.id.substringBefore(":"));onSeek(cue.startMs);onTool(EditorTool.AUDIO,AudioPage.SFX)}}}}) {
                 drawRect(surface)
                 soundEvents.forEach { sound ->
                     drawRoundRect(accent.copy(alpha = .8f), Offset(sound.startMs * scale * density.density, 4.dp.toPx()),
@@ -219,14 +229,14 @@ fun TimelineEditor(
             }
         }
         }
-        Text("Drag the ruler to scrub · Use + / − to zoom", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text("Drag the ruler to scrub · Pinch to zoom · Snap includes cuts, captions, beats and SFX", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (!compact) Slider(value = playheadMs.coerceIn(0, total).toFloat(), onValueChange = { scrub(it.toLong()) }, valueRange = 0f..total.coerceAtLeast(1).toFloat(), enabled = enabled)
         if (!compact || tool == EditorTool.MORE) Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Text("Zoom", style = MaterialTheme.typography.bodySmall)
-            Slider(value = zoom, onValueChange = { zoom = it }, valueRange = 4f..40f, modifier = Modifier.weight(1f), enabled = enabled)
+            Slider(value = zoom, onValueChange = { zoom = it }, valueRange = 4f..600f, modifier = Modifier.weight(1f), enabled = enabled)
         }
         }
-        if (!compact || tool == EditorTool.EDIT) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (showDetails && (!compact || tool == EditorTool.EDIT)) Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Button(enabled = enabled, onClick = {
                 try { edit(TimelineModel.split(clips, playheadMs)) }
                 catch (error: Exception) { onMessage(error.message ?: "Move the playhead inside a clip") }
@@ -238,7 +248,7 @@ fun TimelineEditor(
             OutlinedButton(enabled = enabled && selectedIndex > 0, onClick = { edit(TimelineModel.move(clips, selectedIndex, -1)) }) { Text("Earlier") }
             OutlinedButton(enabled = enabled && selectedIndex >= 0 && selectedIndex < clips.lastIndex, onClick = { edit(TimelineModel.move(clips, selectedIndex, 1)) }) { Text("Later") }
         }
-        selected?.takeIf { !compact || tool in listOf(EditorTool.EDIT, EditorTool.AUDIO, EditorTool.TEXT, EditorTool.SPEED) }?.let { clip ->
+        selected?.takeIf { showDetails && (!compact || tool in listOf(EditorTool.EDIT, EditorTool.AUDIO, EditorTool.TEXT, EditorTool.SPEED)) }?.let { clip ->
             var from by remember(clip.id, clip.startMs) { mutableStateOf(Timecode.precise(clip.startMs)) }
             var until by remember(clip.id, clip.endMs) { mutableStateOf(Timecode.precise(clip.endMs)) }
             fun update(changed: TimelineClip) = edit(clips.map { if (it.id == clip.id) changed else it })
@@ -291,6 +301,7 @@ fun TimelineEditor(
         }
     }
 }
+
 
 
 

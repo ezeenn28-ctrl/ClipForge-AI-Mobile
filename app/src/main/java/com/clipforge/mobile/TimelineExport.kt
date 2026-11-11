@@ -31,7 +31,13 @@ object TimelineExport {
         require(clips.isNotEmpty()) { "Add a timeline clip before exporting" }
         val renderAppearance = if (vertical) appearance else appearance.copy(layout = ReferenceLayout.STANDARD)
         val reference = renderAppearance.layout
-        val items = clips.mapIndexed { index, clip ->
+        val items = clips.mapIndexed { index, originalClip ->
+            val clip = if(originalClip.editor.captionsMuted)originalClip.copy(hook="",caption="",subtitles=emptyList()) else originalClip
+            val look=clip.editor.look
+            val cutAppearance=(look?.appearance?:renderAppearance).copy(layout=renderAppearance.layout)
+            val cutSize=look?.size?:subtitleSize
+            val cutColor=if(look?.yellow==true)android.graphics.Color.YELLOW else if(look!=null)android.graphics.Color.WHITE else subtitleColor
+            val cutPreset=look?.let{CaptionPreset.valueOf(it.preset)}?:preset
             val incoming = clips.getOrNull(index - 1)?.transition
             val outgoing = clip.transition.takeIf { index < clips.lastIndex }
             val media = MediaItem.Builder().setUri(Uri.parse(clip.resolvedSource(source.toString()))).setClippingConfiguration(MediaItem.ClippingConfiguration.Builder()
@@ -50,8 +56,8 @@ object TimelineExport {
                     add(ClipVisualEffects.transitionMotion(clip, incoming, outgoing))
                 if (clip.visuals.start != MotionPoint() || clip.visuals.end != MotionPoint()) add(ClipVisualEffects.motion(clip))
                 if (reference != ReferenceLayout.STANDARD || clip.hook.isNotBlank() || clip.caption.isNotBlank() || clip.subtitles.isNotEmpty()) {
-                    val overlay = if (clip.subtitles.isNotEmpty()) segmentSubtitleOverlay(clip.hook, clip.subtitles, clip.startMs, subtitleSize, subtitleColor, calibrateClock = true, preset = preset, appearance = renderAppearance)
-                    else timedCaptionOverlay(clip.hook, clip.caption, clip.captionStartMs, clip.captionEndMs, clip.startMs, calibrateClock = true, subtitleSize = subtitleSize, subtitleColor = subtitleColor, preset = preset, appearance = renderAppearance)
+                    val overlay = if (clip.subtitles.isNotEmpty()) segmentSubtitleOverlay(clip.hook, clip.subtitles, clip.startMs, cutSize, cutColor, calibrateClock = true, preset = cutPreset, appearance = cutAppearance, placement=clip.editor.placement)
+                    else timedCaptionOverlay(clip.hook, clip.caption, clip.captionStartMs, clip.captionEndMs, clip.startMs, calibrateClock = true, subtitleSize = cutSize, subtitleColor = cutColor, preset = cutPreset, appearance = cutAppearance, placement=clip.editor.placement)
                     add(OverlayEffect(listOf(overlay)))
                 }
                 if (clip.visuals.fadeInMs > 0 || clip.visuals.fadeOutMs > 0) add(ClipVisualEffects.fade(clip))
@@ -118,6 +124,7 @@ object TimelineExport {
         return Composition.Builder(sequences).experimentalSetForceAudioTrack(!mute || music != null || sounds.isNotEmpty()).build()
     }
 }
+
 
 
 
