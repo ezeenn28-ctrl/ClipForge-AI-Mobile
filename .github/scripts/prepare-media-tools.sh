@@ -6,7 +6,8 @@ mkdir -p "$tools"
 if ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
   curl --fail --location --retry 2 --connect-timeout 20 --max-time 180 \
     https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-11-12-39/ffmpeg-n8.1.3-35-gf1acb0a266-linux64-gpl-8.1.tar.xz -o "$tools/ffmpeg.tar.xz"
-  printf '%s  %s\\n' 32430dc6642d835511470728811e1555ec7ec09d4d27638b059f0e577a98d4e7 "$tools/ffmpeg.tar.xz" | sha256sum --check\n  tar -xJf "$tools/ffmpeg.tar.xz" -C "$tools"
+  echo "32430dc6642d835511470728811e1555ec7ec09d4d27638b059f0e577a98d4e7  $tools/ffmpeg.tar.xz" | sha256sum --check
+  tar -xJf "$tools/ffmpeg.tar.xz" -C "$tools"
   binary="$(find "$tools" -type f -name ffmpeg | head -1)"
   probe="$(find "$tools" -type f -name ffprobe | head -1)"
   test -n "$binary" && test -n "$probe"
@@ -22,3 +23,4 @@ if ! python3 -c 'from PIL import Image'; then
   "$tools/python/bin/python" -m pip install --disable-pip-version-check --timeout 30 pillow==11.3.0
   echo "$tools/python/bin" >> "$GITHUB_PATH"
 fi
+
