@@ -2,8 +2,8 @@
 
 Private, offline-first Android video editor for a personal clipping workflow.
 
-Current installer: **v1.3.0, Build 127**. Exact verification results and download are in
-[Release record](docs/FINAL_RELEASE.md). Physical phone acceptance remains.
+Current installer: **v1.4.0, Build 131**. Exact verification results and download are in
+[Release record](docs/FINAL_RELEASE.md). [Workflow upgrade guide](docs/WORKFLOW_UPGRADE.md). Physical phone acceptance remains.
 Version 1.0.1 remains withdrawn. See [Style pack guide](docs/STYLE_PACK.md) and
 [Sound library guide](docs/SOUND_LIBRARY.md).
 The v1 scope, installation instructions and limits are in [Quick start](docs/QUICK_START.md).
@@ -11,6 +11,10 @@ See [Release record](docs/FINAL_RELEASE.md), [verification history](docs/VERIFIC
 and [release gates](docs/RELEASE_PLAN.md) for actual evidence.
 
 ## Editing
+
+- Focused tool panels, recoverable autosaves, reusable editing presets and an explicitly started approved export queue.
+- Editable caption in/out and word cues, estimated word-follow highlights, language hints and literal name/Taglish corrections.
+- Explainable speech ranking and project-local campaign checklists at the export gate.
 
 - Searchable sound library, audition, local favorites, MP3/audio import and individual Myinstants downloads. Downloaded files remain available offline.
 

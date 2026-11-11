@@ -1,8 +1,8 @@
-# ClipForge AI 1.3.0 — personal Android release
+# ClipForge AI 1.4.0 — personal Android release
 
 ## Install
 
-Download [ClipForge-AI-1.3.0-universal.apk](https://chatgpt.com/library?file_id=libfile_c66c36d37a088191a41a5ac345756e24&account_id=personal).
+Download [ClipForge-AI-1.4.0-universal.apk](https://chatgpt.com/library?file_id=libfile_6b37b0eaf9308191806a7297fbfc0b94&account_id=personal).
 It includes ARM64 for the Nubia Neo 2 and x86_64 for acceptance testing.
 Install as an update. Keep the existing app installed so its
 projects and saved media grants remain available. This release retains the
@@ -28,6 +28,10 @@ Build 94 signing certificate; its version code increases with the verified build
 ## Reference frames and caption styles
 
 Open **Format** for eight reference templates plus Original canvas. Open **Effects** for video looks and manual grading. Open **Captions** for ten styles and editable font, color, size and position. See [Style pack guide](STYLE_PACK.md).
+
+## Workflow upgrades
+
+Open **More** for saved editing presets and previous-autosave recovery. **Captions** adds language hints, editable line/word timings and estimated word-follow highlights. The Export page shows project-local campaign checks and an explicitly started approved export queue. See [Workflow guide](WORKFLOW_UPGRADE.md) for operation and limits.
 
 ## More sound effects
 
