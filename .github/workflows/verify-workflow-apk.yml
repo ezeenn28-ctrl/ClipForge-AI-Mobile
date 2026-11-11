@@ -39,8 +39,7 @@ jobs:
           key: whisper-tiny-be07e048e1e599ad-v1
       - name: Prepare synthetic media and screenshot tools
         run: |
-          command -v ffmpeg || sudo timeout 180 apt-get install -y --no-install-recommends ffmpeg
-          python3 -c 'from PIL import Image' || sudo timeout 180 apt-get install -y --no-install-recommends python3-pil
+          bash .github/scripts/prepare-media-tools.sh
           bash .github/scripts/media-fixtures.sh
           mkdir -p .ci-models
           if [ ! -s .ci-models/ggml-tiny.bin ]; then
@@ -95,7 +94,7 @@ jobs:
           gradle-version: '8.9'
       - name: Install synthetic fixture generator
         run: |
-          command -v ffmpeg || sudo timeout 180 apt-get install -y --no-install-recommends ffmpeg
+          bash .github/scripts/prepare-media-tools.sh
       - name: Prepare test-only signing identity and fixtures
         run: |
           mkdir -p "$HOME/.android"
