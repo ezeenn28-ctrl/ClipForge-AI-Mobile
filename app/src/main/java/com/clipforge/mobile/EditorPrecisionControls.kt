@@ -91,7 +91,7 @@ import kotlin.math.log10
             drawRect(Color.Cyan.copy(alpha=.5f),Offset(this.size.width*.067f,this.size.height*.08f),androidx.compose.ui.geometry.Size(this.size.width*.866f,this.size.height*.80f),style=androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
         }
         val boxWidth=maxWidth*.8f;val boxHeight=maxHeight*.12f
-        Box(Modifier.offset(x=maxWidth*(.1f+x),y=maxHeight*(baseline+dy-.055f)).width(boxWidth).height(boxHeight)
+        Box(Modifier.offset(x=(maxWidth*(.1f+x)).coerceIn(0.dp,maxWidth-boxWidth),y=(maxHeight*(baseline+dy-.055f)).coerceIn(0.dp,maxHeight-boxHeight)).width(boxWidth).height(boxHeight)
             .border(1.dp,Color.Cyan).semantics{contentDescription=if(hook)"Drag opening text" else "Drag caption text"}
             .pointerInput(enabled,hook,placement){if(enabled)detectDragGestures(onDragStart={draft=placement},onDragCancel={draft=placement;onDraft(null)},onDragEnd={onCommit(draft);onDraft(null)}){event,drag->event.consume();change(drag.x/size.width,drag.y/size.height)}}){
             Box(Modifier.align(Alignment.BottomEnd).size(28.dp).background(Color.Cyan).semantics{contentDescription=if(hook)"Resize opening text" else "Resize caption text"}

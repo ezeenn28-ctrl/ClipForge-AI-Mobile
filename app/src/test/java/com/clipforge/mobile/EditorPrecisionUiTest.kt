@@ -39,7 +39,7 @@ class EditorPrecisionUiTest {
     @Test fun directCaptionDragCommitsOneUndoablePlacement(){
         var placement by mutableStateOf(TextPlacement());var commits=0
         compose.setContent{ClipForgeTheme{Box(Modifier.height(600.dp).width(337.dp)){DirectTextHandles(placement,CaptionAppearance(),false,true,{}, {placement=it;commits++})}}}
-        compose.onNodeWithContentDescription("Drag caption text").performTouchInput{down(center);moveBy(Offset(30f,-25f));moveBy(Offset(30f,-25f));up()}
+        compose.onNodeWithContentDescription("Drag caption text").performTouchInput{down(center);moveBy(Offset(130f,-25f));moveBy(Offset(30f,-25f));up()}
         compose.runOnIdle{assertEquals(1,commits);assertTrue(placement.x>0f);assertTrue(placement.y<0f)}
         compose.onNodeWithContentDescription("Resize caption text").performTouchInput{down(center);moveBy(Offset(25f,15f));moveBy(Offset(20f,15f));up()}
         compose.runOnIdle{assertEquals(2,commits);assertTrue(placement.scale>1f)}

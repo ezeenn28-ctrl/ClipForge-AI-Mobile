@@ -1628,7 +1628,7 @@ class MainActivity : ComponentActivity() {
                                             CaptionStyleControls(CaptionPreset.valueOf(look.preset),look.size,look.appearance,
                                                 if(look.yellow)Color.YELLOW else Color.WHITE,!busy&&clip!=null&&!clip.editor.captionsLocked,
                                                 onPreset={cutLook(look.copy(preset=it.name,appearance=CaptionThemes.apply(it,look.appearance)))},
-                                                onSize={cutLook(look.copy(size=it))},onAppearance={cutLook(look.copy(appearance=it))})
+                                                onSize={cutLook(look.copy(size=it))},onAppearance={cutLook(look.copy(appearance=it))},scopeLabel="Applies to this cut’s captions.")
                                             if (clip != null) CaptionTimingEditor(clip.subtitles, clip.resolvedDuration(duration), !busy&&!clip.editor.captionsLocked,
                                                 onChange = { cues ->
                                                     updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(subtitles = cues) else it }))

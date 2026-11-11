@@ -13,9 +13,9 @@ private enum class CaptionPanel(val label: String) { STYLE("Style"), FONT("Font"
 @Composable
 fun CaptionStyleControls(preset: CaptionPreset, size: Float, appearance: CaptionAppearance,
                          legacyColor: Int, enabled: Boolean, onPreset: (CaptionPreset) -> Unit,
-                         onSize: (Float) -> Unit, onAppearance: (CaptionAppearance) -> Unit) {
+                         onSize: (Float) -> Unit, onAppearance: (CaptionAppearance) -> Unit, scopeLabel:String="Applies to all captions in this project.") {
     var panel by remember { mutableStateOf(CaptionPanel.STYLE) }
-    Text("Applies to all captions in this project.", style = MaterialTheme.typography.bodySmall)
+    Text(scopeLabel, style = MaterialTheme.typography.bodySmall)
     Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         CaptionPanel.entries.forEach { item ->
             FilterChip(selected = panel == item, enabled = enabled, onClick = { panel = item }, label = { Text(item.label) })
@@ -79,4 +79,5 @@ private fun CaptionColorChoices(selectedArgb: Int, enabled: Boolean, onSelect: (
         }
     }
 }
+
 
