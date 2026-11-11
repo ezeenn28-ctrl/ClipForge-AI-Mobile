@@ -1,8 +1,8 @@
-# ClipForge AI 1.6.0 — personal Android release
+# ClipForge AI 1.7.0 — personal Android release
 
 ## Install
 
-Download [ClipForge-AI-1.6.0-universal.apk](https://chatgpt.com/library?file_id=libfile_be6cc5cb55fc8191b3375f32be7675ba&account_id=personal) (Build 136).
+Download [ClipForge-AI-1.7.0-universal.apk](https://chatgpt.com/library?file_id=libfile_c21edf9d9f9881918f6235b27523afbe&account_id=personal) (Build 142).
 It includes ARM64 for the Nubia Neo 2 and x86_64 for acceptance testing.
 Install as an update. Keep the existing app installed so its
 projects and saved media grants remain available. This release retains the
@@ -24,6 +24,10 @@ Build 94 signing certificate; its version code increases with the verified build
 7. Play and seek through the full edit. Export opens the review page; explicitly
    approve the clip before rendering. The app never automatically exports candidates.
 8. Open the MP4 in Gallery or Share to TikTok, Instagram, YouTube or another app.
+
+## Precision editor
+
+See [Precision editor guide](PRECISION_EDITOR.md) for pinch zoom, frame stepping, direct text placement/resize, per-cut captions and track locks/mute, waveform/meters, labeled cut/music undo, review looping and selective settings transfer.
 
 ## Reference frames and caption styles
 

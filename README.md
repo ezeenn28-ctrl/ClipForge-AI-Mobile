@@ -2,17 +2,21 @@
 
 Private, offline-first Android video editor for a personal clipping workflow.
 
-Current installer: **v1.6.0, Build 136**. Exact verification results and download are in
-[Studio release record](docs/RELEASE_1.6.0.md). [Workflow upgrade guide](docs/WORKFLOW_UPGRADE.md). Physical phone acceptance remains.
+Current installer: **v1.7.0, Build 142**. Exact verification results and download are in
+[Studio release record](docs/RELEASE_1.7.0.md). [Workflow upgrade guide](docs/WORKFLOW_UPGRADE.md). Physical Nubia acceptance remains pending. Build 142 passed 203 unit/UI tests, 18 Android media tests, 240 native windows and 29 signed-APK checks.
 Version 1.0.1 remains withdrawn. See [Style pack guide](docs/STYLE_PACK.md) and
 [Sound library guide](docs/SOUND_LIBRARY.md).
 The v1 scope, installation instructions and limits are in [Quick start](docs/QUICK_START.md).
 See [Release record](docs/FINAL_RELEASE.md), [verification history](docs/VERIFICATION.md)
 and [release gates](docs/RELEASE_PLAN.md) for actual evidence.
 
+## Precision editor
+
+Large preview and collapsible panes, anchored pinch zoom, source-frame stepping, selectable lanes with mute/lock, contextual per-cut caption tools, direct text drag/resize, decoded waveform and PCM meters, labeled cut/music history, loop/pre-roll/comparison, and selective settings transfer. See the [precision editor guide](docs/PRECISION_EDITOR.md) for controls and scope.
+
 ## Studio upgrade
 
-Music/SFX/Voice/Review tabs, 21 original music choices, per-cue review, optional speech cleanup, campaign presets, opening-text preview and device diagnostics. Verified: 188 unit/Compose tests, 16 Android media tests, 240 native speech windows and 28 checks on the actual signed APK. Physical Nubia acceptance remains pending.
+Music/SFX/Voice/Review tabs, 21 original music choices, per-cue review, optional speech cleanup, campaign presets, opening-text preview and device diagnostics. Historical Studio 1.6.0 results remain in [its release record](docs/RELEASE_1.6.0.md). See the current release record for Build 142 verification.
 
 ## Editing
 

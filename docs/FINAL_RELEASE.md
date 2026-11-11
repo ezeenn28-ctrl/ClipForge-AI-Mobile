@@ -1,11 +1,12 @@
-# Current release: ClipForge AI 1.6.0 Build 136
+# Current release: ClipForge AI 1.7.0 Build 142
 
-[APK download](https://chatgpt.com/library?file_id=libfile_be6cc5cb55fc8191b3375f32be7675ba&account_id=personal).
-Install as an update; retain the installed app and its projects.
+[Download APK](https://chatgpt.com/library?file_id=libfile_c21edf9d9f9881918f6235b27523afbe&account_id=personal).
+Install as an update and retain the existing app/projects.
 
-Verified: 188 unit/Compose tests, 16 Android media tests, 240 native Whisper windows and 28 checks against the actual non-debuggable signed APK. Original signing identity, optimized native code and immutable installer checksum were verified.
+All ten precision-editor upgrades are implemented. Verified: 203 unit/UI tests, 18 Android media tests, 240 native speech windows and 29 checks against the exact non-debuggable signed APK.
 
-[Complete results, features, source commits and limits](RELEASE_1.6.0.md).
+[Full release record](RELEASE_1.7.0.md).
+[Precision editor guide](PRECISION_EDITOR.md).
 [Quick start](QUICK_START.md).
 
-Physical Nubia Neo 2 5G testing remains pending. Review and explicit approval are required for export.
+Physical Nubia Neo 2 5G validation remains pending. Every export still requires explicit approval.
