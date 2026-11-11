@@ -2,13 +2,17 @@
 
 Private, offline-first Android video editor for a personal clipping workflow.
 
-Current installer: **v1.4.0, Build 131**. Exact verification results and download are in
-[Release record](docs/FINAL_RELEASE.md). [Workflow upgrade guide](docs/WORKFLOW_UPGRADE.md). Physical phone acceptance remains.
+Current installer: **v1.6.0, Build 136**. Exact verification results and download are in
+[Studio release record](docs/RELEASE_1.6.0.md). [Workflow upgrade guide](docs/WORKFLOW_UPGRADE.md). Physical phone acceptance remains.
 Version 1.0.1 remains withdrawn. See [Style pack guide](docs/STYLE_PACK.md) and
 [Sound library guide](docs/SOUND_LIBRARY.md).
 The v1 scope, installation instructions and limits are in [Quick start](docs/QUICK_START.md).
 See [Release record](docs/FINAL_RELEASE.md), [verification history](docs/VERIFICATION.md)
 and [release gates](docs/RELEASE_PLAN.md) for actual evidence.
+
+## Studio upgrade
+
+Music/SFX/Voice/Review tabs, 21 original music choices, per-cue review, optional speech cleanup, campaign presets, opening-text preview and device diagnostics. Verified: 188 unit/Compose tests, 16 Android media tests, 240 native speech windows and 28 checks on the actual signed APK. Physical Nubia acceptance remains pending.
 
 ## Editing
 

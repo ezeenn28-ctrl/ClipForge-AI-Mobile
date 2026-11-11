@@ -2,7 +2,7 @@
 
 ## Install
 
-Download the attached **ClipForge-AI-1.6.0-universal.apk** (Build 136).
+Download [ClipForge-AI-1.6.0-universal.apk](https://chatgpt.com/library?file_id=libfile_be6cc5cb55fc8191b3375f32be7675ba&account_id=personal) (Build 136).
 It includes ARM64 for the Nubia Neo 2 and x86_64 for acceptance testing.
 Install as an update. Keep the existing app installed so its
 projects and saved media grants remain available. This release retains the
