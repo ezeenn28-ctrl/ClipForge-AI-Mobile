@@ -5,7 +5,7 @@ import java.io.File
 data class EditingPreset(val id: String, val name: String, val template: EditorProject) {
     fun apply(clip: TimelineClip): TimelineClip {
         val style = template.timelineClips.single()
-        return clip.copy(effect = style.effect, color = style.color, visuals = style.visuals, transition = style.transition,
+        return clip.copy(editor=clip.editor.copy(placement=style.editor.placement,look=style.editor.look), effect = style.effect, color = style.color, visuals = style.visuals, transition = style.transition,
             sounds = style.sounds.filter { it.sourceMs < clip.sourceSpanMs }.map { cue ->
                 cue.copy(id = java.util.UUID.randomUUID().toString(), sourceMs = clip.startMs + cue.sourceMs)
             })
@@ -29,9 +29,10 @@ object EditingPresets {
             captionEndMs = span, subtitles = emptyList(), source = "file:///preset-template", sourceDurationMs = span, sourceName = "",
             speed = 1f, volume = 1f, fadeInMs = 0, fadeOutMs = 0, cleanupStrength = 0f, voiceGain = 1f, audioProfile = ClipAudioProfile(),
             sounds = clip.sounds.filter { it.sourceMs in clip.startMs until clip.endMs }.map { it.copy(sourceMs = it.sourceMs - clip.startMs) })
+        val selectedLook=clip.editor.look
         val template = EditorProject("file:///preset-template", span, 0, span, mode = "Manual Editor", vertical = project.vertical,
-            fillFrame = project.fillFrame, subtitleSize = project.subtitleSize, subtitleYellow = project.subtitleYellow,
-            captionPreset = project.captionPreset, captionAppearance = project.captionAppearance,
+            fillFrame = project.fillFrame, subtitleSize = selectedLook?.size?:project.subtitleSize, subtitleYellow = selectedLook?.yellow?:project.subtitleYellow,
+            captionPreset = selectedLook?.preset?:project.captionPreset, captionAppearance = selectedLook?.appearance?:project.captionAppearance,
             timelineMode = true, timelineClips = listOf(style), selectedTimelineId = style.id, projectId = id, projectName = clean,
             hookTone = project.hookTone)
         ProjectStore.write(file(root, id), template)
@@ -46,3 +47,4 @@ object EditingPresets {
         val f = file(root, id); f.delete(); ProjectStore.previousFile(f).delete()
     }
 }
+

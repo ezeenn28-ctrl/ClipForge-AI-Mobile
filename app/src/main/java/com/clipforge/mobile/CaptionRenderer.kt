@@ -73,7 +73,7 @@ fun makeCaptionOverlay(hook: String, caption: String, subtitleSize: Float = 39f,
                 CaptionAlignment.RIGHT -> 672f - width
             }
             val left=(defaultLeft+(if(body)placement.x else placement.hookX)*720f).coerceIn(24f,(696f-width).coerceAtLeast(24f))
-            val lineStep = if (body && preset in listOf(CaptionPreset.OUTLINE, CaptionPreset.NEON, CaptionPreset.CAPSULE, CaptionPreset.STICKER, CaptionPreset.COMIC, CaptionPreset.EDITORIAL)) maxOf(55f, subtitleSize + 28f) else 55f
+            val lineStep = if (body && preset in listOf(CaptionPreset.OUTLINE, CaptionPreset.NEON, CaptionPreset.CAPSULE, CaptionPreset.STICKER, CaptionPreset.COMIC, CaptionPreset.EDITORIAL)) maxOf(55f, baseSize + 28f) else 55f*(if(body)placement.scale else placement.hookScale)
             val newStyle = body && preset in listOf(CaptionPreset.OUTLINE, CaptionPreset.NEON, CaptionPreset.CAPSULE, CaptionPreset.STICKER, CaptionPreset.COMIC, CaptionPreset.EDITORIAL)
             val captionY = if (newStyle) minOf(appearance.positionY * 1280f, 1240f - (minOf(3, rows.size) - 1) * lineStep) else appearance.positionY * 1280f
             val y = ((if (index == 0) if (reference) appearance.layout.videoTop - 100f else 210f else captionY)+(if(body)placement.y else placement.hookY)*1280f).coerceIn(baseSize+20f,1240f-(minOf(3,rows.size)-1)*lineStep) + row * lineStep

@@ -131,15 +131,22 @@ data class TimelineHistory(
     val clips: List<TimelineClip> = emptyList(),
     val past: List<List<TimelineClip>> = emptyList(),
     val future: List<List<TimelineClip>> = emptyList(),
-    val pastLabels: List<String> = emptyList(), val futureLabels: List<String> = emptyList(), val rejection:String=""
+    val pastLabels: List<String> = emptyList(), val futureLabels: List<String> = emptyList(), val rejection:String="",
+    val music:MusicTrack?=null,val pastMusic:List<MusicTrack?> = emptyList(),val futureMusic:List<MusicTrack?> = emptyList()
 ) {
     val undoLabel: String get() = pastLabels.lastOrNull() ?: "Edit"
     val redoLabel: String get() = futureLabels.firstOrNull() ?: "Edit"
     fun edit(next: List<TimelineClip>, label: String = EditorPrecision.describe(clips,next)): TimelineHistory {
-        if(next==clips)return this
+        if(next==clips)return copy(rejection="")
         try { EditorPrecision.validateLocks(clips,next) } catch(e:IllegalArgumentException){ return copy(rejection=e.message?:"Track is locked") }
-        return TimelineHistory(next,(past+listOf(clips)).takeLast(30),emptyList(),(pastLabels+label).takeLast(30),emptyList())
+        return copy(clips=next,past=(past+listOf(clips)).takeLast(30),future=emptyList(),pastLabels=(pastLabels+label).takeLast(30),futureLabels=emptyList(),rejection="",pastMusic=(pastMusic+listOf(music)).takeLast(30),futureMusic=emptyList())
     }
-    fun undo() = if(past.isEmpty())this else TimelineHistory(past.last(),past.dropLast(1),listOf(clips)+future,pastLabels.dropLast(1),listOf(undoLabel)+futureLabels)
-    fun redo() = if(future.isEmpty())this else TimelineHistory(future.first(),(past+listOf(clips)).takeLast(30),future.drop(1),(pastLabels+redoLabel).takeLast(30),futureLabels.drop(1))
+    fun editMusic(next:MusicTrack?):TimelineHistory {
+        if(next==music)return copy(rejection="")
+        val old=music
+        if(old?.locked==true&&next?.copy(locked=old.locked,muted=old.muted)!=old)return copy(rejection="Music track is locked")
+        return copy(music=next,past=(past+listOf(clips)).takeLast(30),future=emptyList(),pastLabels=(pastLabels+"Music").takeLast(30),futureLabels=emptyList(),rejection="",pastMusic=(pastMusic+listOf(music)).takeLast(30),futureMusic=emptyList())
+    }
+    fun undo() = if(past.isEmpty())this else copy(clips=past.last(),past=past.dropLast(1),future=listOf(clips)+future,pastLabels=pastLabels.dropLast(1),futureLabels=listOf(undoLabel)+futureLabels,rejection="",music=if(pastMusic.isNotEmpty())pastMusic.last() else music,pastMusic=pastMusic.dropLast(1),futureMusic=listOf(music)+futureMusic)
+    fun redo() = if(future.isEmpty())this else copy(clips=future.first(),past=(past+listOf(clips)).takeLast(30),future=future.drop(1),pastLabels=(pastLabels+redoLabel).takeLast(30),futureLabels=futureLabels.drop(1),rejection="",music=if(futureMusic.isNotEmpty())futureMusic.first() else music,pastMusic=(pastMusic+listOf(music)).takeLast(30),futureMusic=futureMusic.drop(1))
 }

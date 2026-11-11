@@ -207,6 +207,82 @@ class MediaPipelineDeviceTest {
         }
     }
 
+    @Test fun perCutTextPlacementAndStyleSurviveSaveAndEncodedExport() {
+        val source = fixture("caption-canvas.mp4")
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val snapshot = File(context.cacheDir, "per-cut-placement.properties")
+        val appearance = CaptionAppearance(CaptionFont.MONO, .45f, CaptionColor.PINK, CaptionColor.CYAN, CaptionAlignment.LEFT)
+        val originalClip=TimelineClip("caption",0,3000,caption="HELLO #WORLD",captionEndMs=3000,color=ColorAdjustments(brightness=.2f,warmth=.5f),editor=ClipEditorState(placement=TextPlacement(x=.2f,y=.1f),look=CaptionLook(appearance)))
+        ProjectStore.write(snapshot,EditorProject(Uri.fromFile(source).toString(),3000,0,3000,timelineClips=listOf(originalClip)))
+        val saved=ProjectStore.read(snapshot)!!
+        val composition=TimelineExport.composition(Uri.fromFile(source),saved.timelineClips,true,false,false,39f,Color.WHITE)
+        val output = File(context.cacheDir, "per-cut-placement.mp4").apply { delete() }
+        val done = CountDownLatch(1); val failure = AtomicReference<Throwable?>(null)
+        lateinit var transformer: Transformer
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            transformer = Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory()).addListener(object : Transformer.Listener {
+                override fun onCompleted(c: Composition, result: ExportResult) { done.countDown() }
+                override fun onError(c: Composition, result: ExportResult, error: ExportException) { failure.set(error); done.countDown() }
+            }).build()
+            transformer.start(composition, output.absolutePath)
+        }
+        try {
+            assertTrue("Caption export timed out", done.await(180, TimeUnit.SECONDS))
+            failure.get()?.let { throw AssertionError("Caption export failed", it) }
+            val retriever = MediaMetadataRetriever()
+            try {
+                retriever.setDataSource(output.absolutePath)
+                val raw = retriever.getFrameAtTime(1_000_000, MediaMetadataRetriever.OPTION_CLOSEST)!!
+                val rotation = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toInt() ?: 0
+                val frame = if (raw.width > raw.height && rotation in listOf(90, 270)) {
+                    Bitmap.createBitmap(raw, 0, 0, raw.width, raw.height,
+                        android.graphics.Matrix().apply { postRotate(rotation.toFloat()) }, true).also { if (it !== raw) raw.recycle() }
+                } else raw
+                try {
+                    assertTrue("Portrait display frame expected", frame.height > frame.width)
+                    val background = frame.getPixel(frame.width / 2, frame.height / 4)
+                    assertEquals("Graded red channel", 64.0, Color.red(background).toDouble(), 12.0)
+                    assertEquals("Graded green channel", 51.0, Color.green(background).toDouble(), 12.0)
+                    assertEquals("Graded blue channel", 38.0, Color.blue(background).toDouble(), 12.0)
+                    var pink = 0; var cyan = 0; var minX = frame.width; var maxY = -1
+                    for (y in 0 until frame.height step 2) for (x in 0 until frame.width step 2) {
+                        val c = frame.getPixel(x, y)
+                        val isPink = Color.red(c) > 170 && Color.blue(c) > 110 && Color.green(c) in 30..160
+                        val isCyan = Color.red(c) < 100 && Color.green(c) > 150 && Color.blue(c) > 170
+                        if (isPink) pink++
+                        if (isCyan) cyan++
+                        if (isPink || isCyan) { minX = minOf(minX, x); maxY = maxOf(maxY, y) }
+                    }
+                    assertTrue("Text color missing from encoded video", pink > 20)
+                    assertTrue("Highlight color missing from encoded video", cyan > 20)
+                    val left = minX.toFloat() / frame.width
+                    val bottom = maxY.toFloat() / frame.height
+                    assertTrue("Caption left alignment differs from preview: $left", left in .245f.. .32f)
+                    assertTrue("Caption position differs from preview: $bottom", bottom in .53f.. .58f)
+                } finally { frame.recycle() }
+            } finally { retriever.release() }
+        } finally {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }
+            output.delete(); snapshot.delete()
+        }
+    }
+
+    @Test fun adjacentFramesUseRealSampleTimestampsAndWaveformUsesDecodedAudio() {
+        val source=fixture("landscape.mp4")
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val uri=Uri.fromFile(source)
+        val first=AdjacentVideoFrame.find(context,uri,1000,1,1000,3000)!!
+        val second=AdjacentVideoFrame.find(context,uri,first,1,1000,3000)!!
+        assertTrue(first>1000&&second>first)
+        assertEquals(first,AdjacentVideoFrame.find(context,uri,second,-1,1000,3000))
+        assertNull(AdjacentVideoFrame.find(context,uri,1000,-1,1000,3000))
+        val clip=TimelineClip("wave",1000,3000,source=uri.toString(),sourceDurationMs=6000)
+        val result=EditorWaveform.analyze(context,clip,uri.toString())
+        assertFalse(result.sampled);assertTrue(result.peaks.size in 1..768)
+        assertTrue(result.peaks.all{it.sourceMs in 1000 until 3000&&it.amplitude in 0f..1f})
+        assertTrue(result.peaks.any{it.amplitude>.05f})
+    }
+
     @Test fun mixedSpeedExportKeepsOutputDurationAndVoicePitch() {
         val source = fixture("landscape.mp4")
         val context = InstrumentationRegistry.getInstrumentation().targetContext
@@ -718,3 +794,4 @@ class MediaPipelineDeviceTest {
         }finally{folder.deleteRecursively()}
     }
 }
+

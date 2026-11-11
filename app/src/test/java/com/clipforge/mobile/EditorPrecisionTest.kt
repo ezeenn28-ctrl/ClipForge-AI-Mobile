@@ -72,4 +72,16 @@ class EditorPrecisionTest {
         val meter=PcmPeak();meter.offer(.2f);meter.offer(-.8f);meter.offer(Float.NaN)
         assertEquals(.4f,meter.take(.5f,true),.0001f);assertEquals(0f,meter.take(1f,true),0f)
     }
+    @Test fun musicAndCutEditsShareUndoRedoSnapshots(){
+        val clips=listOf(clip());val bed=MusicTrack("file:///music.wav","Bed",2000)
+        var history=TimelineHistory(clips).editMusic(bed)
+        history=history.edit(listOf(clips.single().copy(volume=.5f)))
+        assertEquals(bed,history.undo().music);assertEquals(clips,history.undo().clips)
+        val before=history.undo().undo();assertNull(before.music)
+        assertEquals(history.music,before.redo().redo().music);assertEquals(history.clips,before.redo().redo().clips)
+        val locked=history.editMusic(bed.copy(locked=true))
+        assertTrue(locked.editMusic(bed.copy(volume=.1f)).rejection.isNotEmpty())
+        assertFalse(locked.editMusic(bed.copy(locked=false)).music!!.locked)
+    }
+
 }

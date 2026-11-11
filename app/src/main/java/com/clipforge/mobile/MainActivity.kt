@@ -24,6 +24,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -561,7 +562,7 @@ class MainActivity : ComponentActivity() {
                 sourceName = info.first
                 info.second?.takeIf { it > 0 }?.let { actual ->
                     if (expectedRestoredDuration > 0 && kotlin.math.abs(expectedRestoredDuration - actual) > 1000) {
-                        timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""
+                        timeline = TimelineHistory(); music=null; timelineMode = false; selectedTimelineId = ""
                         drafts = emptyList(); selectedDraft = -1; batchResults = emptyMap()
                         transcriptSegments = emptyList(); subtitleSegments = emptyList(); sourceTranscriptSegments = emptyList(); subtitleDraftIndex = -1
                         hookText = ""; captionText = ""; approved = false; start = 0f; end = 1f
@@ -591,6 +592,7 @@ class MainActivity : ComponentActivity() {
                 check(changed.rejection.isBlank()){changed.rejection}
                 TimelineModel.validate(changed.clips, duration)
                 timeline = changed
+                music = changed.music
                 if (timelineSubtitleTarget.isNotBlank() && changed.clips.none { it.id == timelineSubtitleTarget }) {
                     timelineSubtitleTarget = ""; transcriptSegments = emptyList(); transcript = ""
                 }
@@ -603,7 +605,7 @@ class MainActivity : ComponentActivity() {
         val changeMusic:(MusicTrack?)->Unit={next->
             val old=music
             if(old?.locked==true && next?.copy(locked=old.locked,muted=old.muted)!=old)status="Unlock music before editing or replacing it"
-            else {music=next;approved=false}
+            else {updateTimeline(timeline.editMusic(next));approved=false}
         }
         val frameStep:(Int)->Unit={direction->
             if(!frameLoading&&!busy&&video!=null){
@@ -672,7 +674,7 @@ class MainActivity : ComponentActivity() {
                     projectName = saved.projectName
                     appliedSpeechId = saved.lastSpeechJobId
                     appliedSpeechUnits = saved.lastSpeechUnits
-                    timeline = TimelineHistory(saved.timelineClips)
+                    timeline = TimelineHistory(saved.timelineClips,music=saved.music)
                     music = saved.music
                     audioIntensity = saved.audioIntensity; autoAudioEnabled = saved.autoAudioEnabled; autoAudioHandled = saved.autoAudioHandled
                     autoAudioUndo = null; musicAudition = null; compareOriginal = false
@@ -827,9 +829,9 @@ class MainActivity : ComponentActivity() {
                             MediaAssets.inspect(this@MainActivity, uri, false)
                         }
                         val previous = music
-                        music = if (previous != null && previous.durationMs == info.durationMs) previous.copy(source = info.uri, name = info.name)
+                        val imported = if (previous != null && previous.durationMs == info.durationMs) previous.copy(source = info.uri, name = info.name)
                             else MusicTrack(info.uri, info.name, info.durationMs)
-                        music?.let { added -> music = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { MusicCatalog.save(filesDir, added) } }
+                        changeMusic(kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { MusicCatalog.save(filesDir, imported) })
                         status = "Local music added to the library. Review the balance with original audio."
                     } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                     catch (error: Exception) { status = "Music import failed: ${error.message}" }
