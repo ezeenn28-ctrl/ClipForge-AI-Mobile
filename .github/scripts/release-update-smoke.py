@@ -425,6 +425,29 @@ def exercise_speech_import(args):
     generated_hook = hook_node.get("text")
     tap_node(hook_node)
     passed("Actual signed APK generates and applies a contextual editable hook from captions")
+    tap_node(locate(text="Precision review tools"))
+    before_frame = locate(desc="Frame position ", contains=True).get("content-desc")
+    tap_node(locate(text="Next frame"))
+    time.sleep(.5)
+    after_frame = locate(desc="Frame position ", contains=True).get("content-desc")
+    assert after_frame != before_frame, "Next-frame control did not advance the paused source clock"
+    tap_node(locate(text="Previous frame"))
+    time.sleep(.5)
+    assert locate(desc="Frame position ", contains=True).get("content-desc") != after_frame
+    tap_node(locate(text="Hide review tools"))
+    passed("Signed precision editor steps forward/back using actual video timestamps and an exact timecode")
+
+    before_placement = locate(text="Caption offset:", contains=True, scroll_axis="vertical").get("text")
+    handle = locate(desc="Drag caption text")
+    x1,y1,x2,y2 = bounds(handle)
+    x,y=(x1+x2)//2,(y1+y2)//2
+    adb("shell","input","swipe",str(x),str(y),str(x+25),str(y-18),"350")
+    after_placement = locate(text="Caption offset:", contains=True, scroll_axis="vertical").get("text")
+    assert after_placement != before_placement, "Direct text drag did not commit its placement"
+    locate(text="Undo Text placement", scroll_axis="vertical")
+    screenshot("precision-direct-text-placement")
+    passed("Signed precision editor directly moves caption text and records a labeled undo action")
+
     tap_node(locate(text="Format", scroll_axis="horizontal"))
     tap_node(locate(text="White square crop", scroll_axis="vertical"))
     tap_node(locate(text="Audio", scroll_axis="horizontal"))
@@ -655,3 +678,4 @@ if __name__ == "__main__":
     finally:
         (OUT / "result.json").write_text(json.dumps({"checks": CHECKS, "passed": failure is None, "error": failure,
             "scope": "Actual signed APK, isolated Android emulator, synthetic fixtures only"}, indent=2))
+

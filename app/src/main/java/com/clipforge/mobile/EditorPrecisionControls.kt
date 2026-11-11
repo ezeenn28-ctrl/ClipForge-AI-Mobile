@@ -18,9 +18,9 @@ import kotlin.math.abs
 import kotlin.math.log10
 
 @Composable fun PrecisionReviewControls(enabled:Boolean,positionMs:Long,loop:Boolean,comparison:Boolean,onFrame:(Int)->Unit,onLoop:()->Unit,onPreroll:()->Unit,onCompare:()->Unit){
-    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),horizontalArrangement=Arrangement.spacedBy(6.dp)){
+    Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).semantics{contentDescription="Precision review controls"},horizontalArrangement=Arrangement.spacedBy(6.dp)){
         TextButton(enabled=enabled,onClick={onFrame(-1)}){Text("Previous frame")}
-        Text(Timecode.precise(positionMs),Modifier.align(Alignment.CenterVertically))
+        Text(Timecode.precise(positionMs),Modifier.align(Alignment.CenterVertically).semantics{contentDescription="Frame position "+Timecode.precise(positionMs)})
         TextButton(enabled=enabled,onClick={onFrame(1)}){Text("Next frame")}
         FilterChip(loop,onLoop,enabled=enabled,label={Text("Loop selected cut")})
         TextButton(enabled=enabled,onClick=onPreroll){Text("Play 2s before edit")}

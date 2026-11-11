@@ -1323,7 +1323,7 @@ class MainActivity : ComponentActivity() {
             }
         }
         val simpleEditor = selectedTab == StudioTab.STUDIO && studioEditing && video != null && !advancedEditor
-        val previewHeight = if (largePreview && studioEditing) (screen.screenHeightDp*.48f).coerceIn(220f,440f).dp else if (selectedTab in listOf(StudioTab.EXPORT, StudioTab.CAPTIONS))
+        val previewHeight = if (precisionReview && studioEditing) (screen.screenHeightDp*.29f).coerceIn(150f,230f).dp else if (largePreview && studioEditing) (screen.screenHeightDp*.48f).coerceIn(220f,440f).dp else if (selectedTab in listOf(StudioTab.EXPORT, StudioTab.CAPTIONS))
             (screen.screenHeightDp * .22f).coerceIn(120f, 180f).dp
         else if (previewDetail == PreviewDetail.LIGHT || editorTool == EditorTool.AUDIO) (screen.screenHeightDp * .27f).coerceIn(150f,240f).dp
         else (screen.screenHeightDp * .42f).coerceIn(200f, 380f).dp
@@ -1421,7 +1421,6 @@ class MainActivity : ComponentActivity() {
                                 onLoop={loopSelected=!loopSelected;if(loopSelected){val i=timeline.clips.indexOfFirst{it.id==selectedTimelineId};if(i>=0){seekTimeline(TimelineModel.offset(timeline.clips,i));player.play()}}},
                                 onPreroll={val i=timeline.clips.indexOfFirst{it.id==selectedTimelineId};if(i>=0){loopSelected=false;seekTimeline((TimelineModel.offset(timeline.clips,i)-2000).coerceAtLeast(0));player.play()}},
                                 onCompare={compareOriginal=!compareOriginal;musicPlayer.pause();soundPlayer.pause()})
-                            PreviewLevelMeters(meterVoice,meterMusic,meterSfx)
                         }
                     }
                     if (playbackError.isNotBlank()) Text(playbackError, maxLines = 3, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
@@ -1582,6 +1581,7 @@ class MainActivity : ComponentActivity() {
                                 if(toolsVisible)when (editorTool) {
                                     EditorTool.TEXT -> {
                                         Row{FilterChip(textHandleHook,{textHandleHook=true},label={Text("Move opening text")});FilterChip(!textHandleHook,{textHandleHook=false},label={Text("Move captions")})}
+                                        timeline.clips.firstOrNull{it.id==selectedTimelineId}?.let{clip->val p=clip.editor.placement;Text("Caption offset: ${"%.2f".format(java.util.Locale.ROOT,p.x)}, ${"%.2f".format(java.util.Locale.ROOT,p.y)} · scale ${"%.2f".format(java.util.Locale.ROOT,p.scale)}",style=MaterialTheme.typography.bodySmall)}
                                         Text("Drag the outline in preview. Drag its corner to resize. One completed gesture creates one Undo step.",style=MaterialTheme.typography.bodySmall)
                                         timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
                                             HookGeneratorControls(clip, !busy, hookTone, { hookTone = it; approved = false }, onPreview={ val index=timeline.clips.indexOfFirst{it.id==clip.id};val begin=TimelineModel.offset(timeline.clips,index);hookAuditionEnd=begin+minOf(3000,clip.durationMs);seekTimeline(begin);player.play() }) { hook ->
@@ -1594,6 +1594,7 @@ class MainActivity : ComponentActivity() {
                                         OutlinedButton(enabled = !busy, onClick = { timelinePicker.launch(arrayOf("video/*")) }) { Text("Add video") }
                                     }
                                     EditorTool.AUDIO -> {
+                                        PreviewLevelMeters(meterVoice,meterMusic,meterSfx)
                                         audioWorkspace()
                                         timeline.clips.firstOrNull{it.id==selectedTimelineId}?.let{clip->
                                             TextButton(enabled=!busy&&!waveLoading,onClick={val key=EditorWaveform.key(clip,video.toString());val source=video.toString();waveLoading=true;exportScope.launch{try{val context=kotlinx.coroutines.currentCoroutineContext();val result=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){EditorWaveform.analyze(this@MainActivity,clip,source){context.ensureActive()}};waveforms=(waveforms+ (key to result)).entries.toList().takeLast(8).associate{it.toPair()};status=if(result.sampled)"Waveform sampled at start/middle/end; blank areas are not analyzed" else "Decoded waveform ready"}catch(e:Exception){status=e.message?:"Waveform unavailable"}finally{waveLoading=false}}}){Text(if(waveLoading)"Analyzing waveform…" else "Analyze selected audio waveform")}

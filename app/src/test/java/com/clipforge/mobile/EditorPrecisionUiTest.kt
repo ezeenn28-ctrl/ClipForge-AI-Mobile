@@ -7,6 +7,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
@@ -54,4 +56,14 @@ class EditorPrecisionUiTest {
         val a=center(original);val b=center(moved);assertTrue(b.first>a.first+30);assertTrue(b.second<a.second-100)
         original.recycle();moved.recycle()
     }
+    @Test fun twoFingerGestureZoomsWhileSingleFingerTapDoesNot(){
+        var zoom by mutableFloatStateOf(1f)
+        compose.setContent{ClipForgeTheme{Box(Modifier.size(300.dp).semantics{contentDescription="Pinch surface"}.precisionPinch(true){factor,_->zoom*=factor})}}
+        compose.onNodeWithContentDescription("Pinch surface").performTouchInput{down(0,Offset(100f,100f));down(1,Offset(200f,100f));moveTo(0,Offset(70f,100f));moveTo(1,Offset(230f,100f));up(0);up(1)}
+        compose.runOnIdle{assertTrue(zoom>1.3f)}
+        val previous=zoom
+        compose.onNodeWithContentDescription("Pinch surface").performTouchInput{click(center)}
+        compose.runOnIdle{assertEquals(previous,zoom,0f)}
+    }
+
 }
