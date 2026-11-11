@@ -684,6 +684,7 @@ class MainActivity : ComponentActivity() {
                     projectMessage = "Local project restored. Review again before export."
                     status = "Restored project; export approval and campaign confirmations were cleared"
         }
+        var portableBackupRequested by remember { mutableStateOf(false) }
         val backupSaver = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { destination ->
             if (destination != null) {
                 metadataBusy = true
@@ -693,10 +694,10 @@ class MainActivity : ComponentActivity() {
                             MetadataGate.lock.withLock {
                                 latestBackupProject.get()?.let { ProjectCatalog.save(filesDir, it) }
                                 val stream = contentResolver.openOutputStream(destination) ?: error("Unable to open backup destination")
-                                MetadataBackup.create(filesDir, stream)
+                                if (portableBackupRequested) PortableBackup.create(this@MainActivity, stream) else MetadataBackup.create(filesDir, stream)
                             }
                         }
-                        status = "Backup saved. Video files and the speech model are not included."
+                        status = if (portableBackupRequested) "Portable backup saved with media. Speech model excluded." else "Metadata backup saved with presets, queue and audio catalogs. Media/model files excluded."
                     } catch (error: Exception) { status = "Backup failed: ${error.message}" }
                     finally { metadataBusy = false }
                 }
@@ -709,7 +710,7 @@ class MainActivity : ComponentActivity() {
                     try {
                         pendingBackup = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             val stream = contentResolver.openInputStream(source) ?: error("Unable to open backup")
-                            MetadataBackup.stage(filesDir, stream)
+                            PortableBackup.stage(this@MainActivity, stream)
                         }
                     } catch (error: Exception) { status = "Backup validation failed: ${error.message}" }
                     finally { metadataBusy = false }
@@ -1007,6 +1008,28 @@ class MainActivity : ComponentActivity() {
                 onUse = { musicAudition = null; music = it; approved = false; status = "Music selected. Review the mix." },
                 onPreview = { candidate -> compareOriginal = false; musicAudition = candidate; player.play(); status = "Auditioning music with this clip; project settings are unchanged." },
                 onStop = stopMusicAudition, onMessage = { status = it })
+            music?.takeIf { it.bpm == 0 }?.let { track ->
+                OutlinedButton(enabled = !busy, onClick = {
+                    audioAnalyzing = true
+                    audioJob = exportScope.launch {
+                        val jobContext = kotlinx.coroutines.currentCoroutineContext()
+                        try {
+                            val markers = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                val temp = java.io.File.createTempFile("music-beat-", ".wav", cacheDir)
+                                try {
+                                    jobContext.ensureActive()
+                                    OfflineAudioPreparer.extractWav(this@MainActivity, android.net.Uri.parse(track.source), temp, track.startMs, minOf(track.endMs, track.startMs + 90000))
+                                    jobContext.ensureActive(); AudioInspection.beats(temp, track.startMs)
+                                } finally { temp.delete() }
+                            }
+                            if (music == track) music = track.copy(beats = markers)
+                            approved = false; status = "${markers.size} onset guides detected in the first 90 seconds of this trim. These are approximate audio onsets, not guaranteed musical beats."
+                        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                        catch (error: Exception) { status = "Music analysis failed: ${error.message}" }
+                        finally { audioAnalyzing = false; audioJob = null }
+                    }
+                }) { Text("Detect imported music onset guides") }
+            }
             timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
                 AudioDiagnostics(clip, !busy, onAnalyze = {
                     if (!busy) {
@@ -1383,7 +1406,7 @@ class MainActivity : ComponentActivity() {
             pendingBackup?.let { staged ->
                 AlertDialog(onDismissRequest = { if (!metadataBusy) { staged.discard(); pendingBackup = null } },
                     title = { Text("Restore this backup?") },
-                    text = { Text("Saved drafts: ${staged.projectCount}. Last project: ${if (staged.hasProject) "included" else "not included"}. Submissions: ${staged.submissions}. Speech checkpoint: ${if (staged.hasSpeech) "included" else "not included"}. Included local records will be replaced. Original videos and model files are not part of this backup.") },
+                    text = { Text("Saved drafts: ${staged.projectCount}. Last project: ${if (staged.hasProject) "included" else "not included"}. Submissions: ${staged.submissions}. Speech checkpoint: ${if (staged.hasSpeech) "included" else "not included"}. Included local records will be replaced. Embedded media: ${staged.mediaCount}. Model files are excluded. Restored queue items need fresh review.") },
                     confirmButton = { TextButton(enabled = !busy, onClick = {
                         metadataBusy = true
                         exportScope.launch {
@@ -1617,8 +1640,8 @@ class MainActivity : ComponentActivity() {
                                             placeholder = { Text(sourceName) }, modifier = Modifier.fillMaxWidth())
 
                                         TextButton(enabled = !busy, onClick = { relinkTimelineId = selectedTimelineId; timelineRelinker.launch(arrayOf("video/*")) }) { Text("Relink selected video") }
-                                        TextButton(enabled = !busy, onClick = { backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
-                                        TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore metadata backup") }
+                                        TextButton(enabled = !busy, onClick = { portableBackupRequested = false; backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
+                                        TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore backup") }
                                         TextButton(onClick = { selectedTab = StudioTab.CAMPAIGN }) { Text("Campaign tools") }
                                         TextButton(enabled = !busy, onClick = { musicPlayer.pause(); previewPlayback.recover(); playbackError = "" }) { Text("Reload preview") }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1652,8 +1675,8 @@ class MainActivity : ComponentActivity() {
                                                 onImportLink = { showDiscovery = true; advancedImport = true },
                                                 onProjectTools = { homeSettings = !homeSettings })
                                             if (homeSettings) StudioCard("Project tools", projectMessage) {
-                                                TextButton(enabled = !busy, onClick = { backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
-                                                TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore metadata backup") }
+                                                TextButton(enabled = !busy, onClick = { portableBackupRequested = false; backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
+                                                TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore backup") }
                                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                                     Switch(compatiblePreview, onCheckedChange = { player.pause(); compatiblePreview = it; playbackPrefs.edit().putBoolean("software-preview", it).apply() }, enabled = !busy)
                                                     Text("Compatible preview decoder", modifier = Modifier.weight(1f))
@@ -1935,9 +1958,10 @@ class MainActivity : ComponentActivity() {
                                         TextButton(onClick = { showProjectTools = !showProjectTools }) { Text("Project settings") }
                                         if (showProjectTools || pendingRelink != null) {
                                         Text(projectMessage, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                        StudioCard("Project backup", "Save your edits, submissions and last speech checkpoint. Media and model files stay separate.") {
-                                            OutlinedButton(enabled = !busy, onClick = { backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
-                                            TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore metadata backup") }
+                                        StudioCard("Project backup", "Save drafts, presets, queues and audio catalogs. Optionally include media (up to 1 GB); keep the original videos until restore is verified.") {
+                                            OutlinedButton(enabled = !busy, onClick = { portableBackupRequested = false; backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
+                                            OutlinedButton(enabled = !busy, onClick = { portableBackupRequested = true; backupSaver.launch("ClipForge-portable.zip") }) { Text("Backup with media · up to 1 GB") }
+                                            TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore backup") }
                                         }
                                         }
                                         }

@@ -1,6 +1,6 @@
 package com.clipforge.mobile
 
-/** A single local music bed. No looping or uploads; silence outside its placed range. */
+/** One local music bed with optional fit/loop and dialogue ducking. */
 data class MusicTrack(
     val source: String, val name: String, val durationMs: Long,
     val startMs: Long = 0, val endMs: Long = durationMs, val timelineStartMs: Long = 0,
