@@ -1,0 +1,33 @@
+name: Auto Audio checks
+on:
+  push:
+    branches: [feature/auto-audio]
+  workflow_dispatch:
+concurrency:
+  group: auto-audio-check
+  cancel-in-progress: true
+jobs:
+  unit:
+    runs-on: ubuntu-24.04
+    env:
+      CLIPFORGE_ROBOLECTRIC_SDK: ${{ github.workspace }}/.ci-robolectric
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - uses: actions/cache@v4
+        with:
+          path: .ci-robolectric
+          key: robolectric-android15-12650502-i7-v1
+      - run: python3 .github/scripts/prepare-robolectric.py
+      - run: gradle :app:testDebugUnitTest -PmediaDeviceTests=true --no-daemon --console=plain --warning-mode=none
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: auto-audio-unit-reports
+          path: app/build/test-results/testDebugUnitTest/

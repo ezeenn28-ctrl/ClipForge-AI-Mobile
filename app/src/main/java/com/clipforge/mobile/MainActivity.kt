@@ -1008,7 +1008,23 @@ class MainActivity : ComponentActivity() {
                 onPreview = { candidate -> compareOriginal = false; musicAudition = candidate; player.play(); status = "Auditioning music with this clip; project settings are unchanged." },
                 onStop = stopMusicAudition, onMessage = { status = it })
             timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
-                AudioDiagnostics(clip, !busy, onAnalyze = { generateAutoAudio(listOf(clip.id), AudioIntensity.MINIMAL, null, true, true) },
+                AudioDiagnostics(clip, !busy, onAnalyze = {
+                    if (!busy) {
+                        audioAnalyzing = true; player.pause()
+                        audioJob = exportScope.launch {
+                            val jobContext = kotlinx.coroutines.currentCoroutineContext()
+                            try {
+                                val profile = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                                    AudioInspection.inspect(this@MainActivity, clip, video.toString()) { jobContext.ensureActive() }
+                                }
+                                updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(audioProfile = profile) else it }))
+                                status = "Audio analyzed. Music, SFX and volume unchanged."
+                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                            catch (error: Exception) { status = "Audio analysis failed: ${error.message}" }
+                            finally { audioAnalyzing = false; audioJob = null }
+                        }
+                    }
+                },
                     onGain = { gain -> updateTimeline(timeline.edit(timeline.clips.map { if (it.id == clip.id) it.copy(voiceGain = gain) else it })) },
                     onSeek = { ms -> player.pause(); CaptionTiming.timelineSeek(timeline.clips, clip.id, ms)?.let(seekTimeline) },
                     onRemove = { gap -> runCatching { updateTimeline(timeline.edit(EditingChecks.removeSilence(timeline.clips, clip.id, gap))) }.onFailure { status = it.message.orEmpty() } })
