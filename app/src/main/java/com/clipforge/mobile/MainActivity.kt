@@ -1444,6 +1444,7 @@ class MainActivity : ComponentActivity() {
         LaunchedEffect(backgroundExport){
             exporting=backgroundExport.active;exportPercent=backgroundExport.progress;queueProgress=backgroundExport.progress
             if(backgroundExport.message.isNotEmpty())status=backgroundExport.message
+            if(!backgroundExport.active&&backgroundExport.progress<100&&(backgroundExport.message.contains("cancel",true)||backgroundExport.message.contains("fail",true)))approved=false
             if(backgroundExport.output.isNotEmpty()){lastExportUri=Uri.parse(backgroundExport.output);lastExportedProject=backgroundExport.project}
             if(backgroundExport.queue.isNotEmpty()&&backgroundExport.queue.first().id!="direct")queueItems=backgroundExport.queue
             queueRunning=backgroundExport.active&&backgroundExport.queue.firstOrNull()?.id!="direct"

@@ -59,8 +59,8 @@ class BackgroundExportService:Service(){
                 }
                 File(filesDir,"background-export.properties").let{it.delete();ProjectStore.previousFile(it).delete()}
                 BackgroundExports.update(BackgroundExports.State(false,100,"Export complete · Saved to Gallery or private exports",latest,project,queue.toList()))
-            }catch(e:CancellationException){BackgroundExports.update(BackgroundExports.State(message="Export cancelled. Load interrupted export and review before retrying.",output=latest,project=project,queue=queue.map{if(it.status==QueueStatus.RENDERING)it.copy(status=QueueStatus.REVIEW) else it}))}
-            catch(e:Exception){BackgroundExports.update(BackgroundExports.State(message="Export failed: ${e.message}. Load interrupted export and review before retrying.",output=latest,project=project,queue=queue.map{if(it.status==QueueStatus.RENDERING)it.copy(status=QueueStatus.FAILED,message=e.message.orEmpty()) else it}))}
+            }catch(e:CancellationException){BackgroundExports.update(BackgroundExports.State(message="Export cancelled. Load interrupted export and review before retrying.",output=latest,project=project,queue=queue.map{if(it.status in listOf(QueueStatus.READY,QueueStatus.RENDERING))it.copy(status=QueueStatus.REVIEW,message="Cancelled: load and review again") else it}))}
+            catch(e:Exception){BackgroundExports.update(BackgroundExports.State(message="Export failed: ${e.message}. Load interrupted export and review before retrying.",output=latest,project=project,queue=queue.map{if(it.status in listOf(QueueStatus.READY,QueueStatus.RENDERING))it.copy(status=QueueStatus.REVIEW,message="Stopped: load and review again. ${e.message}") else it}))}
             finally{wake?.let{if(it.isHeld)it.release()};ServiceCompat.stopForeground(this@BackgroundExportService,ServiceCompat.STOP_FOREGROUND_REMOVE);work=null;stopSelf()}
         };return START_NOT_STICKY
     }

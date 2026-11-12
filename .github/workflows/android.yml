@@ -1,7 +1,7 @@
 name: Build Android APK
 on:
   push:
-    branches: [main, feature/workflow-upgrade, feature/workflow-final, feature/workflow-approval, feature/auto-audio, feature/studio-upgrade, feature/editor-precision, feature/creator-release]
+    branches: [main, feature/workflow-upgrade, feature/workflow-final, feature/workflow-approval, feature/auto-audio, feature/studio-upgrade, feature/editor-precision, feature/creator-release, feature/creator-tools]
   workflow_dispatch:
 concurrency:
   group: clipforge-android-${{ github.ref }}
@@ -227,6 +227,7 @@ jobs:
             app/build/outputs/release-update-seed/
           if-no-files-found: error
   native-smoke:
+    if: github.ref != 'refs/heads/feature/creator-tools'
     name: Native Whisper integration and endurance
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -300,6 +301,14 @@ jobs:
             if [ "$attempt" -lt 3 ]; then sleep 10; fi
           done
           exit 1
+      - name: Reserve emulator disk space on disposable runner
+        run: |
+          df -h .
+          if [ "$(df --output=avail -B1 . | tail -1)" -lt 12000000000 ]; then
+            sudo rm -rf /usr/share/dotnet /opt/ghc
+          fi
+          df -h .
+          test "$(df --output=avail -B1 . | tail -1)" -ge 10000000000
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -371,6 +380,14 @@ jobs:
         with:
           path: /usr/local/lib/android/sdk/system-images/android-30/default/x86_64
           key: android-api30-default-x86_64-image-v1
+      - name: Reserve emulator disk space on disposable runner
+        run: |
+          df -h .
+          if [ "$(df --output=avail -B1 . | tail -1)" -lt 12000000000 ]; then
+            sudo rm -rf /usr/share/dotnet /opt/ghc
+          fi
+          df -h .
+          test "$(df --output=avail -B1 . | tail -1)" -ge 10000000000
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules

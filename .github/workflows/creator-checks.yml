@@ -1,7 +1,7 @@
 name: Creator tools checks
 on:
   push:
-    branches: [feature/creator-tools]
+    branches: [feature/creator-checks]
   workflow_dispatch:
 concurrency:
   group: clipforge-android-${{ github.ref }}
