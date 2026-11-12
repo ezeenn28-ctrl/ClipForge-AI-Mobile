@@ -817,7 +817,7 @@ class MediaPipelineDeviceTest {
             r.setDataSource(out.path);val frame=r.getFrameAtTime(500000,MediaMetadataRetriever.OPTION_CLOSEST)!!
             assertEquals(720,frame.width);assertEquals(1280,frame.height);frame.recycle();assertEquals("yes",r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO))
             extractor.setDataSource(out.path);val video=(0 until extractor.trackCount).first{extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)!!.startsWith("video/")};extractor.selectTrack(video)
-            var count=0;while(extractor.sampleTime>=0){count++;if(!extractor.advance())break};assertTrue("Expected 24fps cap for 2s; got $count samples",count in 45..51)
+            var count=0;while(extractor.sampleTime>=0){count++;if(!extractor.advance())break};assertTrue("Expected 24fps cap for 2s; got $count samples",count in 47..49)
         }finally{r.release();extractor.release();out.delete()}
     }
     @Test fun openingTimingAtChangedSpeedLeavesCaptionsVisible(){
@@ -857,7 +857,15 @@ class MediaPipelineDeviceTest {
         val source=fixture("high-fps.mp4")
         val clips=(0 until 10).map{i->TimelineClip("short-$i",i*100L,(i+1)*100L,speed=if(i%2==0)2f else .5f)}
         val out=renderCreator(source,clips,mute=true,timeoutSeconds=300);val extractor=android.media.MediaExtractor()
-        try{extractor.setDataSource(out.path);val video=(0 until extractor.trackCount).first{extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)!!.startsWith("video/")};extractor.selectTrack(video);var count=0;while(extractor.sampleTime>=0){count++;if(!extractor.advance())break};val target=TimelineModel.duration(clips)*24/1000;android.util.Log.i("ClipForgeQA","Composition frame cap: $count frames; target=$target; duration=${TimelineModel.duration(clips)}ms");assertTrue("Global cap reset at cuts: $count frames for ${TimelineModel.duration(clips)}ms",count in (target-3)..(target+2))}finally{extractor.release();out.delete()}
+        try{
+            extractor.setDataSource(out.path);val video=(0 until extractor.trackCount).first{extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)!!.startsWith("video/")};extractor.selectTrack(video)
+            val times=mutableListOf<Long>();while(extractor.sampleTime>=0){times+=extractor.sampleTime;if(!extractor.advance())break}
+            val target=TimelineModel.duration(clips)*24/1000
+            android.util.Log.i("ClipForgeQA","Composition frame cap: ${times.size} frames; cap=$target; duration=${TimelineModel.duration(clips)}ms; pts=$times")
+            assertTrue("Global cap exceeded: ${times.size} frames",times.size in 10..(target+1).toInt())
+            val r=MediaMetadataRetriever();try{r.setDataSource(out.path);val duration=r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)!!.toLong();assertTrue("Retimed duration changed: $duration",kotlin.math.abs(duration-TimelineModel.duration(clips))<=100)}finally{r.release()}
+            clips.indices.forEach{i->val start=TimelineModel.offset(clips,i)*1000;val end=start+clips[i].durationMs*1000;assertTrue("Cut $i lost all video samples",times.any{it in start until end})}
+        }finally{extractor.release();out.delete()}
     }
 }
 
