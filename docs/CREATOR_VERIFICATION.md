@@ -27,3 +27,9 @@ Version 1.8.0, code 147, non-debuggable, arm64-v8a + x86_64; 17,798,062 bytes.
 Use More → Creator tools for templates, local framing, beat drafts, opening text, dictionary and versions. Quality is in Export. Private draft rendering covers at most the first 60 seconds; review later timeline portions in the regular editor before export. No cloud AI was enabled.
 
 Physical Nubia Neo 2 5G performance, OEM background behavior, real-face tracking accuracy, Tagalog/Taglish accuracy and full two-hour phone export were not measured. Install as an update, without uninstalling.
+
+## Latest resume check — 2026-11-12
+
+The saved APK was rechecked: its SHA-256 still matches Build 147. No app source changes or new APK were needed. The corrected stress job was retried again; job `130965268823` ended with **runner_id=0, zero steps and no test execution**. Existing test counts above remain unchanged. The exact pre-run failure reason still requires the GitHub job's Annotations message; it is not proven to be a billing or code issue.
+
+[Latest failed retry](https://github.com/ezeenn28-ctrl/ClipForge-AI-Mobile/actions/runs/43148282544/job/130965268823).
