@@ -458,13 +458,15 @@ class MediaPipelineDeviceTest {
                     return try { frame.getPixel(frame.width / 2, frame.height / 2) } finally { frame.recycle() }
                 }
                 val before = center(500_000); val boundary = center(1_000_000); val after = center(1_500_000)
+                val samples=(800..1200 step 25).map { ms-> val c=center(ms*1000L); "$ms:${Color.red(c)},${Color.green(c)},${Color.blue(c)}" }
+                android.util.Log.i("ClipForgeTransition",samples.joinToString(";"))
                 assertTrue("First source missing", Color.green(before) + Color.blue(before) > 350)
                 assertTrue("Cut boundary did not dip to black", Color.red(boundary) + Color.green(boundary) + Color.blue(boundary) < 40)
                 assertTrue("Second source missing", Color.red(after) > 170 && Color.green(after) < 60)
             } finally { retriever.release() }
         } finally {
             InstrumentationRegistry.getInstrumentation().runOnMainSync { transformer.cancel() }
-            output.delete()
+            // Keep synthetic encoded output for diagnosis.
         }
     }
 

@@ -1,0 +1,89 @@
+name: Transition boundary diagnostics
+on:
+  push:
+    branches: [verify/highlight-media]
+  workflow_dispatch:
+jobs:
+  focused-creator:
+    name: Inspect encoded transition boundary
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Install synthetic fixture generator
+        run: |
+          source .github/scripts/prepare-media-tools.sh
+      - name: Prepare test-only signing identity and fixtures
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -keystore "$HOME/.android/clipforge-development.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=ClipForge CI Test" -noprompt
+          bash .github/scripts/media-fixtures.sh
+      - name: Cache Android test system image
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/lib/android/sdk/system-images/android-30/default/x86_64
+          key: android-api30-default-x86_64-image-v1
+      - name: Prepare Android test image with bounded retries
+        shell: bash
+        run: |
+          sdkmanager_bin="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$sdkmanager_bin" --licenses >/dev/null || true
+          for attempt in 1 2 3; do
+            if "$sdkmanager_bin" "system-images;android-30;default;x86_64"; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 10; fi
+          done
+          exit 1
+      - name: Reserve emulator disk space on disposable runner
+        run: |
+          df -h .
+          if [ "$(df --output=avail -B1 . | tail -1)" -lt 12000000000 ]; then
+            sudo rm -rf /usr/share/dotnet /opt/ghc
+          fi
+          df -h .
+          test "$(df --output=avail -B1 . | tail -1)" -ge 10000000000
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Exercise real Android media pipeline with synthetic fixtures
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 30
+          arch: x86_64
+          profile: pixel_2
+          disk-size: 2048M
+          emulator-boot-timeout: 180
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: |
+            gradle :app:connectedDebugAndroidTest -PmediaDeviceTests=true -Pandroid.testInstrumentationRunnerArguments.class=com.clipforge.mobile.MediaPipelineDeviceTest#dipTransitionRendersBlackAtBoundaryAndKeepsTheOriginalDuration --no-daemon --console=plain --warning-mode=none
+      - name: Collect encoded transition for diagnosis
+        if: always()
+        run: |
+          adb exec-out run-as com.clipforge.mobile cat cache/boundary-transition.mp4 > boundary-transition.mp4 || true
+          adb logcat -d -s ClipForgeTransition:I > transition-samples.log
+
+      - name: Upload device integration reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ClipForge-transition-diagnostics
+          path: |
+            boundary-transition.mp4
+            transition-samples.log
+            app/build/outputs/androidTest-results/
+            app/build/reports/androidTests/
+          if-no-files-found: warn
