@@ -235,6 +235,17 @@ def await_export(timeout=180):
     raise AssertionError("Approved release export did not complete")
 
 
+def await_background_export(timeout=180):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        files = exports()
+        services = adb("shell", "dumpsys", "activity", "services", PACKAGE)
+        if files and "BackgroundExportService" not in services:
+            return files[-1]
+        time.sleep(.5)
+    raise AssertionError("Approved background export did not finish")
+
+
 def verify_mp4(path):
     local = OUT / "approved-release-export.mp4"
     adb("pull", path, str(local))
@@ -380,7 +391,7 @@ def main(args):
     assert button.get("enabled") == "true"
     tap_node(button)
     adb("shell", "input", "keyevent", "KEYCODE_HOME")
-    verify_mp4(await_export())
+    verify_mp4(await_background_export())
     adb("shell", "am", "start", "-W", "-n", ACTIVITY, "-f", "0x20000000")
     open_editor()
     tap_node(locate(text="Export"))

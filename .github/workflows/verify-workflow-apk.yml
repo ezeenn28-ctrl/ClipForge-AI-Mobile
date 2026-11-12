@@ -1,7 +1,7 @@
 name: Verify immutable workflow APK
 on:
   push:
-    branches: [verify/workflow-apk, verify/auto-audio-apk]
+    branches: [verify/workflow-apk, verify/auto-audio-apk, verify/editor-apk, verify/creator-apk]
   workflow_dispatch:
 jobs:
   release-update:
@@ -17,21 +17,42 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Wait for immutable Build 143 artifact
+        uses: actions/github-script@v7
+        with:
+          script: |
+            for(let attempt=0;attempt<40;attempt++){
+              const request={owner:context.repo.owner,repo:context.repo.repo,run_id:43140879228};
+              const {data}=await github.rest.actions.listWorkflowRunArtifacts(request);
+              if(data.artifacts.some(a=>a.name==='ClipForge-AI-Mobile-release')) return;
+              const {data:run}=await github.rest.actions.getWorkflowRun(request);
+              if(run.status==='completed') throw new Error('Build 143 finished without an installer artifact');
+              await new Promise(resolve=>setTimeout(resolve,15000));
+            }
+            throw new Error('Timed out waiting for the immutable installer');
       - uses: actions/download-artifact@v4
         with:
-          run-id: 43002483783
+          run-id: 43140879228
           name: ClipForge-AI-Mobile-release
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: build/release-under-test
       - uses: actions/download-artifact@v4
         with:
-          run-id: 43002483783
+          run-id: 43140879228
           name: ClipForge-baseline94-compatibility-test-only
           github-token: ${{ secrets.GITHUB_TOKEN }}
           path: build/baseline94
-      - name: Require the exact Build 134 installer
+      - name: Verify immutable Build 143 identity and checksum
+        shell: python
         run: |
-          printf '%s  %s\n' 10e84bbb4bfaf679133e313c1290333d47f247a819b32f3c27bee9d66a2c82f3 build/release-under-test/app/build/outputs/apk/release/app-release.apk | sha256sum --check
+          import hashlib,json
+          from pathlib import Path
+          record=json.loads(Path('build/release-under-test/release-manifest.json').read_text())
+          assert record['commit']=='7d50703bcf59442949e1d3a64a53a445f238e656'
+          assert record['version']=='1.8.0' and record['version_code']==143 and not record['debuggable']
+          apk=Path('build/release-under-test/app/build/outputs/apk/release/app-release.apk')
+          assert hashlib.sha256(apk.read_bytes()).hexdigest()==record['apk_sha256']
+          print('Exact Build 143 installer confirmed:',record['apk_sha256'])
       - name: Cache verified public speech model
         uses: actions/cache@v4
         with:
@@ -39,8 +60,7 @@ jobs:
           key: whisper-tiny-be07e048e1e599ad-v1
       - name: Prepare synthetic media and screenshot tools
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends ffmpeg python3-pil
+          source .github/scripts/prepare-media-tools.sh
           bash .github/scripts/media-fixtures.sh
           mkdir -p .ci-models
           if [ ! -s .ci-models/ggml-tiny.bin ]; then
@@ -69,7 +89,7 @@ jobs:
           emulator-boot-timeout: 180
           disable-animations: true
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin --phase speech-import
+          script: python3 .github/scripts/release-update-smoke.py --baseline build/baseline94/baseline94-test-only.apk --release build/release-under-test/app/build/outputs/apk/release/app-release.apk --seed build/release-under-test/app/build/outputs/release-update-seed --video app/src/androidTest/assets/landscape.mp4 --speech app/src/androidTest/assets/public-speech.mp4 --model .ci-models/ggml-tiny.bin --phase full
       - name: Upload actual release acceptance evidence
         if: always()
         uses: actions/upload-artifact@v4
