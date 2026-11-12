@@ -227,7 +227,6 @@ jobs:
             app/build/outputs/release-update-seed/
           if-no-files-found: error
   native-smoke:
-    if: github.ref != 'refs/heads/feature/creator-tools'
     name: Native Whisper integration and endurance
     runs-on: ubuntu-24.04
     timeout-minutes: 20
