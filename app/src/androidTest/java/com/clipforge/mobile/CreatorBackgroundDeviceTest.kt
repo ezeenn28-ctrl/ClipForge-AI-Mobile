@@ -29,4 +29,16 @@ class CreatorBackgroundDeviceTest {
         }
         File(context.filesDir,"background-export.properties").let{it.delete();ProjectStore.previousFile(it).delete()};source.delete()
     }
+    @Test fun cancellingGalleryCopyDeletesPendingEntryAndRetainsPrivateRender(){
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val name="creator-cancel-copy-${System.nanoTime()}.mp4"
+        val render=File(context.cacheDir,name).apply{writeBytes(ByteArray(196608){42})};var checks=0
+        try{
+            try{ExportPublisher.publish(context,render){checks++;if(checks==3)throw java.util.concurrent.CancellationException("Cancel during copy")};fail("Gallery copy ignored cancellation")}
+            catch(expected:java.util.concurrent.CancellationException){}
+            assertTrue(checks>=3);assertTrue("Private rendered file was lost",render.isFile)
+            val collection=android.provider.MediaStore.Video.Media.getContentUri(android.provider.MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            context.contentResolver.query(collection,arrayOf(android.provider.MediaStore.Video.Media._ID),android.provider.MediaStore.Video.Media.DISPLAY_NAME+" = ?",arrayOf(name),null)!!.use{assertEquals("Cancelled Gallery entry remains",0,it.count)}
+        }finally{render.delete()}
+    }
 }

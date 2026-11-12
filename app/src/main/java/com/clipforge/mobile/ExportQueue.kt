@@ -101,7 +101,7 @@ object QueueExporter {
                         music, CaptionPreset.valueOf(project.captionPreset), project.captionAppearance, sounds,project.exportQuality), output.path)
                 } catch (error: Exception) { if (continuation.isActive) continuation.resumeWithException(error) }
             }
-            val published = if(previewOnly) ExportPublisher.Published(ExportPublisher.privateUri(context,output),false) else withContext(Dispatchers.IO) { ExportPublisher.publish(context, output) }
+            val published = if(previewOnly) ExportPublisher.Published(ExportPublisher.privateUri(context,output),false) else withContext(Dispatchers.IO) { val publishingJob=currentCoroutineContext();ExportPublisher.publish(context, output){publishingJob.ensureActive()} }
             if (published.inGallery) output.delete()
             onProgress(100)
             return published

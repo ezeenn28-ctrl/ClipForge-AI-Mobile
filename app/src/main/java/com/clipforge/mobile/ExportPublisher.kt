@@ -16,7 +16,8 @@ object ExportPublisher {
         FileProvider.getUriForFile(context, "${context.packageName}.exports", file)
 
     /** Called only after an explicitly approved render completes. */
-    fun publish(context: Context, file: File): Published {
+    fun publish(context: Context, file: File, checkCancelled:()->Unit={}): Published {
+        checkCancelled()
         require(file.isFile && file.length() > 0) { "Rendered MP4 is empty or missing" }
         if (Build.VERSION.SDK_INT < 29) return Published(privateUri(context, file), false)
         val resolver = context.contentResolver
@@ -30,7 +31,11 @@ object ExportPublisher {
             ?: error("Gallery could not create the video entry")
         try {
             val destination = resolver.openOutputStream(uri, "w") ?: error("Gallery destination could not be opened")
-            destination.use { output -> file.inputStream().use { input -> input.copyTo(output, 65_536) } }
+            destination.use { output -> file.inputStream().use { input ->
+                val buffer=ByteArray(65_536)
+                while(true){checkCancelled();val count=input.read(buffer);if(count<0)break;output.write(buffer,0,count)}
+            } }
+            checkCancelled()
             val complete = ContentValues().apply { put(MediaStore.Video.Media.IS_PENDING, 0) }
             check(resolver.update(uri, complete, null, null) == 1) { "Gallery video could not be finalized" }
             return Published(uri, true)
