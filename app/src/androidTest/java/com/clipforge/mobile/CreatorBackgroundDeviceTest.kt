@@ -11,11 +11,11 @@ import java.io.File
 
 @RunWith(AndroidJUnit4::class)
 class CreatorBackgroundDeviceTest {
-    private fun await(label:String,condition:()->Boolean){val until=System.nanoTime()+30_000_000_000L;while(System.nanoTime()<until){if(condition())return;Thread.sleep(50)};fail("Timed out: $label")}
+    private fun await(label:String,condition:()->Boolean){val until=System.nanoTime()+30_000_000_000L;while(System.nanoTime()<until){if(condition())return;Thread.sleep(50)};fail("Timed out: $label · ${BackgroundExports.state.value.message}")}
     @Test fun approvedForegroundExportCancelsAndRetainsOnlyUnapprovedRecovery(){
         val instrumentation=InstrumentationRegistry.getInstrumentation();val context=instrumentation.targetContext
         val source=File(context.cacheDir,"cancel-landscape.mp4");instrumentation.context.assets.open("landscape.mp4").use{input->source.outputStream().use{input.copyTo(it)}}
-        val uri=Uri.fromFile(source).toString();val project=EditorProject(uri,6000,0,6000,mode="Manual Editor",exportQuality=ExportQuality(1080,60,12000000))
+        val uri=Uri.fromFile(source).toString();val project=EditorProject(uri,8000,0,6000,mode="Manual Editor",exportQuality=ExportQuality(1080,60,12000000))
         ActivityScenario.launch(MediaHarnessActivity::class.java).use{scenario->
             scenario.onActivity{BackgroundExports.start(it,listOf(QueuedExport("direct",project,QueueStatus.READY)),true)}
             await("persisted in-progress snapshot"){BackgroundExports.state.value.active&&File(context.filesDir,"background-export.properties").isFile&&BackgroundExports.state.value.project!=null}

@@ -64,7 +64,7 @@ object TimelineExport {
                 if (clip.visuals.fadeInMs > 0 || clip.visuals.fadeOutMs > 0) add(ClipVisualEffects.fade(clip))
                 if (incoming?.kind == CutTransitionKind.DIP_BLACK || outgoing?.kind == CutTransitionKind.DIP_BLACK)
                     add(ClipVisualEffects.transitionFade(clip, incoming, outgoing))
-                add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(quality.fps.toFloat()/clip.speed))
+                add(FrameRateCap(quality.fps.toFloat()/clip.speed))
                 // Overlays evaluate source timestamps; retime the completed picture last.
                 if (clip.speed != 1f) add(SpeedChangeEffect(clip.speed))
             }
