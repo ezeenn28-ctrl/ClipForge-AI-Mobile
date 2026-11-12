@@ -10,13 +10,21 @@ jobs:
     timeout-minutes: 45
     permissions:
       contents: read
-      actions: read
+      actions: write
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+      - name: Cancel superseded creator verification runs
+        uses: actions/github-script@v7
+        with:
+          script: |
+            for(const run_id of [43141489126,43141228935]) {
+              const {data}=await github.rest.actions.getWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id});
+              if(data.status!=='completed') await github.rest.actions.cancelWorkflowRun({owner:context.repo.owner,repo:context.repo.repo,run_id});
+            }
       - name: Wait for immutable Build 143 artifact
         uses: actions/github-script@v7
         with:
@@ -74,6 +82,14 @@ jobs:
         with:
           path: /usr/local/lib/android/sdk/system-images/android-30/default/x86_64
           key: android-api30-default-x86_64-image-v1
+      - name: Reserve disk space for Android emulator userdata
+        run: |
+          df -h .
+          if [ "$(df --output=avail -B1 . | tail -1)" -lt 12000000000 ]; then
+            sudo rm -rf /usr/share/dotnet /opt/ghc
+          fi
+          df -h .
+          test "$(df --output=avail -B1 . | tail -1)" -ge 10000000000
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -98,8 +114,8 @@ jobs:
           path: build/release-acceptance/
           if-no-files-found: warn
 
-  creator-service:
-    name: Foreground export cancellation and recovery
+  media-device:
+    name: Android media, foreground export cancellation and recovery
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -138,6 +154,14 @@ jobs:
             if [ "$attempt" -lt 3 ]; then sleep 10; fi
           done
           exit 1
+      - name: Reserve disk space for Android emulator userdata
+        run: |
+          df -h .
+          if [ "$(df --output=avail -B1 . | tail -1)" -lt 12000000000 ]; then
+            sudo rm -rf /usr/share/dotnet /opt/ghc
+          fi
+          df -h .
+          test "$(df --output=avail -B1 . | tail -1)" -ge 10000000000
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -153,12 +177,12 @@ jobs:
           emulator-boot-timeout: 180
           disable-animations: true
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: gradle :app:connectedDebugAndroidTest -PmediaDeviceTests=true -Pandroid.testInstrumentationRunnerArguments.class=com.clipforge.mobile.CreatorBackgroundDeviceTest --no-daemon --console=plain --warning-mode=none
+          script: gradle :app:connectedDebugAndroidTest -PmediaDeviceTests=true --no-daemon --console=plain --warning-mode=none
       - name: Upload device integration reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ClipForge-creator-service-reports
+          name: ClipForge-android-media-reports
           path: |
             app/build/outputs/androidTest-results/
             app/build/reports/androidTests/
