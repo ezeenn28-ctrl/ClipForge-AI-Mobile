@@ -30,3 +30,4 @@ enum class CaptionPreset(val label: String) { BOLD("Bold clean"), HIGHLIGHT("Bol
     OUTLINE("Heavy outline"), NEON("Neon glow"), CAPSULE("Capsule"), STICKER("Sticker"), COMIC("Comic"), EDITORIAL("Editorial") }
 
 
+

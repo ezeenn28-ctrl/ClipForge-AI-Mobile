@@ -31,3 +31,4 @@ data class ColorAdjustments(val brightness: Float = 0f, val contrast: Float = 1f
         }
     }
 }
+

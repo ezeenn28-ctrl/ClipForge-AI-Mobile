@@ -19,6 +19,7 @@ object ProjectStore {
                 put("$prefix.$index.text", segment.text)
             }
         }
+        put("quality.height",safe.exportQuality.height);put("quality.fps",safe.exportQuality.fps);put("quality.bitrate",safe.exportQuality.bitrate)
         put("format", "clipforge-project-v1")
         put("autoAudio.intensity",safe.audioIntensity.name);put("autoAudio.enabled",safe.autoAudioEnabled);put("autoAudio.handled",safe.autoAudioHandled.joinToString(","))
         put("hookTone", safe.hookTone.name)
@@ -193,7 +194,7 @@ object ProjectStore {
             currentTimelineId = data.getProperty("timeline.current", ""), music = music, captionPreset = data.getProperty("captionPreset", "BOLD"),
             projectId = data.getProperty("project.id", ""), projectName = data.getProperty("project.name", ""),
             hookTone = HookTone.valueOf(data.getProperty("hookTone", "FUNNY")),
-            audioIntensity=AudioIntensity.valueOf(data.getProperty("autoAudio.intensity","BALANCED")), autoAudioEnabled=data.getProperty("autoAudio.enabled","false").toBooleanStrict(),autoAudioHandled=data.getProperty("autoAudio.handled","").split(',').filter(String::isNotBlank),
+            exportQuality=ExportQuality(data.getProperty("quality.height","1080").toInt(),data.getProperty("quality.fps","30").toInt(),data.getProperty("quality.bitrate","8000000").toInt()),audioIntensity=AudioIntensity.valueOf(data.getProperty("autoAudio.intensity","BALANCED")), autoAudioEnabled=data.getProperty("autoAudio.enabled","false").toBooleanStrict(),autoAudioHandled=data.getProperty("autoAudio.handled","").split(',').filter(String::isNotBlank),
             campaignBrief = CampaignBrief(data.getProperty("brief.enabled", "false").toBooleanStrict(),
                 data.getProperty("brief.tags", ""), data.getProperty("brief.caption", ""), data.getProperty("brief.minimum", "15"),
                 data.getProperty("brief.maximum", "30"), data.getProperty("brief.source", "0")),

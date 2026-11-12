@@ -40,3 +40,4 @@ object TranscriptStore {
         check(temporary.renameTo(file)) { "Unable to save transcript checkpoint" }
     }
 }
+

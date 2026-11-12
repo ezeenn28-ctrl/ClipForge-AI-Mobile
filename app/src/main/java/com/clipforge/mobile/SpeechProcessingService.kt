@@ -82,3 +82,4 @@ class SpeechProcessingService : Service() {
         const val ACTION_PAUSE = "com.clipforge.mobile.PAUSE_SPEECH"
     }
 }
+

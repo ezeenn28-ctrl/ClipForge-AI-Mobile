@@ -66,7 +66,7 @@ object ExportQueue {
 
 /** Runs on Main, processes one approved immutable snapshot, and cancels its Transformer on interruption. */
 object QueueExporter {
-    suspend fun render(context: Context, project: EditorProject, onProgress: (Int) -> Unit): ExportPublisher.Published {
+    suspend fun render(context: Context, project: EditorProject, onProgress: (Int) -> Unit, previewOnly:Boolean=false): ExportPublisher.Published {
         project.validate()
         val clips = ExportQueue.clips(project)
         val music = project.music.takeIf { project.timelineMode }
@@ -84,7 +84,7 @@ object QueueExporter {
         }
         try {
             suspendCancellableCoroutine<Unit> { continuation ->
-                val instance = Transformer.Builder(context).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory())
+                val instance = Transformer.Builder(context).setEncoderFactory(DefaultEncoderFactory.Builder(context).setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(project.exportQuality.bitrate).build()).build()).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory())
                     .addListener(object : Transformer.Listener {
                         override fun onCompleted(composition: Composition, exportResult: ExportResult) {
                             if (continuation.isActive) continuation.resume(Unit)
@@ -98,10 +98,10 @@ object QueueExporter {
                 try {
                     instance.start(TimelineExport.composition(Uri.parse(project.source), clips, project.vertical, project.fillFrame,
                         project.mute, project.subtitleSize, if (project.subtitleYellow) android.graphics.Color.YELLOW else android.graphics.Color.WHITE,
-                        music, CaptionPreset.valueOf(project.captionPreset), project.captionAppearance, sounds), output.path)
+                        music, CaptionPreset.valueOf(project.captionPreset), project.captionAppearance, sounds,project.exportQuality), output.path)
                 } catch (error: Exception) { if (continuation.isActive) continuation.resumeWithException(error) }
             }
-            val published = withContext(Dispatchers.IO) { ExportPublisher.publish(context, output) }
+            val published = if(previewOnly) ExportPublisher.Published(ExportPublisher.privateUri(context,output),false) else withContext(Dispatchers.IO) { ExportPublisher.publish(context, output) }
             if (published.inGallery) output.delete()
             onProgress(100)
             return published
@@ -109,3 +109,4 @@ object QueueExporter {
         finally { ticker.cancel(); transformer?.cancel() }
     }
 }
+

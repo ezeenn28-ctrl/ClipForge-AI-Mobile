@@ -152,69 +152,29 @@ fun baselineDraftScore(draft: HighlightDraft, totalMs: Long): DraftScore {
 
 /** Video timestamps are relative to the exported trimmed clip.
  * Hook stays visible; subtitle appears only during the chosen time interval. */
-fun timedCaptionOverlay(
-    hook: String,
-    caption: String,
-    startMs: Long,
-    endMs: Long,
-    trimStartMs: Long,
-    calibrateClock: Boolean = false,
-    subtitleSize: Float = 39f,
-    subtitleColor: Int = Color.WHITE,
-    preset: CaptionPreset = CaptionPreset.BOLD,
-    appearance: CaptionAppearance = CaptionAppearance(), placement:TextPlacement=TextPlacement()
-): BitmapOverlay {
-    var withCaption: Bitmap? = null
-    var withoutCaption: Bitmap? = null
-    val fromUs = (startMs - trimStartMs).coerceAtLeast(0L) * 1000L
-    val untilUs = (endMs - trimStartMs).coerceAtLeast(0L) * 1000L
-    val clock = ClipPresentationClock()
-    var cachedWord = -2
-    return object : CaptionBitmapOverlay() {
-        override fun getBitmap(presentationTimeUs: Long): Bitmap {
-            val timeUs = if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs
-            return if (untilUs <= fromUs || timeUs in fromUs until untilUs) {
-                val word = if (appearance.wordHighlight && endMs > startMs)
-                    CaptionTiming.activeWord(WhisperNative.Segment(startMs, endMs, caption), trimStartMs + timeUs / 1000) else -2
-                if (word != cachedWord) { withCaption?.recycle(); withCaption = null; cachedWord = word }
-                withCaption ?: makeCaptionOverlay(hook, caption, subtitleSize, subtitleColor, preset, appearance, placement=placement,
-                    activeWord = word.takeIf { appearance.wordHighlight && endMs > startMs }).also { withCaption = it }
-            } else withoutCaption ?: makeCaptionOverlay(hook, "", subtitleSize, subtitleColor, preset, appearance, placement=placement).also { withoutCaption = it }
-        }
-        override fun release() {
-            super.release()
-            withCaption?.recycle(); withoutCaption?.recycle()
-            withCaption = null; withoutCaption = null
-        }
+fun timedCaptionOverlay(hook:String,caption:String,startMs:Long,endMs:Long,trimStartMs:Long,calibrateClock:Boolean=false,
+    subtitleSize:Float=39f,subtitleColor:Int=Color.WHITE,preset:CaptionPreset=CaptionPreset.BOLD,appearance:CaptionAppearance=CaptionAppearance(),placement:TextPlacement=TextPlacement(),opening:OpeningStyle=OpeningStyle(),speed:Float=1f):BitmapOverlay =
+    creatorCaptionOverlay(hook,trimStartMs,calibrateClock,subtitleSize,subtitleColor,preset,appearance,placement,opening,speed){ms->
+        val text=if(endMs<=startMs||ms in startMs until endMs)caption else ""
+        text to if(appearance.wordHighlight&&endMs>startMs)CaptionTiming.activeWord(WhisperNative.Segment(startMs,endMs,caption),ms) else null
     }
-}
-
-fun segmentSubtitleOverlay(hook: String, segments: List<WhisperNative.Segment>, trimStartMs: Long, subtitleSize: Float, subtitleColor: Int, calibrateClock: Boolean = false, preset: CaptionPreset = CaptionPreset.BOLD, appearance: CaptionAppearance = CaptionAppearance(), placement:TextPlacement=TextPlacement()): BitmapOverlay {
-    var empty: Bitmap? = null
-    // Retain only the current subtitle bitmap, independent of transcript length.
-    val clock = ClipPresentationClock()
-    var cachedIndex = -1
-    var cachedWord = -2
-    var cachedBitmap: Bitmap? = null
-    return object : CaptionBitmapOverlay() {
-        override fun getBitmap(presentationTimeUs: Long): Bitmap {
-            val absoluteMs = SubtitleTimeline.sourcePositionMs(trimStartMs, if (calibrateClock) clock.relativeUs(presentationTimeUs) else presentationTimeUs)
-            val index = SubtitleTimeline.activeSegmentIndex(segments, absoluteMs)
-            if (index < 0) return empty ?: makeCaptionOverlay(hook, "", subtitleSize, subtitleColor, preset, appearance, placement=placement).also { empty = it }
-            val word = if (appearance.wordHighlight) CaptionTiming.activeWord(segments[index], absoluteMs) else -2
-            if (cachedIndex != index || cachedWord != word) {
-                cachedBitmap?.recycle()
-                cachedBitmap = makeCaptionOverlay(hook, segments[index].text, subtitleSize, subtitleColor, preset, appearance, placement=placement,
-                    activeWord = word.takeIf { appearance.wordHighlight })
-                cachedIndex = index; cachedWord = word
-            }
-            return cachedBitmap ?: (empty ?: makeCaptionOverlay(hook, "", subtitleSize, subtitleColor, preset, appearance, placement=placement).also { empty = it })
+fun segmentSubtitleOverlay(hook:String,segments:List<WhisperNative.Segment>,trimStartMs:Long,subtitleSize:Float,subtitleColor:Int,calibrateClock:Boolean=false,preset:CaptionPreset=CaptionPreset.BOLD,appearance:CaptionAppearance=CaptionAppearance(),placement:TextPlacement=TextPlacement(),opening:OpeningStyle=OpeningStyle(),speed:Float=1f):BitmapOverlay =
+    creatorCaptionOverlay(hook,trimStartMs,calibrateClock,subtitleSize,subtitleColor,preset,appearance,placement,opening,speed){ms->
+        val cue=segments.getOrNull(SubtitleTimeline.activeSegmentIndex(segments,ms))
+        cue?.text.orEmpty() to if(appearance.wordHighlight&&cue!=null)CaptionTiming.activeWord(cue,ms) else null
+    }
+private fun creatorCaptionOverlay(hook:String,trimStart:Long,calibrate:Boolean,size:Float,color:Int,preset:CaptionPreset,appearance:CaptionAppearance,placement:TextPlacement,opening:OpeningStyle,speed:Float,cue:(Long)->Pair<String,Int?>):BitmapOverlay {
+    val clock=ClipPresentationClock();var bitmap:Bitmap?=null;var key:List<Any?> = emptyList()
+    return object:CaptionBitmapOverlay(){
+        override fun getBitmap(presentationTimeUs:Long):Bitmap {
+            val relative=if(calibrate)clock.relativeUs(presentationTimeUs) else presentationTimeUs
+            val outputMs=(relative/1000/speed).toLong();val (text,word)=cue(trimStart+relative/1000)
+            val alpha=(opening.alpha(outputMs)*20).toInt()/20f;val scale=(opening.scale(outputMs)*20).toInt()/20f
+            val next=listOf(text,word,alpha,scale)
+            if(bitmap==null||key!=next){bitmap?.recycle();bitmap=makeCaptionOverlay(hook,text,size,color,preset,appearance,activeWord=word,placement=placement,opening=opening,openingTimeMs=outputMs);key=next}
+            return bitmap!!
         }
-        override fun release() {
-            super.release()
-            cachedBitmap?.recycle(); empty?.recycle()
-            cachedBitmap = null; empty = null
-        }
+        override fun release(){super.release();bitmap?.recycle();bitmap=null}
     }
 }
 
@@ -325,6 +285,11 @@ class MainActivity : ComponentActivity() {
         var textHandleHook by remember{mutableStateOf(false)};var gesturePlacement by remember{mutableStateOf<TextPlacement?>(null)}
         var waveforms by remember{mutableStateOf(emptyMap<String,WaveformResult>())};var waveLoading by remember{mutableStateOf(false)}
         var frameLoading by remember{mutableStateOf(false)}
+        var exportQuality by remember{mutableStateOf(ExportQuality())}
+        var creatorDraft by remember{mutableStateOf<CreatorDraft?>(null)}
+        var creatorAnalyzing by remember{mutableStateOf(false)}
+        val backgroundExport by BackgroundExports.state.collectAsState()
+
 
         var lastExportedProject by remember { mutableStateOf<EditorProject?>(null) }
 
@@ -417,7 +382,7 @@ class MainActivity : ComponentActivity() {
         var projectLoading by remember { mutableStateOf(true) }
         var projectMessage by remember { mutableStateOf("Checking saved project…") }
         var expectedRestoredDuration by remember { mutableLongStateOf(0L) }
-        val busy = audioAnalyzing || queueRunning || assetImporting || projectLoading || metadataBusy || speechStarting || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
+        val busy = creatorAnalyzing || creatorDraft!=null || backgroundExport.active || audioAnalyzing || queueRunning || assetImporting || projectLoading || metadataBusy || speechStarting || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
         val deliveryDuration = if (timelineMode) TimelineModel.duration(timeline.clips) else (duration * end).toLong() - (duration * start).toLong()
         val exportReady = video != null && duration > 0 && if (timelineMode) timeline.clips.isNotEmpty() else (editingMode != "AI Draft" || selectedDraft >= 0)
         val campaignIssues = if (campaignEnabled) CampaignRules(campaignTags,
@@ -676,6 +641,7 @@ class MainActivity : ComponentActivity() {
                     appliedSpeechUnits = saved.lastSpeechUnits
                     timeline = TimelineHistory(saved.timelineClips,music=saved.music)
                     music = saved.music
+                    exportQuality=saved.exportQuality
                     audioIntensity = saved.audioIntensity; autoAudioEnabled = saved.autoAudioEnabled; autoAudioHandled = saved.autoAudioHandled
                     autoAudioUndo = null; musicAudition = null; compareOriginal = false
                     timelineSubtitleTarget = saved.currentTimelineId
@@ -967,7 +933,7 @@ class MainActivity : ComponentActivity() {
             draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits, timelineClips = timeline.clips, timelineMode = timelineMode, selectedTimelineId = selectedTimelineId,
             currentTimelineId = timelineSubtitleTarget.takeIf { id -> timeline.clips.any { it.id == id } }.orEmpty(), music = music, captionPreset = captionPreset.name,
             projectId = projectId, projectName = projectName.ifBlank { sourceName }.filterNot(Char::isISOControl).take(80),
-            captionAppearance = captionAppearance, hookTone = hookTone, audioIntensity = audioIntensity, autoAudioEnabled = autoAudioEnabled, autoAudioHandled = autoAudioHandled,
+            exportQuality=exportQuality,captionAppearance = captionAppearance, hookTone = hookTone, audioIntensity = audioIntensity, autoAudioEnabled = autoAudioEnabled, autoAudioHandled = autoAudioHandled,
             campaignBrief = CampaignBrief(campaignEnabled, campaignTags, campaignCaption, campaignMin, campaignMax, campaignSource)
         ) else null
         val generateAutoAudio: (List<String>, AudioIntensity, MusicMood?, Boolean, Boolean) -> Unit = { ids, intensity, forcedMood, keepMusic, keepSounds ->
@@ -1121,7 +1087,6 @@ class MainActivity : ComponentActivity() {
                 if (event == androidx.lifecycle.Lifecycle.Event.ON_START) appVisible = true
                 if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
                     appVisible = false; hookAuditionEnd=-1; audioJob?.cancel()
-                    queueJob?.cancel()
                     kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
                         MetadataGate.lock.withLock { latestBackupProject.get()?.let { snapshot ->
                             runCatching { ProjectCatalog.save(filesDir, snapshot) }
@@ -1365,7 +1330,7 @@ class MainActivity : ComponentActivity() {
                         PreviewVideo(previewBinding,
                             if (reference.videoAspect != null) Modifier.fillMaxWidth().aspectRatio(reference.videoAspect) else Modifier.fillMaxSize(),
                             crop = !compareOriginal && (fillFrame || reference != ReferenceLayout.STANDARD),
-                            color = if (compareOriginal) ColorAdjustments() else VideoLooks.color(previewEffect, if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments()), monochrome = previewEffect == "Monochrome")
+                            color = if (compareOriginal) ColorAdjustments() else VideoLooks.color(previewEffect, if (timelineActive) playingTimelineClip?.color ?: ColorAdjustments() else ColorAdjustments()), monochrome = previewEffect == "Monochrome",framing=if(!compareOriginal&&vertical&&reference==ReferenceLayout.STANDARD)playingTimelineClip?.editor?.framing else null,sourceMs=previewPosition)
                     }
                     if (!compareOriginal && (reference != ReferenceLayout.STANDARD || timelineActive || selectedDraft in drafts.indices || hookText.isNotBlank() || captionText.isNotBlank())) {
                         val playing = if (timelineActive) timeline.clips.getOrNull(timelinePlaybackIndex) else null
@@ -1380,9 +1345,10 @@ class MainActivity : ComponentActivity() {
                         val activeWord = if (!renderAppearance.wordHighlight) null else (activeSegment?.let { CaptionTiming.activeWord(it, previewPosition) }
                             ?: if (until > from) CaptionTiming.activeWord(WhisperNative.Segment(from, until, fallback), previewPosition) else null)
                         if (reference != ReferenceLayout.STANDARD || hook.isNotBlank() || displayedCaption.isNotBlank()) {
-                            val previewBitmap = remember(hook, displayedCaption, cutSize, cutYellow, cutPreset, renderAppearance, activeWord, previewDetail, placement) {
+                            val opening=playing?.editor?.opening?:OpeningStyle();val openingMs=playing?.let{it.outputOffsetMs(previewPosition-it.startMs)}?:0L
+                            val previewBitmap = remember(opening,opening.alpha(openingMs),opening.scale(openingMs),hook, displayedCaption, cutSize, cutYellow, cutPreset, renderAppearance, activeWord, previewDetail, placement) {
                                 makeCaptionOverlay(hook, displayedCaption, cutSize,
-                                    if (cutYellow) Color.YELLOW else Color.WHITE, cutPreset, renderAppearance, bitmapScale = previewDetail.bitmapScale, activeWord = activeWord, placement=placement).asImageBitmap()
+                                    if (cutYellow) Color.YELLOW else Color.WHITE, cutPreset, renderAppearance, bitmapScale = previewDetail.bitmapScale, activeWord = activeWord, placement=placement,opening=opening,openingTimeMs=openingMs).asImageBitmap()
                             }
                             Image(
                                 bitmap = previewBitmap,
@@ -1465,6 +1431,20 @@ class MainActivity : ComponentActivity() {
                 autoFindRequested = false
                 beginFindClips(false)
             }
+        }
+        creatorDraft?.let { draft -> CreatorDraftDialog(draft,onDismiss={creatorDraft=null},onApply={
+            if(projectSnapshot==draft.before){
+                val changed=timeline.edit(draft.clips,draft.label)
+                if(changed.rejection.isEmpty()){updateTimeline(changed);vertical=true;fillFrame=true;autoAudioHandled=(autoAudioHandled+draft.clips.map{it.id}).distinct().takeLast(500);status="${draft.label} applied. Review before approving export."}else status=changed.rejection
+            }else status="Project changed; create a fresh draft before applying."
+            creatorDraft=null
+        }) }
+        LaunchedEffect(backgroundExport){
+            exporting=backgroundExport.active;exportPercent=backgroundExport.progress;queueProgress=backgroundExport.progress
+            if(backgroundExport.message.isNotEmpty())status=backgroundExport.message
+            if(backgroundExport.output.isNotEmpty()){lastExportUri=Uri.parse(backgroundExport.output);lastExportedProject=backgroundExport.project}
+            if(backgroundExport.queue.isNotEmpty()&&backgroundExport.queue.first().id!="direct")queueItems=backgroundExport.queue
+            queueRunning=backgroundExport.active&&backgroundExport.queue.firstOrNull()?.id!="direct"
         }
         val showProjectHome = selectedTab == StudioTab.STUDIO && !studioEditing && !showDiscovery
         LaunchedEffect(showProjectHome) {
@@ -1682,6 +1662,15 @@ class MainActivity : ComponentActivity() {
                                         }
                                     }
                                     EditorTool.MORE -> StudioCard("Project tools") {
+                                        CreatorControls(timeline.clips.firstOrNull{it.id==selectedTimelineId},!busy,
+                                            onTemplate={t->projectSnapshot?.let{p->val changed=timeline.clips.map{if(it.id==selectedTimelineId)t.apply(it) else it};runCatching{EditorPrecision.validateLocks(timeline.clips,changed)}.onSuccess{creatorDraft=CreatorDraft("${t.label} template",p,changed,"Preview caption styling, opening text, motion and voice cleanup.")}.onFailure{status=it.message.orEmpty()}}},
+                                            onBeat={runCatching{val p=projectSnapshot?:error("Open a project first");val bed=music?:error("Add a music bed first");creatorDraft=CreatorDraft("Beat-synced draft",p,BeatDraft.create(timeline.clips,bed),"Review beat cuts, zoom transitions and sparse sound accents before applying.")}.onFailure{status=it.message.orEmpty()}},
+                                            onFraming={val c=timeline.clips.firstOrNull{it.id==selectedTimelineId};val p=projectSnapshot;if(c!=null&&p!=null&&!c.editor.videoLocked){creatorAnalyzing=true;player.pause();exportScope.launch{try{val ctx=kotlinx.coroutines.currentCoroutineContext();val result=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){SubjectAnalyzer.analyze(this@MainActivity,c,p.source){ctx.ensureActive()}};if(projectSnapshot==p)creatorDraft=CreatorDraft("Subject framing",p,timeline.clips.map{if(it.id==c.id)it.copy(editor=it.editor.copy(framing=result.framing)) else it},"${result.faces}/${result.samples} samples found a face. Other samples use motion or center fallback. Sparse analysis can miss fast movement; review and adjust manually.")}catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){status="Framing failed: ${e.message}"}finally{creatorAnalyzing=false}}}else status="Select an unlocked video cut first"},
+                                            onClip={c->updateTimeline(timeline.edit(timeline.clips.map{if(it.id==c.id)c else it},"Creator controls"))},
+                                            onDictionary={a,b->runCatching{val entries=CaptionDictionary.read(filesDir).toMutableMap();if(b.isEmpty())entries.remove(a) else entries[a]=b;CaptionDictionary.write(filesDir,entries);status="Caption correction saved locally"}.onFailure{status=it.message.orEmpty()}},
+                                            onCorrect={runCatching{val entries=CaptionDictionary.read(filesDir);updateTimeline(timeline.edit(timeline.clips.map{if(it.id==selectedTimelineId)CaptionDictionary.apply(it,entries) else it},"Caption corrections"))}.onFailure{status=it.message.orEmpty()}},
+                                            onVersion={label->projectSnapshot?.let{p->metadataBusy=true;exportScope.launch{try{val version=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){MetadataGate.lock.withLock{ClipVersions.create(filesDir,p,label)}};applySavedProject(version,Uri.parse(version.source));status="Independent version created. Original is in Projects."}catch(e:Exception){status="Version failed: ${e.message}"}finally{metadataBusy=false}}}})
+
                                         timeline.clips.firstOrNull{it.id==selectedTimelineId}?.let{clip->
                                             SettingsTransferControls(settingsClipboard,!busy,
                                                 onCopy={settingsClipboard=SettingsClipboard(clip,CaptionLook(captionAppearance,subtitleSize,captionPreset.name,subtitleYellow));status="Cut settings copied"},
@@ -2360,7 +2349,8 @@ class MainActivity : ComponentActivity() {
                                                 OutlinedButton(enabled = false, onClick = {}) { Text("Export approved MP4") }
                                             }
                                         } else {
-                                        val estimate=EditingChecks.estimateBytes(deliveryDuration)
+                                        QualityControls(exportQuality,!busy){exportQuality=it;approved=false}
+                                        val estimate=exportQuality.estimate(deliveryDuration)
                                         Text("Estimated export space: ${android.text.format.Formatter.formatFileSize(this@MainActivity,estimate)} · available ${android.text.format.Formatter.formatFileSize(this@MainActivity,android.os.StatFs(filesDir.path).availableBytes)}. Estimate varies with footage.",style=MaterialTheme.typography.bodySmall)
                                         ExportSummary(projectName.ifBlank { sourceName }, deliveryDuration, vertical,
                                             if (timelineMode) timeline.clips.size else 1,
@@ -2379,72 +2369,9 @@ class MainActivity : ComponentActivity() {
                 }
                 Button(enabled = !busy && campaignIssues.isEmpty() && exportReady && approved, onClick = {
                     if (!approved || !exportReady || busy || campaignIssues.isNotEmpty()) return@Button
-                    val source = video ?: return@Button
-                    val exportedSnapshot = projectSnapshot
-                    val outputDir = (getExternalFilesDir(Environment.DIRECTORY_MOVIES) ?: File(filesDir, "exports")).apply { mkdirs() }
-                    val output = File(outputDir, "clipforge_${System.currentTimeMillis()}.mp4")
-                    val selectedDraftData = drafts.getOrNull(selectedDraft)
-                    val exportClips = if (timelineMode) timeline.clips else listOf(TimelineClip(
-                        "selection", (duration * start).toLong(), (duration * end).toLong(),
-                        hook = hookText, caption = captionText,
-                        captionStartMs = selectedDraftData?.captionStartMs ?: (duration * start).toLong(),
-                        captionEndMs = selectedDraftData?.captionEndMs ?: (duration * end).toLong(),
-                        effect = effectChoice,
-                        subtitles = if (selectedDraft >= 0 && subtitleDraftIndex == selectedDraft) subtitleSegments else emptyList(),
-                        source = source.toString(), sourceDurationMs = duration))
-                    val exportMusic = if (timelineMode) music else null
-                    exportPercent = 0
-                    exporting = true
-                    status = "Exporting…"
-                    val requestToken = Any()
-                    activeExportToken = requestToken
-                    val transformer = Transformer.Builder(this@MainActivity).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory())
-                        .addListener(object : Transformer.Listener {
-                            override fun onCompleted(composition: androidx.media3.transformer.Composition, exportResult: ExportResult) {
-                                runOnUiThread {
-                                    if (activeExportToken !== requestToken) return@runOnUiThread
-                                    activeTransformer = null
-                                    exportPercent = 100
-                                    status = "Rendering complete. Saving approved MP4…"
-                                    exportScope.launch {
-                                        try {
-                                            val published = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                                                ExportPublisher.publish(applicationContext, output)
-                                            }
-                                            lastExportUri = published.uri
-                                            lastExportedProject = exportedSnapshot
-                                            if (published.inGallery) output.delete()
-                                            status = if (published.inGallery) "Saved to Gallery: Movies/ClipForge/${output.name}" else "Saved privately. Use Open or Share below."
-                                            Toast.makeText(this@MainActivity, "Export complete", Toast.LENGTH_LONG).show()
-                                        } catch (cancelled: kotlinx.coroutines.CancellationException) {
-                                            throw cancelled
-                                        } catch (error: Exception) {
-                                            lastExportUri = runCatching { ExportPublisher.privateUri(this@MainActivity, output) }.getOrNull()
-                                            status = "MP4 rendered and retained privately. Gallery save failed: ${error.message}. Use Share if available."
-                                        } finally { activeExportToken = null; exporting = false; exportFile = null }
-                                    }
-                                }
-                            }
-                            override fun onError(composition: androidx.media3.transformer.Composition, exportResult: ExportResult, exportException: ExportException) {
-                                runOnUiThread { if (activeExportToken !== requestToken) return@runOnUiThread; activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; status = "Export failed: ${exportException.message}" }
-                            }
-                        }).build()
-                    exportFile = output
-                    activeTransformer = transformer
-                    player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++
-                    exportScope.launch {
-                    try {
-                        val exportSounds = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                            MediaAssets.checkTimeline(this@MainActivity, source.toString(), duration, exportClips, exportMusic)
-                            if (SoundTimeline.events(exportClips).any { it.asset == null }) SoundAssets.ensure(filesDir) else emptyMap()
-                        }
-                        if (activeExportToken !== requestToken) return@launch
-                        transformer.start(TimelineExport.composition(source, exportClips, vertical, fillFrame, mute,
-                            subtitleSize, if (subtitleYellow) Color.YELLOW else Color.WHITE, exportMusic, captionPreset, captionAppearance, exportSounds), output.absolutePath)
-                    }
-                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                    catch (e: Exception) { activeExportToken = null; output.delete(); activeTransformer = null; exporting = false; approved = false; status = "Export failed: ${e.message}" }
-                    }
+                    val snapshot=projectSnapshot?:return@Button
+                    player.pause();musicPlayer.pause();soundPlayer.pause();auditionUntil=0;auditionRequest++
+                    runCatching{BackgroundExports.start(this@MainActivity,listOf(QueuedExport("direct",snapshot,QueueStatus.READY)),true)}.onFailure{status="Export failed: ${it.message}";approved=false}
                 }) { Text(if (exporting) "Exporting approved clip…" else "Export approved MP4") }
                 ExportQueueControls(queueItems, !busy, approved && campaignIssues.isEmpty() && exportReady, queueRunning, queueProgress,
                     onAdd = {
@@ -2465,39 +2392,11 @@ class MainActivity : ComponentActivity() {
                             val ready = queueItems.filter { it.status == QueueStatus.READY }
                             if (ready.isNotEmpty()) {
                                 queueRunning = true; player.pause(); musicPlayer.pause(); soundPlayer.pause()
-                                queueJob = exportScope.launch {
-                                    try {
-                                        for (item in ready) {
-                                            kotlinx.coroutines.currentCoroutineContext().ensureActive()
-                                            queueProgress = 0
-                                            val running = item.copy(status = QueueStatus.RENDERING, message = "Rendering approved snapshot")
-                                            queueItems = queueItems.map { if (it.id == item.id) running else it }
-                                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ExportQueue.record(filesDir, running) }
-                                            try {
-                                                val output = QueueExporter.render(this@MainActivity, item.project) { queueProgress = it }
-                                                lastExportUri = output.uri
-                                                lastExportedProject = item.project
-                                                val complete = item.copy(status = QueueStatus.COMPLETE, message = if (output.inGallery) "Saved to Gallery" else "Saved privately", uri = output.uri.toString())
-                                                queueItems = queueItems.map { if (it.id == item.id) complete else it }
-                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ExportQueue.record(filesDir, complete) }
-                                            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                                            catch (error: Exception) {
-                                                val failed = item.copy(status = QueueStatus.FAILED, message = "${error.message}. Load for review before retrying.")
-                                                queueItems = queueItems.map { if (it.id == item.id) failed else it }
-                                                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { ExportQueue.record(filesDir, failed) }
-                                                status = "Queue stopped: ${error.message}"; break
-                                            }
-                                        }
-                                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-                                    catch (error: Exception) { status = "Queue stopped: ${error.message}" }
-                                    finally {
-                                        queueItems = queueItems.map { if (it.status in listOf(QueueStatus.READY, QueueStatus.RENDERING)) it.copy(status = QueueStatus.REVIEW, message = "Stopped: load for review before continuing") else it }
-                                        queueRunning = false; queueJob = null
-                                    }
-                                }
+                                runCatching{BackgroundExports.start(this@MainActivity,ready,true)}.onFailure{queueRunning=false;status="Queue failed: ${it.message}"}
+
                             }
                         }
-                    }, onStop = { queueJob?.cancel(); status = "Queue stopped. Unfinished snapshots need review." },
+                    }, onStop = { BackgroundExports.cancel(this@MainActivity);status="Stopping approved exports…" },
                     onReview = { item ->
                         metadataBusy = true
                         exportScope.launch {
@@ -2522,7 +2421,7 @@ class MainActivity : ComponentActivity() {
                         runCatching { startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(Uri.parse(item.uri), "video/mp4").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)) }
                             .onFailure { status = "Could not open queued MP4: ${it.message}" }
                     })
-                Text("Keep ClipForge open while the queue runs. Leaving the app stops unfinished exports for a fresh review.", style = MaterialTheme.typography.bodySmall)
+                Text("Approved exports continue in the background. Use the notification to cancel. If Android stops the process, load the interrupted snapshot and review before retrying.", style = MaterialTheme.typography.bodySmall)
                 OutlinedButton(enabled = !busy && approved && campaignIssues.isEmpty() && (if (timelineMode) TimelineModel.subtitles(timeline.clips).isNotEmpty() else subtitleDraftIndex == selectedDraft && selectedDraft >= 0 && subtitleSegments.isNotEmpty()), onClick = {
                     pendingSrt = if (timelineMode) SubtitleSrt.render(TimelineModel.subtitles(timeline.clips), 0, TimelineModel.duration(timeline.clips))
                         else SubtitleSrt.render(subtitleSegments, (duration * start).toLong(), (duration * end).toLong())
@@ -2531,17 +2430,10 @@ class MainActivity : ComponentActivity() {
                 if (exporting) {
                     LinearProgressIndicator(progress = { exportPercent / 100f }, modifier = Modifier.fillMaxWidth())
                     Text("Export progress: $exportPercent%")
-                    if (activeTransformer != null) OutlinedButton(onClick = {
-                        activeExportToken = null
-                        activeTransformer?.cancel()
-                        exportFile?.delete()
-                        exportFile = null
-                        activeTransformer = null
-                        exporting = false
-                        approved = false
-                        status = "Export cancelled. Review before starting again."
-                    }) { Text("Cancel export") }
+                    if(backgroundExport.active)OutlinedButton(onClick={BackgroundExports.cancel(this@MainActivity);approved=false}){Text("Cancel export")}
+
                 }
+                    if(!backgroundExport.active)TextButton(enabled=!busy,onClick={runCatching{val p=BackgroundExports.recovery(filesDir)?:error("No interrupted export saved");applySavedProject(p,Uri.parse(p.source));selectedTab=StudioTab.STUDIO;studioEditing=true;approved=false;status="Interrupted snapshot loaded. Preview and approve again before retrying."}.onFailure{status=it.message.orEmpty()}}){Text("Load interrupted export for review")}
                 lastExportUri?.let { uri ->
                     TextButton(enabled=!busy && approved && projectSnapshot==lastExportedProject,onClick={
                         projectSnapshot?.let { snapshot -> (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("ClipForge posting package",EditingChecks.posting(snapshot)));status="Posting caption and required tags copied. Review campaign wording before posting." }

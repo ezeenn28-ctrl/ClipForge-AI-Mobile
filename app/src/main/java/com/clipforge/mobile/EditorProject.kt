@@ -34,13 +34,14 @@ data class EditorProject(
     val captionAppearance: CaptionAppearance = CaptionAppearance(),
     val hookTone: HookTone = HookTone.FUNNY,
     val campaignBrief: CampaignBrief = CampaignBrief(),
+    val exportQuality:ExportQuality=ExportQuality(),
     val audioIntensity: AudioIntensity = AudioIntensity.BALANCED, val autoAudioEnabled: Boolean = false, val autoAudioHandled: List<String> = emptyList()
 ) {
     fun reviewedAgain(): EditorProject = copy(drafts = drafts.map { it.copy(approved = false) })
 
     fun validate() {
         require(autoAudioHandled.size<=500 && autoAudioHandled.all { it.matches(Regex("[A-Za-z0-9-]{1,80}")) })
-        captionAppearance.validate()
+        exportQuality.validate();captionAppearance.validate()
         campaignBrief.validate()
         require(projectId.isEmpty() || projectId.matches(Regex("[a-f0-9]{32}"))) { "Invalid project identity" }
         require(projectName.length <= 80 && projectName.none { it.isISOControl() }) { "Invalid project name" }
@@ -72,5 +73,6 @@ data class EditorProject(
         }
     }
 }
+
 
 

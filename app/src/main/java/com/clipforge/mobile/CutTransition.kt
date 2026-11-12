@@ -32,3 +32,4 @@ object TimelineTransitions {
             clip.transition.takeIf { index < clips.lastIndex }, localMs)
     }
 }
+

@@ -7,6 +7,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <application android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher" android:label="ClipForge AI" android:theme="@style/Theme.ClipForge" android:usesCleartextTraffic="false">
+        <service android:name=".BackgroundExportService" android:exported="false" android:foregroundServiceType="mediaProcessing|dataSync" />
         <service android:name=".SpeechProcessingService" android:exported="false" android:foregroundServiceType="mediaProcessing|dataSync" />
         <provider
             android:name=".ClipFileProvider"
@@ -23,3 +24,4 @@
         </activity>
     </application>
 </manifest>
+

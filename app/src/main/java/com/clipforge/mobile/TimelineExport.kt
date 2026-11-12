@@ -26,8 +26,8 @@ object TimelineExport {
         }
     }
     fun composition(source: Uri, clips: List<TimelineClip>, vertical: Boolean, fillFrame: Boolean,
-                    mute: Boolean, subtitleSize: Float, subtitleColor: Int, music: MusicTrack? = null, preset: CaptionPreset = CaptionPreset.BOLD, appearance: CaptionAppearance = CaptionAppearance(), soundAssets: Map<SoundKind, String> = emptyMap()): Composition {
-        appearance.validate()
+                    mute: Boolean, subtitleSize: Float, subtitleColor: Int, music: MusicTrack? = null, preset: CaptionPreset = CaptionPreset.BOLD, appearance: CaptionAppearance = CaptionAppearance(), soundAssets: Map<SoundKind, String> = emptyMap(),quality:ExportQuality=ExportQuality()): Composition {
+        appearance.validate();quality.validate()
         require(clips.isNotEmpty()) { "Add a timeline clip before exporting" }
         val renderAppearance = if (vertical) appearance else appearance.copy(layout = ReferenceLayout.STANDARD)
         val reference = renderAppearance.layout
@@ -49,20 +49,22 @@ object TimelineExport {
                     val matrix = grade.exportMatrix(clip.effect == "Monochrome")
                     add(RgbMatrix { _, _ -> matrix })
                 }
+                if(clip.editor.framing!=null && vertical && reference==ReferenceLayout.STANDARD)add(SubjectFramingEffect(clip))
                 if (reference.videoAspect != null) add(Presentation.createForAspectRatio(reference.videoAspect, Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP))
-                add(Presentation.createForWidthAndHeight(if (vertical) 1080 else 1920, if (vertical) 1920 else 1080,
+                add(Presentation.createForWidthAndHeight(if (vertical) quality.height else quality.height*16/9, if (vertical) quality.height*16/9 else quality.height,
                     if (fillFrame && reference == ReferenceLayout.STANDARD) Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP else Presentation.LAYOUT_SCALE_TO_FIT))
                 if (incoming?.kind == CutTransitionKind.ZOOM_CUT || outgoing?.kind == CutTransitionKind.ZOOM_CUT)
                     add(ClipVisualEffects.transitionMotion(clip, incoming, outgoing))
                 if (clip.visuals.start != MotionPoint() || clip.visuals.end != MotionPoint()) add(ClipVisualEffects.motion(clip))
                 if (reference != ReferenceLayout.STANDARD || clip.hook.isNotBlank() || clip.caption.isNotBlank() || clip.subtitles.isNotEmpty()) {
-                    val overlay = if (clip.subtitles.isNotEmpty()) segmentSubtitleOverlay(clip.hook, clip.subtitles, clip.startMs, cutSize, cutColor, calibrateClock = true, preset = cutPreset, appearance = cutAppearance, placement=clip.editor.placement)
-                    else timedCaptionOverlay(clip.hook, clip.caption, clip.captionStartMs, clip.captionEndMs, clip.startMs, calibrateClock = true, subtitleSize = cutSize, subtitleColor = cutColor, preset = cutPreset, appearance = cutAppearance, placement=clip.editor.placement)
+                    val overlay = if (clip.subtitles.isNotEmpty()) segmentSubtitleOverlay(clip.hook, clip.subtitles, clip.startMs, cutSize, cutColor, calibrateClock = true, preset = cutPreset, appearance = cutAppearance, placement=clip.editor.placement,opening=clip.editor.opening,speed=clip.speed)
+                    else timedCaptionOverlay(clip.hook, clip.caption, clip.captionStartMs, clip.captionEndMs, clip.startMs, calibrateClock = true, subtitleSize = cutSize, subtitleColor = cutColor, preset = cutPreset, appearance = cutAppearance, placement=clip.editor.placement,opening=clip.editor.opening,speed=clip.speed)
                     add(OverlayEffect(listOf(overlay)))
                 }
                 if (clip.visuals.fadeInMs > 0 || clip.visuals.fadeOutMs > 0) add(ClipVisualEffects.fade(clip))
                 if (incoming?.kind == CutTransitionKind.DIP_BLACK || outgoing?.kind == CutTransitionKind.DIP_BLACK)
                     add(ClipVisualEffects.transitionFade(clip, incoming, outgoing))
+                add(androidx.media3.effect.FrameDropEffect.createDefaultFrameDropEffect(quality.fps.toFloat()*clip.speed))
                 // Overlays evaluate source timestamps; retime the completed picture last.
                 if (clip.speed != 1f) add(SpeedChangeEffect(clip.speed))
             }

@@ -45,3 +45,4 @@ object ProjectCatalog {
         .filter { it.isFile && isCatalogPath("projects/catalog/" + it.name) }
         .map { "projects/catalog/" + it.name }.toSet()
 }
+

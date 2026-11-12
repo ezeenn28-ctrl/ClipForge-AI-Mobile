@@ -78,7 +78,7 @@ object SpeechJobs {
                     progress("Clip ${unit.clipIndex + 1} · preparing audio", -1); updateNotification(mutable.value)
                     OfflineTranscriber.range(context, Uri.parse(initial.source), model, unit.startMs, unit.endMs) { phase, percent ->
                         progress("Clip ${unit.clipIndex + 1} · $phase", percent); updateNotification(mutable.value)
-                    }
+                    }.map{segment->segment.copy(text=CaptionDictionary.correct(segment.text,CaptionDictionary.read(context.filesDir)))}
                 }, { checkpoint ->
                     val timed = checkpoint.copy(elapsedMs = elapsedMs())
                     SpeechJobStore.write(file(context), timed)
@@ -100,3 +100,4 @@ object SpeechJobs {
         }
     }
 }
+

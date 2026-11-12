@@ -12,7 +12,7 @@ object MetadataGate { val lock = Mutex() }
 
 /** Curated metadata backup. No videos, model weights, signing keys or permissions. */
 object MetadataBackup {
-    private val allowed = setOf("projects/last-project.properties", "campaigns/submissions.properties", "speech/last-job.properties")
+    private val allowed = setOf("projects/last-project.properties", "campaigns/submissions.properties", "speech/last-job.properties", "caption-dictionary.properties")
     private fun extra(path: String) = path.matches(Regex("(?:editing-presets|campaign-presets|export-queue|music-library)/[a-zA-Z0-9-]{1,80}\\.properties")) || path.matches(Regex("sound-library/[a-zA-Z0-9-]{1,80}\\.properties")) || path == "music-favorites.properties"
     fun paths(root: File): Set<String> = (allowed + ProjectCatalog.backupPaths(root) + listOf("editing-presets", "campaign-presets", "export-queue", "music-library", "sound-library").flatMap { folder -> File(root, folder).listFiles().orEmpty().map { "$folder/${it.name}" }.filter(::extra) } + listOf("music-favorites.properties")).filter { File(root,it).isFile }.toSet()
     private const val LIMIT = 50L * 1024 * 1024
@@ -80,6 +80,7 @@ object MetadataBackup {
                     }
                 }
             }
+            if("caption-dictionary.properties" in seen)CaptionDictionary.read(directory)
             val campaigns = CampaignEntryStore.read(File(directory, "campaigns/submissions.properties"))
             val speech = SpeechJobStore.read(File(directory, "speech/last-job.properties"))
             // Re-encode validated records, stripping any approval state and pausing active jobs.
@@ -112,4 +113,5 @@ object MetadataBackup {
         } finally { staged.discard() }
     }
 }
+
 

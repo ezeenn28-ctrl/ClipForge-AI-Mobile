@@ -52,3 +52,4 @@ object SpeechJobStore {
             text("target"), SpeechJobStatus.valueOf(text("status")), results, text("elapsed").toLong(), text("message"), data.getProperty("language", "auto")).also { it.validate() }
     }
 }
+

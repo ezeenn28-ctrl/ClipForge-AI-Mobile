@@ -24,13 +24,19 @@ class PreviewSurfaceBinding(private val player: Player) {
 @Composable
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 fun PreviewVideo(binding: PreviewSurfaceBinding, modifier: Modifier = Modifier, crop: Boolean = false,
-                 color: ColorAdjustments = ColorAdjustments(), monochrome: Boolean = false) {
+                 color: ColorAdjustments = ColorAdjustments(), monochrome: Boolean = false,framing:SubjectFraming?=null,sourceMs:Long=0) {
     AndroidView(factory = { context ->
         (LayoutInflater.from(context).inflate(R.layout.video_preview, null, false) as PlayerView).also(binding::attach)
     }, modifier = modifier, update = { view ->
         binding.attach(view)
         view.applyPreviewColor(color, monochrome)
-        view.resizeMode = if (crop) androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM else androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+        val texture=view.videoSurfaceView as? android.view.TextureView
+        if(framing!=null && texture!=null && view.player?.videoSize?.height?.let{it>0}==true){
+            view.resizeMode=androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+            val video=view.player!!.videoSize;val w=FramingWindow.at(framing,sourceMs,video.width*video.pixelWidthHeightRatio/video.height,view.width.toFloat()/view.height.coerceAtLeast(1))
+            texture.setTransform(android.graphics.Matrix().apply{setScale(1/w.width,1/w.height);postTranslate(-w.left*texture.width/w.width,-w.top*texture.height/w.height)})
+        }else{texture?.setTransform(android.graphics.Matrix());view.resizeMode = if (crop) androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM else androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT}
     }, onReset = null, onRelease = binding::release)
 }
+
 
