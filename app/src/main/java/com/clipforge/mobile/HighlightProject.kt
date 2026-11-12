@@ -5,8 +5,9 @@ fun EditorProject.forHighlights(nextProjectId: String, nextName: String): Editor
     require(nextProjectId.isNotEmpty()) { "Highlight project needs an identity" }
     return copy(projectId = nextProjectId, projectName = nextName.filterNot(Char::isISOControl).take(80),
         startMs = 0, endMs = durationMs, mode = "AI Draft",
-        drafts = emptyList(), selectedDraft = -1, hook = "", caption = "", effect = "None",
+        highlightParentId="",highlightEditing=false,drafts = emptyList(), selectedDraft = -1, hook = "", caption = "", effect = "None",
         currentSegments = sourceSegments, subtitleDraftIndex = -1, draftSegments = emptyMap(),
         lastSpeechJobId = "", lastSpeechUnits = 0, timelineClips = emptyList(), timelineMode = false,
         selectedTimelineId = "", currentTimelineId = "", music = null).also { it.validate() }
 }
+

@@ -53,6 +53,7 @@ object ProjectStore {
         }
         segments("current", safe.currentSegments)
         segments("sourceSpeech", safe.sourceSegments)
+        put("highlight.parent",safe.highlightParentId);put("highlight.editing",safe.highlightEditing)
         put("timeline.mode", safe.timelineMode); put("timeline.selected", safe.selectedTimelineId)
         put("timeline.count", safe.timelineClips.size)
         put("timeline.current", safe.currentTimelineId)
@@ -190,7 +191,7 @@ object ProjectStore {
             segments("current"), segments("sourceSpeech"), draftSegments,
             fillFrame = data.getProperty("fillFrame", "false").toBooleanStrict(),
             lastSpeechJobId = data.getProperty("speechJob", ""), lastSpeechUnits = data.getProperty("speechUnits", "0").toInt(),
-            timelineClips = timeline, timelineMode = data.getProperty("timeline.mode", "false").toBooleanStrict(), selectedTimelineId = data.getProperty("timeline.selected", ""),
+            highlightParentId=data.getProperty("highlight.parent",""),highlightEditing=data.getProperty("highlight.editing","false").toBooleanStrict(),timelineClips = timeline, timelineMode = data.getProperty("timeline.mode", "false").toBooleanStrict(), selectedTimelineId = data.getProperty("timeline.selected", ""),
             currentTimelineId = data.getProperty("timeline.current", ""), music = music, captionPreset = data.getProperty("captionPreset", "BOLD"),
             projectId = data.getProperty("project.id", ""), projectName = data.getProperty("project.name", ""),
             hookTone = HookTone.valueOf(data.getProperty("hookTone", "FUNNY")),

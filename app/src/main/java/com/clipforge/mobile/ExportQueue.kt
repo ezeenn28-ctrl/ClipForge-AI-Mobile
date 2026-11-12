@@ -16,12 +16,12 @@ data class QueuedExport(val id: String, val project: EditorProject, val status: 
 
 /** Immutable snapshots. Disk never carries authorization to export after process death. */
 object ExportQueue {
-    const val LIMIT = 10
+    const val LIMIT = 15
     private fun file(root: File, id: String): File {
         require(id.matches(Regex("[a-f0-9]{32}")))
         return File(root, "export-queue/$id.properties")
     }
-    fun clips(p: EditorProject): List<TimelineClip> = if (p.timelineMode) p.timelineClips else listOf(
+    fun clips(p: EditorProject): List<TimelineClip> = if(p.highlightEditing && p.selectedDraft in p.drafts.indices)listOf(HighlightWorkspace.cut(p,p.selectedDraft)) else if (p.timelineMode) p.timelineClips else listOf(
         TimelineClip("selection", p.startMs, p.endMs, hook = p.hook, caption = p.caption,
             captionStartMs = p.drafts.getOrNull(p.selectedDraft)?.captionStartMs ?: p.startMs,
             captionEndMs = p.drafts.getOrNull(p.selectedDraft)?.captionEndMs ?: p.endMs, effect = p.effect,
@@ -37,6 +37,14 @@ object ExportQueue {
         ProjectStore.write(file(root, item.id), item.project)
         record(root, item)
         return item
+    }
+    @Synchronized fun addBatch(root:File,projects:List<EditorProject>,approved:Boolean):List<QueuedExport>{
+        require(approved&&projects.isNotEmpty()&&projects.size<=15){"Select and review the highlights first"}
+        require(list(root).size+projects.size<=LIMIT){"Queue holds $LIMIT clips. Remove old queue items before adding this batch."}
+        projects.forEach{it.validate()}
+        val added=mutableListOf<QueuedExport>()
+        try{projects.forEach{added+=add(root,it,true)};return added}
+        catch(e:Exception){added.forEach{remove(root,it.id)};throw e}
     }
     @Synchronized fun record(root: File, item: QueuedExport) {
         val state = Properties().apply {

@@ -228,6 +228,7 @@ class MainActivity : ComponentActivity() {
         var fullScreenPreview by remember { mutableStateOf(false) }
         var sourceName by remember { mutableStateOf("Imported video") }
         var projectId by remember { mutableStateOf(ProjectCatalog.newId()) }
+        var highlightParentId by remember{mutableStateOf("")}
         var projectName by remember { mutableStateOf("") }
         var recentProjects by remember { mutableStateOf(ProjectCatalog.Listing()) }
         var catalogRevision by remember { mutableIntStateOf(0) }
@@ -252,6 +253,9 @@ class MainActivity : ComponentActivity() {
         var approved by remember { mutableStateOf(false) }
         var drafts by remember { mutableStateOf<List<HighlightDraft>>(emptyList()) }
         var selectedDraft by remember { mutableIntStateOf(-1) }
+        var highlightEditing by remember{mutableStateOf(false)}
+        var selectedHighlights by remember(highlightParentId.ifBlank{projectId}){mutableStateOf(emptySet<Int>())}
+        var highlightsReviewed by remember(highlightParentId.ifBlank{projectId}){mutableStateOf(false)}
         var hookText by remember { mutableStateOf("") }
         var captionText by remember { mutableStateOf("") }
         var effectChoice by remember { mutableStateOf("None") }
@@ -383,7 +387,9 @@ class MainActivity : ComponentActivity() {
         var projectMessage by remember { mutableStateOf("Checking saved project…") }
         var expectedRestoredDuration by remember { mutableLongStateOf(0L) }
         val busy = creatorAnalyzing || creatorDraft!=null || backgroundExport.active || audioAnalyzing || queueRunning || assetImporting || projectLoading || metadataBusy || speechStarting || exporting || analyzing || transcribing || batchRunning || audioPreparing || downloading
-        val deliveryDuration = if (timelineMode) TimelineModel.duration(timeline.clips) else (duration * end).toLong() - (duration * start).toLong()
+        val highlightCut=if(highlightEditing&&video!=null)drafts.getOrNull(selectedDraft)?.let{HighlightWorkspace.find(video.toString(),selectedDraft,it,timeline.clips)} else null
+        val deliveryClips=highlightCut?.let{listOf(it)}?:timeline.clips
+        val deliveryDuration = if(highlightCut!=null)highlightCut.durationMs else if (timelineMode) TimelineModel.duration(timeline.clips) else (duration * end).toLong() - (duration * start).toLong()
         val exportReady = video != null && duration > 0 && if (timelineMode) timeline.clips.isNotEmpty() else (editingMode != "AI Draft" || selectedDraft >= 0)
         val campaignIssues = if (campaignEnabled) CampaignRules(campaignTags,
             campaignMin.toLongOrNull() ?: -1, campaignMax.toLongOrNull() ?: -1,
@@ -530,7 +536,7 @@ class MainActivity : ComponentActivity() {
                 info.second?.takeIf { it > 0 }?.let { actual ->
                     if (expectedRestoredDuration > 0 && kotlin.math.abs(expectedRestoredDuration - actual) > 1000) {
                         timeline = TimelineHistory(); music=null; timelineMode = false; selectedTimelineId = ""
-                        drafts = emptyList(); selectedDraft = -1; batchResults = emptyMap()
+                        highlightParentId="";highlightEditing=false;drafts = emptyList(); selectedDraft = -1; batchResults = emptyMap()
                         transcriptSegments = emptyList(); subtitleSegments = emptyList(); sourceTranscriptSegments = emptyList(); subtitleDraftIndex = -1
                         hookText = ""; captionText = ""; approved = false; start = 0f; end = 1f
                         status = "Source duration changed. Incompatible edits were cleared; review the video again."
@@ -558,6 +564,10 @@ class MainActivity : ComponentActivity() {
             try {
                 check(changed.rejection.isBlank()){changed.rejection}
                 TimelineModel.validate(changed.clips, duration)
+                val changedIds=(timeline.clips+changed.clips).map{it.id}.toSet().filter{id->timeline.clips.firstOrNull{it.id==id}!=changed.clips.firstOrNull{it.id==id}}.toSet()
+                queueItems=queueItems.map{item->if(item.status==QueueStatus.READY&&item.project.projectId==projectId&&item.project.timelineClips.any{it.id in changedIds})item.copy(status=QueueStatus.REVIEW,message="Highlight edited: review and re-add the updated cut") else item}
+                highlightsReviewed=false
+                if(highlightEditing&&changed.clips.none{it.id==selectedTimelineId})highlightEditing=false
                 timeline = changed
                 music = changed.music
                 if (timelineSubtitleTarget.isNotBlank() && changed.clips.none { it.id == timelineSubtitleTarget }) {
@@ -661,6 +671,7 @@ class MainActivity : ComponentActivity() {
                     mute = saved.mute
                     drafts = saved.drafts.map { it.copy(approved = false) }
                     selectedDraft = saved.selectedDraft
+                    highlightParentId=saved.highlightParentId;highlightEditing=saved.highlightEditing
                     hookText = saved.hook
                     captionText = saved.caption
                     effectChoice = saved.effect
@@ -846,7 +857,7 @@ class MainActivity : ComponentActivity() {
                         transcriptSegments = emptyList()
                         subtitleSegments = emptyList()
                         subtitleDraftIndex = -1
-                        drafts = emptyList()
+                        highlightParentId="";highlightEditing=false;drafts = emptyList()
                         selectedDraft = -1
                         approved = false
                         start = 0f
@@ -874,7 +885,7 @@ class MainActivity : ComponentActivity() {
                         val actual = player.duration.coerceAtLeast(0)
                         if (expectedRestoredDuration > 0 && kotlin.math.abs(expectedRestoredDuration - actual) > 1_000) {
                             timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""
-                            drafts = emptyList()
+                            highlightParentId="";highlightEditing=false;drafts = emptyList()
                             selectedDraft = -1
                             subtitleDraftIndex = -1
                             subtitleSegments = emptyList()
@@ -924,6 +935,8 @@ class MainActivity : ComponentActivity() {
                 projectMessage = "Saved project could not be restored: ${error.message}. Reimport the original video."
             } finally { projectLoading = false }
         }
+        LaunchedEffect(captionAppearance,subtitleSize,subtitleYellow,captionPreset,mute,music,vertical,fillFrame,exportQuality,campaignEnabled,campaignTags,campaignCaption,campaignMin,campaignMax,campaignSource,sourceVerified,rightsVerified){highlightsReviewed=false}
+        LaunchedEffect(video,drafts.map{it.startMs to it.endMs}){selectedHighlights=emptySet();highlightsReviewed=false}
         val projectSnapshot = if (video != null && duration > 0) EditorProject(
             source = video.toString(), durationMs = duration,
             startMs = (duration * start).toLong(), endMs = (duration * end).toLong(),
@@ -935,9 +948,25 @@ class MainActivity : ComponentActivity() {
             draftSegments = batchResults, fillFrame = fillFrame, lastSpeechJobId = appliedSpeechId, lastSpeechUnits = appliedSpeechUnits, timelineClips = timeline.clips, timelineMode = timelineMode, selectedTimelineId = selectedTimelineId,
             currentTimelineId = timelineSubtitleTarget.takeIf { id -> timeline.clips.any { it.id == id } }.orEmpty(), music = music, captionPreset = captionPreset.name,
             projectId = projectId, projectName = projectName.ifBlank { sourceName }.filterNot(Char::isISOControl).take(80),
-            exportQuality=exportQuality,captionAppearance = captionAppearance, hookTone = hookTone, audioIntensity = audioIntensity, autoAudioEnabled = autoAudioEnabled, autoAudioHandled = autoAudioHandled,
+            highlightParentId=highlightParentId,highlightEditing=highlightEditing,exportQuality=exportQuality,captionAppearance = captionAppearance, hookTone = hookTone, audioIntensity = audioIntensity, autoAudioEnabled = autoAudioEnabled, autoAudioHandled = autoAudioHandled,
             campaignBrief = CampaignBrief(campaignEnabled, campaignTags, campaignCaption, campaignMin, campaignMax, campaignSource)
         ) else null
+        val openHighlight:(Int,Boolean)->Unit={index,edit->
+            val snapshot=projectSnapshot
+            if(snapshot!=null&&!busy){
+                metadataBusy=true;approved=false;highlightsReviewed=false;player.pause();musicPlayer.pause();soundPlayer.pause()
+                exportScope.launch{try{
+                    val child=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){MetadataGate.lock.withLock{
+                        ProjectCatalog.save(filesDir,snapshot)
+                        HighlightWorkspace.resolve(filesDir,snapshot,index).also{ProjectCatalog.save(filesDir,it)}
+                    }}
+                    applySavedProject(child,Uri.parse(child.source));selectedDraft=index;editingMode="AI Draft";highlightEditing=true
+                    studioEditing=edit;showDiscovery=!edit;advancedEditor=false;selectedTab=StudioTab.STUDIO
+                    if(!edit)player.play()
+                    status="Highlight ${index+1}/${drafts.size}. Edits are saved separately; the shortlist is kept."
+                }catch(e:kotlinx.coroutines.CancellationException){throw e}catch(e:Exception){status="Could not open highlight: ${e.message}"}finally{metadataBusy=false}}
+            }
+        }
         val generateAutoAudio: (List<String>, AudioIntensity, MusicMood?, Boolean, Boolean) -> Unit = { ids, intensity, forcedMood, keepMusic, keepSounds ->
             if (!busy && video != null && ids.isNotEmpty()) {
                 val clipsBefore = timeline.clips.toList()
@@ -1002,7 +1031,7 @@ class MainActivity : ComponentActivity() {
                 if (pending.isNotEmpty()) generateAutoAudio(pending, audioIntensity, null, true, true)
             }
         }
-        LaunchedEffect(selectedTimelineId,studioEditing) { compareOriginal = false;gesturePlacement=null;loopSelected=false }
+        LaunchedEffect(selectedTimelineId,studioEditing) { compareOriginal = false;gesturePlacement=null;loopSelected=highlightEditing }
         LaunchedEffect(selectedTab) { if (selectedTab == StudioTab.EXPORT) { compareOriginal = false; musicAudition = null } }
         val stopMusicAudition: () -> Unit = { if (musicAudition != null) { musicAudition = null; musicPlayer.pause(); player.pause() } }
         val audioWorkspace: @Composable () -> Unit = {
@@ -1255,7 +1284,7 @@ class MainActivity : ComponentActivity() {
                         SpeechJobMode.HIGHLIGHTS -> {
                             if (job.targetId == "quick-find") {
                                 val speech = grouped.values.flatten().distinctBy { it.startMs to it.endMs }.sortedBy { it.startMs }
-                                drafts = TranscriptHighlights.detect(speech, duration)
+                                highlightEditing=false;drafts = TranscriptHighlights.detect(speech, duration)
                                 sourceTranscriptSegments = speech
                                 batchResults = drafts.mapIndexed { index, clip -> index to speech.filter { it.endMs > clip.startMs && it.startMs < clip.endMs } }.toMap()
                                 selectedDraft = -1; subtitleDraftIndex = -1; subtitleSegments = emptyList()
@@ -1419,7 +1448,7 @@ class MainActivity : ComponentActivity() {
                             val next = previous.forHighlights(if (needsCopy) ProjectCatalog.newId() else previous.projectId, sourceName.take(60) + " highlights")
                             applySavedProject(next, Uri.parse(next.source))
                             val candidates = generateQualityCandidates(duration)
-                            drafts = candidates; selectedDraft = -1
+                            highlightEditing=false;drafts = candidates; selectedDraft = -1
                             launchSpeech(SpeechJobMode.HIGHLIGHTS, candidates.mapIndexed { index, clip -> SpeechRange(index, clip.startMs, clip.endMs) }, "quick-find")
                         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
                         catch (error: Exception) { status = "Could not start highlights: ${error.message}" }
@@ -1455,7 +1484,7 @@ class MainActivity : ComponentActivity() {
         }
         BackHandler(enabled = !fullScreenPreview && (selectedTab != StudioTab.STUDIO || studioEditing || showDiscovery)) {
             if (selectedTab != StudioTab.STUDIO) selectedTab = StudioTab.STUDIO
-            else { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++ }
+            else { showDiscovery=studioEditing&&drafts.isNotEmpty();if(showDiscovery)editingMode="AI Draft";studioEditing = false;highlightEditing=false; player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++ }
         }
         val revokeCaptionApproval: () -> Unit = {
             approved = false
@@ -1516,7 +1545,7 @@ class MainActivity : ComponentActivity() {
                     contentWindowInsets = WindowInsets(0, 0, 0, 0),
                     topBar = {
                         if (simpleEditor) EditorTopBar(!busy, timeline.past.isNotEmpty(), timeline.future.isNotEmpty(),
-                            onBack = { studioEditing = false; showDiscovery = false; player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++ }, onUndo = { updateTimeline(timeline.undo()) }, onRedo = { updateTimeline(timeline.redo()) },
+                            onBack = { studioEditing = false; showDiscovery = drafts.isNotEmpty();highlightEditing=false;editingMode="AI Draft"; player.pause(); musicPlayer.pause(); soundPlayer.pause(); auditionUntil = 0; auditionRequest++ }, onUndo = { updateTimeline(timeline.undo()) }, onRedo = { updateTimeline(timeline.redo()) },
                             onExport = { selectedTab = StudioTab.EXPORT }, projectName = projectName.ifBlank { sourceName })
                         else StudioHeader(BuildConfig.VERSION_NAME)
                     },
@@ -1538,6 +1567,8 @@ class MainActivity : ComponentActivity() {
                             val toolScroll = rememberScrollState()
                             LaunchedEffect(editorTool, selectedTimelineId) { toolScroll.scrollTo(0) }
                             Column(Modifier.fillMaxSize().verticalScroll(toolScroll).padding(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                if(drafts.isNotEmpty())TextButton(enabled=!busy,onClick={studioEditing=false;showDiscovery=true;highlightEditing=false;editingMode="AI Draft";player.pause();musicPlayer.pause();soundPlayer.pause()}){Text("Back to highlights (${drafts.size})")}
+
                                 if (toolsVisible && editorTool == EditorTool.EFFECTS) {
                                     timeline.clips.firstOrNull { it.id == selectedTimelineId }?.let { clip ->
                                         VideoLookPicker(clip.effect, !busy) { look ->
@@ -1783,6 +1814,7 @@ class MainActivity : ComponentActivity() {
                                                 onOpen = openSavedProject,
                                                 onImportLink = { showDiscovery = true; advancedImport = true },
                                                 onProjectTools = { homeSettings = !homeSettings })
+                                            if(drafts.isNotEmpty())OutlinedButton(enabled=!busy,onClick={showDiscovery=true;studioEditing=false;highlightEditing=false;editingMode="AI Draft"}){Text("Open saved highlights (${drafts.size})")}
                                             if (homeSettings) StudioCard("Project tools", projectMessage) {
                                                 TextButton(enabled = !busy, onClick = { portableBackupRequested = false; backupSaver.launch("ClipForge-backup.zip") }) { Text("Save metadata backup") }
                                                 TextButton(enabled = !busy, onClick = { backupPicker.launch(arrayOf("application/zip", "application/octet-stream")) }) { Text("Restore backup") }
@@ -1831,7 +1863,7 @@ class MainActivity : ComponentActivity() {
                                 timeline = TimelineHistory(); timelineMode = false; selectedTimelineId = ""; timelinePosition = 0; music = null; timelineSubtitleTarget = ""
                                 projectId = ProjectCatalog.newId(); autoAudioEnabled = audioPrefs.getBoolean("auto-new", true); autoAudioHandled = emptyList(); autoAudioUndo = null; projectName = output.name.take(80)
                                 video = Uri.fromFile(output)
-                                drafts = emptyList()
+                                highlightParentId="";highlightEditing=false;drafts = emptyList()
                                 selectedDraft = -1
                                 approved = false
                                 start = 0f
@@ -1874,7 +1906,7 @@ class MainActivity : ComponentActivity() {
                         subtitleDraftIndex = -1
                         timelineMode = false; timelineSubtitleTarget = ""
                         video?.let { previewPlayback.load(listOf(PreviewPlayback.Source(it.toString()))) }
-                        drafts = generateQualityCandidates(duration)
+                        highlightEditing=false;drafts = generateQualityCandidates(duration)
                         selectedDraft = 0
                         hookText = ""
                         captionText = ""
@@ -1915,40 +1947,36 @@ class MainActivity : ComponentActivity() {
                     Text("Visual activity measures frame changes, not semantic scene quality. Speech ranking is available after transcription.", style = MaterialTheme.typography.bodySmall)
                     }
                     Text("Your clip shortlist", style = MaterialTheme.typography.titleMedium)
+                    HighlightBatchControls(drafts.size,selectedHighlights,highlightsReviewed,!busy,
+                        onSelect={selectedHighlights=it;highlightsReviewed=false},onReviewed={highlightsReviewed=it},onQueue={
+                            val snapshot=projectSnapshot
+                            if(snapshot!=null&&highlightsReviewed&&selectedHighlights.isNotEmpty()){
+                                metadataBusy=true;exportScope.launch{try{
+                                    val exports=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){MetadataGate.lock.withLock{
+                                        ProjectCatalog.save(filesDir,snapshot)
+                                        selectedHighlights.sorted().map{index->val child=HighlightWorkspace.resolve(filesDir,snapshot,index);HighlightWorkspace.snapshot(child,index)}
+                                    }}
+                                    exports.forEach{p->if(p.campaignBrief.enabled){val b=p.campaignBrief;val issues=CampaignRules(b.tags,b.minimum.toLongOrNull()?: -1,b.maximum.toLongOrNull()?: -1,b.sourceSeconds.toLongOrNull()?: -1).issues(b.postingCaption,TimelineModel.duration(p.timelineClips),sourceVerified,rightsVerified);require(issues.isEmpty()){issues.joinToString(" · ")}}}
+                                    val added=kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO){MetadataGate.lock.withLock{ExportQueue.addBatch(filesDir,exports,true)}}
+                                    queueItems=queueItems+added;highlightsReviewed=false;approved=false;status="${added.size} separate highlights queued. Open Export and start the approved queue.";selectedTab=StudioTab.EXPORT
+                                }catch(e:Exception){status=e.message?:"Could not queue selected highlights"}finally{metadataBusy=false}}
+                            }
+                        })
+
                     Text("Speech-ranked clips explain coverage, opening and ending. Coverage-only candidates are labeled separately; neither predicts views.", style = MaterialTheme.typography.bodySmall)
                     drafts.withIndex().sortedByDescending { it.value.rankScore ?: (baselineDraftScore(it.value, duration).balanced * 3 + (it.value.visualScore ?: 50)) / 4 }.forEach { (index, draft) ->
                         val active = selectedDraft == index
+                        Row{Checkbox(index in selectedHighlights,{checked->selectedHighlights=if(checked)selectedHighlights+index else selectedHighlights-index;highlightsReviewed=false},enabled=!busy);Text("Select highlight ${index+1}")}
                         val sourceFrame = rememberClipThumbnail(this@MainActivity, video, draft.startMs, enabled = !busy)
                         ClipReviewCard(index = index, draft = draft, active = active, thumbnail = sourceFrame,
                             score = draft.rankScore ?: (baselineDraftScore(draft, duration).balanced * 3 + (draft.visualScore ?: 50)) / 4,
                             enabled = !busy,
-                            onClick = {
-                                selectedDraft = index
-                                studioEditing = false
-                                timelineMode = false
-                                start = draft.startMs.toFloat() / duration.toFloat()
-                                end = draft.endMs.toFloat() / duration.toFloat()
-                                timelineSubtitleTarget = ""
-                                val matching = batchResults[index] ?: sourceTranscriptSegments.filter { it.startMs >= draft.startMs && it.startMs < draft.endMs }
-                                transcriptSegments = matching
-                                subtitleSegments = matching
-                                subtitleDraftIndex = if (matching.isNotEmpty()) index else -1
-                                approved = false
-                                hookText = draft.hook
-                                captionText = draft.caption
-                                effectChoice = draft.effect
-                                captionFrom = (draft.captionStartMs / 1000L).toString()
-                                captionTo = (draft.captionEndMs / 1000L).toString()
-                                video?.let { previewPlayback.load(listOf(PreviewPlayback.Source(it.toString())), positionMs = draft.startMs) }
-                                player.seekTo(draft.startMs)
-                                playbackError = ""
-                                previewPlayback.play(draft.startMs, draft.endMs)
-                            }
+                            onClick = { openHighlight(index,false) }
                         )
                     }
                 }
 
-                                                if (selectedDraft in drafts.indices) Button(enabled = !busy, onClick = { addTimelineSelection(); advancedEditor = false; studioEditing = true }) { Text("Edit selected clip") }
+                                                if (selectedDraft in drafts.indices) Button(enabled = !busy, onClick = {openHighlight(selectedDraft,true)}) { Text("Edit selected clip") }
                                                 OutlinedButton(enabled = !busy, onClick = { selectedTab = StudioTab.CAPTIONS }) { Text("Open speech tools") }
                                             } else {
                                                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -2356,8 +2384,8 @@ class MainActivity : ComponentActivity() {
                                         val estimate=exportQuality.estimate(deliveryDuration)
                                         Text("Estimated export space: ${android.text.format.Formatter.formatFileSize(this@MainActivity,estimate)} · available ${android.text.format.Formatter.formatFileSize(this@MainActivity,android.os.StatFs(filesDir.path).availableBytes)}. Estimate varies with footage.",style=MaterialTheme.typography.bodySmall)
                                         ExportSummary(projectName.ifBlank { sourceName }, deliveryDuration, vertical,
-                                            if (timelineMode) timeline.clips.size else 1,
-                                            if (timelineMode) TimelineModel.subtitles(timeline.clips).size else if (subtitleDraftIndex == selectedDraft) subtitleSegments.size else 0,
+                                            if(highlightCut!=null)1 else if (timelineMode) timeline.clips.size else 1,
+                                            if (timelineMode) TimelineModel.subtitles(deliveryClips).size else if (subtitleDraftIndex == selectedDraft) subtitleSegments.size else 0,
                                             mute, if (timelineMode) music?.name else null, approved,exportQuality)
                                         StudioCard("Ready when you are") {
                 Text("Export review", style = MaterialTheme.typography.titleMedium)
@@ -2372,13 +2400,15 @@ class MainActivity : ComponentActivity() {
                 }
                 Button(enabled = !busy && campaignIssues.isEmpty() && exportReady && approved, onClick = {
                     if (!approved || !exportReady || busy || campaignIssues.isNotEmpty()) return@Button
-                    val snapshot=projectSnapshot?:return@Button
+                    val current=projectSnapshot?:return@Button
+                    val snapshot=if(current.highlightEditing)HighlightWorkspace.snapshot(current,current.selectedDraft) else current
                     player.pause();musicPlayer.pause();soundPlayer.pause();auditionUntil=0;auditionRequest++
                     runCatching{BackgroundExports.start(this@MainActivity,listOf(QueuedExport("direct",snapshot,QueueStatus.READY)),true);requestExportNotification()}.onFailure{status="Export failed: ${it.message}";approved=false}
                 }) { Text(if (exporting) "Exporting approved clip…" else "Export approved MP4") }
                 ExportQueueControls(queueItems, !busy, approved && campaignIssues.isEmpty() && exportReady, queueRunning, queueProgress,
                     onAdd = {
-                        val snapshot = projectSnapshot
+                        val current = projectSnapshot
+                        val snapshot=current?.let{if(it.highlightEditing)HighlightWorkspace.snapshot(it,it.selectedDraft) else it}
                         if (snapshot != null && approved && campaignIssues.isEmpty() && exportReady && !busy) {
                             metadataBusy = true
                             exportScope.launch {
@@ -2425,8 +2455,8 @@ class MainActivity : ComponentActivity() {
                             .onFailure { status = "Could not open queued MP4: ${it.message}" }
                     })
                 Text("Approved exports continue in the background. Use the notification to cancel. If Android stops the process, load the interrupted snapshot and review before retrying.", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(enabled = !busy && approved && campaignIssues.isEmpty() && (if (timelineMode) TimelineModel.subtitles(timeline.clips).isNotEmpty() else subtitleDraftIndex == selectedDraft && selectedDraft >= 0 && subtitleSegments.isNotEmpty()), onClick = {
-                    pendingSrt = if (timelineMode) SubtitleSrt.render(TimelineModel.subtitles(timeline.clips), 0, TimelineModel.duration(timeline.clips))
+                OutlinedButton(enabled = !busy && approved && campaignIssues.isEmpty() && (if (timelineMode) TimelineModel.subtitles(deliveryClips).isNotEmpty() else subtitleDraftIndex == selectedDraft && selectedDraft >= 0 && subtitleSegments.isNotEmpty()), onClick = {
+                    pendingSrt = if (timelineMode) SubtitleSrt.render(TimelineModel.subtitles(deliveryClips), 0, TimelineModel.duration(deliveryClips))
                         else SubtitleSrt.render(subtitleSegments, (duration * start).toLong(), (duration * end).toLong())
                     subtitleSaver.launch("clipforge_subtitles.srt")
                 }) { Text("Save approved clip subtitles (.srt)") }
@@ -2438,8 +2468,8 @@ class MainActivity : ComponentActivity() {
                 }
                     if(!backgroundExport.active)TextButton(enabled=!busy,onClick={runCatching{val p=BackgroundExports.recovery(filesDir)?:error("No interrupted export saved");applySavedProject(p,Uri.parse(p.source));selectedTab=StudioTab.STUDIO;studioEditing=true;approved=false;status="Interrupted snapshot loaded. Preview and approve again before retrying."}.onFailure{status=it.message.orEmpty()}}){Text("Load interrupted export for review")}
                 lastExportUri?.let { uri ->
-                    TextButton(enabled=!busy && approved && projectSnapshot==lastExportedProject,onClick={
-                        projectSnapshot?.let { snapshot -> (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("ClipForge posting package",EditingChecks.posting(snapshot)));status="Posting caption and required tags copied. Review campaign wording before posting." }
+                    TextButton(enabled=!busy && approved && projectSnapshot?.let{if(it.highlightEditing)HighlightWorkspace.snapshot(it,it.selectedDraft) else it}==lastExportedProject,onClick={
+                        projectSnapshot?.let { snapshot -> (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager).setPrimaryClip(android.content.ClipData.newPlainText("ClipForge posting package",EditingChecks.posting(if(snapshot.highlightEditing)HighlightWorkspace.snapshot(snapshot,snapshot.selectedDraft) else snapshot)));status="Posting caption and required tags copied. Review campaign wording before posting." }
                     }) { Text("Copy approved posting package") }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(enabled = !busy, onClick = {

@@ -34,6 +34,8 @@ data class EditorProject(
     val captionAppearance: CaptionAppearance = CaptionAppearance(),
     val hookTone: HookTone = HookTone.FUNNY,
     val campaignBrief: CampaignBrief = CampaignBrief(),
+    val highlightParentId:String="",
+    val highlightEditing:Boolean=false,
     val exportQuality:ExportQuality=ExportQuality(),
     val audioIntensity: AudioIntensity = AudioIntensity.BALANCED, val autoAudioEnabled: Boolean = false, val autoAudioHandled: List<String> = emptyList()
 ) {
@@ -43,6 +45,7 @@ data class EditorProject(
         require(autoAudioHandled.size<=500 && autoAudioHandled.all { it.matches(Regex("[A-Za-z0-9-]{1,80}")) })
         exportQuality.validate();captionAppearance.validate()
         campaignBrief.validate()
+        require(highlightParentId.isEmpty()||highlightParentId.matches(Regex("[a-f0-9]{32}"))){"Invalid highlight parent"}
         require(projectId.isEmpty() || projectId.matches(Regex("[a-f0-9]{32}"))) { "Invalid project identity" }
         require(projectName.length <= 80 && projectName.none { it.isISOControl() }) { "Invalid project name" }
         require(source.startsWith("content://") || source.startsWith("file://")) { "Project source must be a local video" }
@@ -50,6 +53,10 @@ data class EditorProject(
         require(mode in listOf("Manual Editor", "AI Draft")) { "Unknown editing mode" }
         require(effect in VideoLooks.names) { "Unknown visual effect" }
         require(subtitleSize.isFinite() && subtitleSize in 28f..55f) { "Invalid subtitle size" }
+        if(highlightEditing){
+            require(timelineMode&&selectedDraft in drafts.indices){"Select a highlight before editing"}
+            require(timelineClips.any{it.id==HighlightWorkspace.id(source,selectedDraft,drafts[selectedDraft])}){"Edited highlight is unavailable"}
+        }
         TimelineModel.validate(timelineClips, durationMs)
         music?.validate()
         require(captionPreset in CaptionPreset.entries.map { it.name }) { "Invalid caption preset" }

@@ -73,6 +73,6 @@ object ClipVersions {
     fun create(root:File,project:EditorProject,label:String):EditorProject {
         require(label.isNotBlank()&&label.length<=40&&!label.any{it.isISOControl()})
         ProjectCatalog.save(root,project)
-        return project.reviewedAgain().copy(projectId=ProjectCatalog.newId(),projectName=(project.projectName.take(36)+" · "+label).take(80)).also{ProjectCatalog.save(root,it)}
+        return project.reviewedAgain().copy(highlightParentId="",projectId=ProjectCatalog.newId(),projectName=(project.projectName.take(36)+" · "+label).take(80)).also{ProjectCatalog.save(root,it)}
     }
 }

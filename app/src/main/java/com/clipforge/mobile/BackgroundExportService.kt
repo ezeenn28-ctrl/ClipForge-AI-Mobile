@@ -19,7 +19,7 @@ object BackgroundExports {
     private val mutable=MutableStateFlow(State());val state=mutable.asStateFlow()
     private var pending:Pair<String,List<QueuedExport>>?=null
     @Synchronized fun start(context:Context,projects:List<QueuedExport>,approved:Boolean){
-        require(approved && projects.isNotEmpty()&&projects.size<=10){"Review and approve before starting export"}
+        require(approved && projects.isNotEmpty()&&projects.size<=ExportQueue.LIMIT){"Review and approve before starting export"}
         check(!state.value.active&&pending==null){"An export is already running"}
         projects.forEach{it.project.validate()}
         val token=ProjectCatalog.newId();pending=token to projects.toList();mutable.value=State(active=true,message="Starting approved export",queue=projects)
