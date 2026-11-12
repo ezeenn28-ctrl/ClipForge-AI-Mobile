@@ -85,7 +85,7 @@ data class CreatorDraft(val label:String,val before:EditorProject,val clips:List
         Button(enabled=!running,onClick={running=true;job=scope.launch{try{
             var remaining=60_000L;val preview=draft.clips.mapNotNull{c->if(remaining<=0)null else {val n=minOf(c.durationMs,remaining);remaining-=n;c.trimmed(c.startMs,c.startMs+c.sourceOffsetMs(n))}}
             val p=draft.before.copy(timelineMode=true,timelineClips=preview,selectedTimelineId="",currentTimelineId="",exportQuality=ExportQuality(720,24,2_000_000),vertical=true,fillFrame=true)
-            val result=QueueExporter.render(context,p,{message="Preparing draft preview · $it%"},previewOnly=true);uri=result.uri;message="Draft preview · first 60s maximum"
+            val result=QueueExporter.render(context,p,previewOnly=true){message="Preparing draft preview · $it%"};uri=result.uri;message="Draft preview · first 60s maximum"
         }catch(e:CancellationException){throw e}catch(e:Exception){message="Preview failed: ${e.message}"}finally{running=false}}}){Text("Preview draft")}
         Row{TextButton(enabled=!running,onClick=onDismiss){Text("Discard")};Button(enabled=!running&&uri!=null,onClick=onApply){Text("Apply draft")}}
         if(running)TextButton(onClick={job?.cancel();running=false;message="Preview cancelled"}){Text("Cancel preview")}

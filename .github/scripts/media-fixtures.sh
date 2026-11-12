@@ -14,3 +14,7 @@ ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=red:size=180x320:rat
 ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=gray:size=16x16:rate=1' -f lavfi -i 'anullsrc=r=16000:cl=mono' -t 7200 -c:v libx264 -pix_fmt yuv420p -preset ultrafast -c:a aac -b:a 8k app/src/androidTest/assets/two-hours.mp4
 
 ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'sine=frequency=1200:sample_rate=44100' -t 0.4 -c:a libmp3lame -b:a 128k app/src/androidTest/assets/sfx-import.mp3
+
+# Creator tools: deterministic crop colors and a high-rate source for real frame-cap checks.
+ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'color=c=red:size=320x360:rate=30' -f lavfi -i 'color=c=blue:size=320x360:rate=30' -filter_complex '[0:v][1:v]hstack' -t 2 -c:v libx264 -pix_fmt yuv420p -preset ultrafast app/src/androidTest/assets/framing-sides.mp4
+ffmpeg -hide_banner -loglevel error -y -f lavfi -i 'testsrc2=size=320x180:rate=60' -f lavfi -i 'sine=frequency=440:sample_rate=44100' -t 2 -c:v libx264 -pix_fmt yuv420p -preset ultrafast -c:a aac app/src/androidTest/assets/high-fps.mp4

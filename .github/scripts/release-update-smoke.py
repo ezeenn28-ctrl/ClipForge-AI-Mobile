@@ -379,7 +379,12 @@ def main(args):
     button = locate(text="Export approved MP4", scroll_axis="vertical")
     assert button.get("enabled") == "true"
     tap_node(button)
+    adb("shell", "input", "keyevent", "KEYCODE_HOME")
     verify_mp4(await_export())
+    adb("shell", "am", "start", "-W", "-n", ACTIVITY, "-f", "0x20000000")
+    open_editor()
+    tap_node(locate(text="Export"))
+    passed("Approved foreground-service export completes while editor is in background")
     passed("Actual release approval/export preserves saved speed, captions, framing and audio in Gallery MP4")
     tap_node(locate(text="Share last MP4", scroll_axis="vertical"))
     time.sleep(.5)

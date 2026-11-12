@@ -66,7 +66,7 @@ object ExportQueue {
 
 /** Runs on Main, processes one approved immutable snapshot, and cancels its Transformer on interruption. */
 object QueueExporter {
-    suspend fun render(context: Context, project: EditorProject, onProgress: (Int) -> Unit, previewOnly:Boolean=false): ExportPublisher.Published {
+    suspend fun render(context: Context, project: EditorProject, previewOnly:Boolean=false,onProgress: (Int) -> Unit): ExportPublisher.Published {
         project.validate()
         val clips = ExportQueue.clips(project)
         val music = project.music.takeIf { project.timelineMode }

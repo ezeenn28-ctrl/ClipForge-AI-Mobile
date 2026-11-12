@@ -796,5 +796,62 @@ class MediaPipelineDeviceTest {
             assertNotEquals(project.source,restored.source)
         }finally{folder.deleteRecursively()}
     }
+    private fun renderCreator(source:File,clips:List<TimelineClip>,quality:ExportQuality=ExportQuality(720,24,2000000),mute:Boolean=false):File {
+        val context=InstrumentationRegistry.getInstrumentation().targetContext
+        val output=File(context.cacheDir,"creator-${System.nanoTime()}.mp4")
+        val latch=CountDownLatch(1);val failure=AtomicReference<Throwable?>(null);var transformer:Transformer?=null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            transformer=Transformer.Builder(context).setEncoderFactory(DefaultEncoderFactory.Builder(context).setRequestedVideoEncoderSettings(VideoEncoderSettings.Builder().setBitrate(quality.bitrate).build()).build()).setVideoFrameProcessorFactory(TimelineExport.frameProcessorFactory()).addListener(object:Transformer.Listener{
+                override fun onCompleted(c:Composition,r:ExportResult){latch.countDown()}
+                override fun onError(c:Composition,r:ExportResult,e:ExportException){failure.set(e);latch.countDown()}
+            }).build()
+            transformer!!.start(TimelineExport.composition(Uri.fromFile(source),clips,true,true,mute,39f,Color.WHITE,quality=quality),output.path)
+        }
+        try{assertTrue("Creator render timed out",latch.await(180,TimeUnit.SECONDS));failure.get()?.let{throw AssertionError("Creator export failed",it)};return output}
+        finally{InstrumentationRegistry.getInstrumentation().runOnMainSync{transformer?.cancel()}}
+    }
+    @Test fun creatorQualityReallyCapsFramesAndExports720PortraitWithAudio(){
+        val source=fixture("high-fps.mp4");val out=renderCreator(source,listOf(TimelineClip("fps",0,2000)))
+        val r=MediaMetadataRetriever();val extractor=android.media.MediaExtractor()
+        try{
+            r.setDataSource(out.path);val frame=r.getFrameAtTime(500000,MediaMetadataRetriever.OPTION_CLOSEST)!!
+            assertEquals(720,frame.width);assertEquals(1280,frame.height);frame.recycle();assertEquals("yes",r.extractMetadata(MediaMetadataRetriever.METADATA_KEY_HAS_AUDIO))
+            extractor.setDataSource(out.path);val video=(0 until extractor.trackCount).first{extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)!!.startsWith("video/")};extractor.selectTrack(video)
+            var count=0;while(extractor.sampleTime>=0){count++;if(!extractor.advance())break};assertTrue("Expected 24fps cap for 2s; got $count samples",count in 45..51)
+        }finally{r.release();extractor.release();out.delete()}
+    }
+    @Test fun openingTimingAtChangedSpeedLeavesCaptionsVisible(){
+        val source=fixture("caption-canvas.mp4")
+        val clip=TimelineClip("opening",0,3000,hook="OPENING",caption="BODY CAPTION",speed=2f,editor=ClipEditorState(opening=OpeningStyle(color=CaptionColor.PINK,background=true,startMs=400,endMs=1000)))
+        val out=renderCreator(source,listOf(clip),mute=true);val r=MediaMetadataRetriever()
+        try{r.setDataSource(out.path)
+            fun pinkAt(ms:Long):Int {val b=r.getFrameAtTime(ms*1000,MediaMetadataRetriever.OPTION_CLOSEST)!!;try{var count=0;for(y in 100 until 300 step 2)for(x in 30 until 690 step 2){val c=b.getPixel(x,y);if(Color.red(c)>150&&Color.blue(c)>80&&Color.green(c)<160)count++};return count}finally{b.recycle()}}
+            assertEquals(0,pinkAt(200));assertTrue("Opening absent during its output-time interval",pinkAt(700)>15);assertEquals(0,pinkAt(1200))
+            for(ms in listOf(200L,1200L)){val b=r.getFrameAtTime(ms*1000,MediaMetadataRetriever.OPTION_CLOSEST)!!;try{var body=0;for(y in 850 until 1100 step 3)for(x in 30 until 690 step 3){val c=b.getPixel(x,y);if(Color.red(c)>150&&Color.green(c)>150&&Color.blue(c)>150)body++};assertTrue("Body caption disappeared with opening",body>10)}finally{b.recycle()}}
+        }finally{r.release();out.delete()}
+    }
+    @Test fun automaticFramingIsLocalBoundedAndEncodedCropFollowsSubject(){
+        val context=InstrumentationRegistry.getInstrumentation().targetContext;val source=fixture("framing-sides.mp4")
+        val clip=TimelineClip("frame",0,2000,source=Uri.fromFile(source).toString(),sourceDurationMs=2000)
+        val analyzed=SubjectAnalyzer.analyze(context,clip,clip.source){}
+        assertTrue(analyzed.samples in 1..120);analyzed.framing.validate()
+        val left=clip.copy(endMs=1000,editor=ClipEditorState(framing=SubjectFraming(listOf(FramingPoint(0,.2f,.5f)))))
+        val right=clip.copy(id="right",startMs=1000,editor=ClipEditorState(framing=SubjectFraming(listOf(FramingPoint(1000,.8f,.5f)))))
+        val out=renderCreator(source,listOf(left,right),mute=true);val r=MediaMetadataRetriever()
+        try{r.setDataSource(out.path);for((ms,red) in listOf(500L to true,1500L to false)){val b=r.getFrameAtTime(ms*1000,MediaMetadataRetriever.OPTION_CLOSEST)!!;val c=b.getPixel(b.width/2,b.height/2);b.recycle();if(red)assertTrue("Left subject crop is not red",Color.red(c)>Color.blue(c)+100)else assertTrue("Right subject crop is not blue",Color.blue(c)>Color.red(c)+100)}}finally{r.release();out.delete()}
+    }
+    @Test fun privateDraftPreviewNeverPublishesToGallery(){
+        val context=InstrumentationRegistry.getInstrumentation().targetContext;val source=fixture("transition-red.mp4")
+        val p=EditorProject(Uri.fromFile(source).toString(),1000,0,1000,exportQuality=ExportQuality(720,24,2000000))
+        val scope=CoroutineScope(Dispatchers.Main+SupervisorJob());val done=CountDownLatch(1);val failure=AtomicReference<Throwable?>(null);var result:ExportPublisher.Published?=null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync{scope.launch{try{result=QueueExporter.render(context,p,previewOnly=true){}}catch(e:Throwable){failure.set(e)}finally{done.countDown()}}}
+        try{assertTrue(done.await(120,TimeUnit.SECONDS));failure.get()?.let{throw AssertionError(it)};assertFalse(result!!.inGallery);assertEquals("${context.packageName}.exports",result!!.uri.authority)}finally{scope.cancel();result?.uri?.lastPathSegment?.let{File(context.getExternalFilesDir(android.os.Environment.DIRECTORY_MOVIES),it).delete()}}
+    }
+    @Test fun backgroundExportRejectsMissingApprovalAndUnauthenticatedServiceStart(){
+        val context=InstrumentationRegistry.getInstrumentation().targetContext;val source=fixture("transition-red.mp4");val p=EditorProject(Uri.fromFile(source).toString(),1000,0,1000)
+        try{BackgroundExports.start(context,listOf(QueuedExport("direct",p)),false);fail("Unapproved export started")}catch(expected:IllegalArgumentException){}
+        context.startService(android.content.Intent(context,BackgroundExportService::class.java))
+        Thread.sleep(300);assertFalse(BackgroundExports.state.value.active)
+    }
 }
 
