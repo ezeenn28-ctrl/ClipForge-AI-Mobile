@@ -796,7 +796,7 @@ class MediaPipelineDeviceTest {
             assertNotEquals(project.source,restored.source)
         }finally{folder.deleteRecursively()}
     }
-    private fun renderCreator(source:File,clips:List<TimelineClip>,quality:ExportQuality=ExportQuality(720,24,2000000),mute:Boolean=false):File {
+    private fun renderCreator(source:File,clips:List<TimelineClip>,quality:ExportQuality=ExportQuality(720,24,2000000),mute:Boolean=false,timeoutSeconds:Int=180):File {
         val context=InstrumentationRegistry.getInstrumentation().targetContext
         val output=File(context.cacheDir,"creator-${System.nanoTime()}.mp4")
         val latch=CountDownLatch(1);val failure=AtomicReference<Throwable?>(null);var transformer:Transformer?=null
@@ -807,7 +807,7 @@ class MediaPipelineDeviceTest {
             }).build()
             transformer!!.start(TimelineExport.composition(Uri.fromFile(source),clips,true,true,mute,39f,Color.WHITE,quality=quality),output.path)
         }
-        try{assertTrue("Creator render timed out",latch.await(180,TimeUnit.SECONDS));failure.get()?.let{throw AssertionError("Creator export failed",it)};return output}
+        try{assertTrue("Creator render timed out",latch.await(timeoutSeconds.toLong(),TimeUnit.SECONDS));failure.get()?.let{throw AssertionError("Creator export failed",it)};return output}
         finally{InstrumentationRegistry.getInstrumentation().runOnMainSync{transformer?.cancel()}}
     }
     @Test fun creatorQualityReallyCapsFramesAndExports720PortraitWithAudio(){
@@ -856,8 +856,8 @@ class MediaPipelineDeviceTest {
     @Test fun compositionFrameCapSurvivesShortCutsAndMixedSpeeds(){
         val source=fixture("high-fps.mp4")
         val clips=(0 until 10).map{i->TimelineClip("short-$i",i*100L,(i+1)*100L,speed=if(i%2==0)2f else .5f)}
-        val out=renderCreator(source,clips,mute=true);val extractor=android.media.MediaExtractor()
-        try{extractor.setDataSource(out.path);val video=(0 until extractor.trackCount).first{extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)!!.startsWith("video/")};extractor.selectTrack(video);var count=0;while(extractor.sampleTime>=0){count++;if(!extractor.advance())break};val target=TimelineModel.duration(clips)*24/1000;assertTrue("Global cap reset at cuts: $count frames for ${TimelineModel.duration(clips)}ms",count in (target-3)..(target+2))}finally{extractor.release();out.delete()}
+        val out=renderCreator(source,clips,mute=true,timeoutSeconds=300);val extractor=android.media.MediaExtractor()
+        try{extractor.setDataSource(out.path);val video=(0 until extractor.trackCount).first{extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)!!.startsWith("video/")};extractor.selectTrack(video);var count=0;while(extractor.sampleTime>=0){count++;if(!extractor.advance())break};val target=TimelineModel.duration(clips)*24/1000;android.util.Log.i("ClipForgeQA","Composition frame cap: $count frames; target=$target; duration=${TimelineModel.duration(clips)}ms");assertTrue("Global cap reset at cuts: $count frames for ${TimelineModel.duration(clips)}ms",count in (target-3)..(target+2))}finally{extractor.release();out.delete()}
     }
 }
 

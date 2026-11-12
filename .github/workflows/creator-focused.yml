@@ -1,11 +1,7 @@
 name: Creator export focused checks
 on:
   push:
-    branches: [feature/creator-tools]
-    paths:
-      - '**/FrameRateCap.kt'
-      - '**/TimelineExport.kt'
-      - '**/CreatorBackgroundDeviceTest.kt'
+    branches: [verify/creator-media]
   workflow_dispatch:
 jobs:
   focused-creator:
