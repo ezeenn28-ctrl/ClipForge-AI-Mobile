@@ -64,7 +64,6 @@ object TimelineExport {
                 if (clip.visuals.fadeInMs > 0 || clip.visuals.fadeOutMs > 0) add(ClipVisualEffects.fade(clip))
                 if (incoming?.kind == CutTransitionKind.DIP_BLACK || outgoing?.kind == CutTransitionKind.DIP_BLACK)
                     add(ClipVisualEffects.transitionFade(clip, incoming, outgoing))
-                add(FrameRateCap(quality.fps.toFloat()/clip.speed))
                 // Overlays evaluate source timestamps; retime the completed picture last.
                 if (clip.speed != 1f) add(SpeedChangeEffect(clip.speed))
             }
@@ -123,7 +122,7 @@ object TimelineExport {
             }
             sequences.add(sequence.build())
         }
-        return Composition.Builder(sequences).experimentalSetForceAudioTrack(!mute || music != null || sounds.isNotEmpty()).build()
+        return Composition.Builder(sequences).setEffects(Effects(emptyList(),listOf(FrameRateCap(quality.fps.toFloat())))).experimentalSetForceAudioTrack(!mute || music != null || sounds.isNotEmpty()).build()
     }
 }
 

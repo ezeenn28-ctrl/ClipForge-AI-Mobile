@@ -28,7 +28,7 @@ class FrameRateCap(private val fps:Float):GlEffect {
             if(budget.accept(presentationTimeUs))super.queueInputFrame(provider,texture,presentationTimeUs)
             else{inputListener.onInputFrameProcessed(texture);inputListener.onReadyToAcceptInputFrame()}
         }
-        override fun signalEndOfCurrentInputStream(){super.signalEndOfCurrentInputStream();budget.reset()}
+        // Composition timestamps continue across cuts; keep the budget across input-stream boundaries.
         override fun flush(){super.flush();budget.reset()}
         override fun release(){super.release();budget.reset()}
     }

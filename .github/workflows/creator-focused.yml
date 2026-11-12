@@ -84,7 +84,7 @@ jobs:
           emulator-boot-timeout: 180
           disable-animations: true
           emulator-options: -no-window -no-snapshot -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: gradle :app:connectedDebugAndroidTest -PmediaDeviceTests=true -Pandroid.testInstrumentationRunnerArguments.class=com.clipforge.mobile.MediaPipelineDeviceTest#creatorQualityReallyCapsFramesAndExports720PortraitWithAudio,com.clipforge.mobile.CreatorBackgroundDeviceTest --no-daemon --console=plain --warning-mode=none
+          script: gradle :app:connectedDebugAndroidTest -PmediaDeviceTests=true -Pandroid.testInstrumentationRunnerArguments.class=com.clipforge.mobile.MediaPipelineDeviceTest#creatorQualityReallyCapsFramesAndExports720PortraitWithAudio,com.clipforge.mobile.MediaPipelineDeviceTest#compositionFrameCapSurvivesShortCutsAndMixedSpeeds,com.clipforge.mobile.CreatorBackgroundDeviceTest --no-daemon --console=plain --warning-mode=none
       - name: Upload device integration reports
         if: always()
         uses: actions/upload-artifact@v4

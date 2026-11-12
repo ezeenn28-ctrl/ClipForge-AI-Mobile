@@ -853,5 +853,11 @@ class MediaPipelineDeviceTest {
         context.startService(android.content.Intent(context,BackgroundExportService::class.java))
         Thread.sleep(300);assertFalse(BackgroundExports.state.value.active)
     }
+    @Test fun compositionFrameCapSurvivesShortCutsAndMixedSpeeds(){
+        val source=fixture("high-fps.mp4")
+        val clips=(0 until 10).map{i->TimelineClip("short-$i",i*100L,(i+1)*100L,speed=if(i%2==0)2f else .5f)}
+        val out=renderCreator(source,clips,mute=true);val extractor=android.media.MediaExtractor()
+        try{extractor.setDataSource(out.path);val video=(0 until extractor.trackCount).first{extractor.getTrackFormat(it).getString(android.media.MediaFormat.KEY_MIME)!!.startsWith("video/")};extractor.selectTrack(video);var count=0;while(extractor.sampleTime>=0){count++;if(!extractor.advance())break};val target=TimelineModel.duration(clips)*24/1000;assertTrue("Global cap reset at cuts: $count frames for ${TimelineModel.duration(clips)}ms",count in (target-3)..(target+2))}finally{extractor.release();out.delete()}
+    }
 }
 
