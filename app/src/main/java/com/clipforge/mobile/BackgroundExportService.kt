@@ -57,7 +57,7 @@ class BackgroundExportService:Service(){
                     latest=result.uri.toString();queue[index]=item.copy(status=QueueStatus.COMPLETE,message=if(result.inGallery)"Saved to Gallery" else "Saved privately",uri=latest)
                     if(item.id!="direct")withContext(Dispatchers.IO){ExportQueue.record(filesDir,queue[index])}
                 }
-                File(filesDir,"background-export.properties").delete()
+                File(filesDir,"background-export.properties").let{it.delete();ProjectStore.previousFile(it).delete()}
                 BackgroundExports.update(BackgroundExports.State(false,100,"Export complete · Saved to Gallery or private exports",latest,project,queue.toList()))
             }catch(e:CancellationException){BackgroundExports.update(BackgroundExports.State(message="Export cancelled. Load interrupted export and review before retrying.",output=latest,project=project,queue=queue.map{if(it.status==QueueStatus.RENDERING)it.copy(status=QueueStatus.REVIEW) else it}))}
             catch(e:Exception){BackgroundExports.update(BackgroundExports.State(message="Export failed: ${e.message}. Load interrupted export and review before retrying.",output=latest,project=project,queue=queue.map{if(it.status==QueueStatus.RENDERING)it.copy(status=QueueStatus.FAILED,message=e.message.orEmpty()) else it}))}

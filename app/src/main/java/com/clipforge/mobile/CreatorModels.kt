@@ -45,7 +45,13 @@ object BeatDraft {
             out=TimelineModel.split(out,ms);last=ms;count++
         }
         require(count>0){"No usable beats inside the first 60 seconds; check music timing or BPM"}
-        return out.mapIndexed{i,c->if(i==0)c else c.copy(visuals=c.visuals.copy(end=MotionPoint(1.06f)),transition=CutTransition(CutTransitionKind.ZOOM_CUT,240),sounds=if(c.sounds.isEmpty()&&i%3==1)listOf(ClipSound(java.util.UUID.randomUUID().toString(),c.startMs,SoundKind.SWISH,.16f)) else c.sounds)}
+        val originalIds=clips.map{it.id}.toSet();var accents=clips.sumOf{it.sounds.size}
+        return out.mapIndexed{i,c->
+            val added=c.id !in originalIds
+            val nextAdded=out.getOrNull(i+1)?.id?.let{it !in originalIds}==true
+            val sounds=if(added&&c.sounds.isEmpty()&&i%3==1&&accents<120){accents++;listOf(ClipSound(java.util.UUID.randomUUID().toString(),c.startMs,SoundKind.SWISH,.16f))}else c.sounds
+            c.copy(visuals=if(added)c.visuals.copy(end=MotionPoint(1.06f)) else c.visuals,transition=if(nextAdded)CutTransition(CutTransitionKind.ZOOM_CUT,240) else c.transition,sounds=sounds)
+        }
     }
 }
 /** Literal, longest-first and single-pass: replacement text is never processed again. */

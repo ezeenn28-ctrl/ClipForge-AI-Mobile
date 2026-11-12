@@ -11,7 +11,7 @@ import androidx.compose.ui.unit.dp
 
 @Composable
 fun ExportSummary(name: String, durationMs: Long, vertical: Boolean, cuts: Int, captions: Int,
-                  mute: Boolean, music: String?, approved: Boolean) {
+                  mute: Boolean, music: String?, approved: Boolean,quality:ExportQuality=ExportQuality()) {
     StudioCard("Delivery details") {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             StudioGlyph(StudioGlyph.EXPORT, color = MaterialTheme.colorScheme.primary)
@@ -23,7 +23,7 @@ fun ExportSummary(name: String, durationMs: Long, vertical: Boolean, cuts: Int, 
             ExportStat("CANVAS", if (vertical) "9:16" else "16:9", Modifier.weight(1f))
             ExportStat("CAPTIONS", captions.toString(), Modifier.weight(1f))
         }
-        Text((if (vertical) "1080 × 1920" else "1920 × 1080") + " · MP4 · " + cuts + (if (cuts == 1) " cut" else " cuts"),
+        Text((if (vertical) "${quality.height} × ${quality.height*16/9}" else "${quality.height*16/9} × ${quality.height}") + " · MP4 · " + cuts + (if (cuts == 1) " cut" else " cuts"),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text("Original audio: " + (if (mute) "muted" else "included") +
             (music?.let { " · Music: " + it } ?: ""), style = MaterialTheme.typography.bodySmall,
@@ -41,3 +41,4 @@ private fun ExportStat(label: String, value: String, modifier: Modifier) {
         }
     }
 }
+

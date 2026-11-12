@@ -416,6 +416,8 @@ class MainActivity : ComponentActivity() {
             pendingSpeechRequest?.let(enqueueSpeech)
             pendingSpeechRequest = null
         }
+        val exportNotificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()){granted->if(!granted)status="Export can continue. Notifications are disabled; progress and cancel remain available in Export."}
+        val requestExportNotification:()->Unit={if(android.os.Build.VERSION.SDK_INT>=33&&androidx.core.content.ContextCompat.checkSelfPermission(this,android.Manifest.permission.POST_NOTIFICATIONS)!=android.content.pm.PackageManager.PERMISSION_GRANTED)exportNotificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)}
         val launchSpeech: (SpeechJobMode, List<SpeechRange>, String) -> Unit = { mode, ranges, target ->
             val selected = if (mode == SpeechJobMode.TIMELINE) timeline.clips.firstOrNull { it.id == target } else null
             val source = selected?.resolvedSource(video?.toString().orEmpty())?.let(Uri::parse) ?: video
@@ -2355,7 +2357,7 @@ class MainActivity : ComponentActivity() {
                                         ExportSummary(projectName.ifBlank { sourceName }, deliveryDuration, vertical,
                                             if (timelineMode) timeline.clips.size else 1,
                                             if (timelineMode) TimelineModel.subtitles(timeline.clips).size else if (subtitleDraftIndex == selectedDraft) subtitleSegments.size else 0,
-                                            mute, if (timelineMode) music?.name else null, approved)
+                                            mute, if (timelineMode) music?.name else null, approved,exportQuality)
                                         StudioCard("Ready when you are") {
                 Text("Export review", style = MaterialTheme.typography.titleMedium)
                 Text("Check framing, audio and subtitle timing in the preview. Approval applies to this edit and is cleared when you change it.", style = MaterialTheme.typography.bodySmall)
@@ -2371,7 +2373,7 @@ class MainActivity : ComponentActivity() {
                     if (!approved || !exportReady || busy || campaignIssues.isNotEmpty()) return@Button
                     val snapshot=projectSnapshot?:return@Button
                     player.pause();musicPlayer.pause();soundPlayer.pause();auditionUntil=0;auditionRequest++
-                    runCatching{BackgroundExports.start(this@MainActivity,listOf(QueuedExport("direct",snapshot,QueueStatus.READY)),true)}.onFailure{status="Export failed: ${it.message}";approved=false}
+                    runCatching{BackgroundExports.start(this@MainActivity,listOf(QueuedExport("direct",snapshot,QueueStatus.READY)),true);requestExportNotification()}.onFailure{status="Export failed: ${it.message}";approved=false}
                 }) { Text(if (exporting) "Exporting approved clip…" else "Export approved MP4") }
                 ExportQueueControls(queueItems, !busy, approved && campaignIssues.isEmpty() && exportReady, queueRunning, queueProgress,
                     onAdd = {
@@ -2392,7 +2394,7 @@ class MainActivity : ComponentActivity() {
                             val ready = queueItems.filter { it.status == QueueStatus.READY }
                             if (ready.isNotEmpty()) {
                                 queueRunning = true; player.pause(); musicPlayer.pause(); soundPlayer.pause()
-                                runCatching{BackgroundExports.start(this@MainActivity,ready,true)}.onFailure{queueRunning=false;status="Queue failed: ${it.message}"}
+                                runCatching{BackgroundExports.start(this@MainActivity,ready,true);requestExportNotification()}.onFailure{queueRunning=false;status="Queue failed: ${it.message}"}
 
                             }
                         }
